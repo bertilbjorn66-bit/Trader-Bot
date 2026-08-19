@@ -15,11 +15,25 @@ class OfferSide(StrEnum):
 class Timeframe(StrEnum):
     TEN_SECONDS = "10sec"
     ONE_MINUTE = "1min"
+    FIVE_MINUTES = "5min"  # derived locally from 1-minute candles
     TEN_MINUTES = "10m"
+    FIFTEEN_MINUTES = "15min"  # derived locally from 1-minute candles
     ONE_HOUR = "1hour"
+    FOUR_HOURS = "4hour"  # derived locally from 1-hour candles
     ONE_DAY = "1day"
     ONE_DAY_EET = "1day_eet"
     TICK = "tick"
+
+
+PROVIDER_TIMEFRAMES = {
+    Timeframe.TEN_SECONDS,
+    Timeframe.ONE_MINUTE,
+    Timeframe.TEN_MINUTES,
+    Timeframe.ONE_HOUR,
+    Timeframe.ONE_DAY,
+    Timeframe.ONE_DAY_EET,
+    Timeframe.TICK,
+}
 
 
 class MarketBar(BaseModel):
@@ -59,6 +73,8 @@ class DataRequest(BaseModel):
             raise ValueError("start and end must be timezone-aware")
         if self.start >= self.end:
             raise ValueError("start must be before end")
+        if self.timeframe not in PROVIDER_TIMEFRAMES:
+            raise ValueError("Derived timeframes must be constructed locally, not requested from the provider")
         return self
 
 
