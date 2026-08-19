@@ -74,4 +74,7 @@ class ResearchStore:
         return len(rows)
 
     def count(self) -> int:
-        return int(self._conn.execute("SELECT COUNT(*) FROM market_bars").fetchone()[0])
+        row = self._conn.execute("SELECT COUNT(*) FROM market_bars").fetchone()
+        if row is None:
+            return 0
+        return int(row[0])
