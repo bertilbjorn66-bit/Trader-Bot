@@ -118,3 +118,85 @@ class DukascopyProvider:
             if not isinstance(row, dict):
                 raise ProviderProtocolError("Historical row is not an object")
             try:
+                bars.append(
+                    MarketBar(
+                        timestamp=self._timestamp(row["timestamp"]),
+                        instrument=request.instrument,
+                        timeframe=request.timeframe,
+                        offer_side=request.offer_side,
+                        open=self._decimal(row["open"]),
+                        high=self._decimal(row["high"]),
+                        low=self._decimal(row["low"]),
+                        close=self._decimal(row["close"]),
+                        volume=self._decimal(row["volume"])
+                        if row.get("volume") is not None
+                        else None,
+                    )
+                )
+            except KeyError as exc:
+                raise ProviderProtocolError(f"Missing historical field: {exc.args[0]}") from exc
+        return bars
+
+    def historical_bars(self, request: DataRequest) -> Sequence[MarketBar]:
+        if request.timeframe == Timeframe.TICK:
+            raise ValueError("historical_bars handles candles, not ticks")
+        if request.end - request.start > timedelta(days=self.settings.max_history_window_days):
+            raise ValueError("Request exceeds configured maximum historical window")
+
+        interval = self._source_interval(request.timeframe)
+        max_span = interval * (self.settings.max_bars_per_request - 1)
+        cursor = request.start
+        all_bars: dict[datetime, MarketBar] = {}
+
+        while cursor < request.end:
+            chunk_end = min(request.end, cursor + max_span)
+            payload = self._request(
+                self.HISTORICAL_PATH,
+                {
+                    "instrument": request.instrument,
+                    "timeFrame": request.timeframe.value,
+                    "count": self.settings.max_bars_per_request,
+                    "start": int(cursor.timestamp() * 1000),
+                    "end": int(chunk_end.timestamp() * 1000),
+                    "offerSide": request.offer_side.value,
+                },
+            )
+            for bar in self._parse_historical(payload, request):
+                if request.start <= bar.timestamp < request.end:
+                    all_bars[bar.timestamp] = bar
+            if chunk_end >= request.end:
+                break
+            cursor = chunk_end
+
+        return [all_bars[k] for k in sorted(all_bars)]
+
+    def current_quotes(self, instruments: Sequence[int]) -> Sequence[Quote]:
+        if not instruments:
+            return []
+        payload = self._request(self.CURRENT_PATH, {"instruments": ",".join(map(str, instruments))})
+        if not isinstance(payload, list):
+            raise ProviderProtocolError("Expected currentPrices response to be a JSON array")
+
+        quotes: list[Quote] = []
+        for row in payload:
+            if not isinstance(row, dict):
+                raise ProviderProtocolError("Quote row is not an object")
+            try:
+                quotes.append(
+                    Quote(
+                        timestamp=self._timestamp(row["timestamp"]),
+                        instrument=int(row["instrument"]),
+                        bid=self._decimal(row["bid"]),
+                        ask=self._decimal(row["ask"]),
+                    )
+                )
+            except (KeyError, ValueError, TypeError) as exc:
+                raise ProviderProtocolError("Malformed current quote") from exc
+        return quotes
+
+    def health_check(self) -> bool:
+        try:
+            payload = self._request(self.HEALTH_PATH, {})
+            return isinstance(payload, list)
+        except Exception:
+            return False
