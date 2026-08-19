@@ -18,6 +18,7 @@ class DukascopyProvider:
     BASE_URL = "https://freeserv.dukascopy.com/2.0/"
     HISTORICAL_PATH = "api/historicalPrices"
     CURRENT_PATH = "api/currentPrices"
+    HEALTH_PATH = "api/lastOneMinuteCandles"
 
     def __init__(self, settings: Settings | None = None, client: httpx.Client | None = None) -> None:
         self.settings = settings or get_settings()
@@ -73,26 +74,20 @@ class DukascopyProvider:
         except (ValueError, TypeError, OverflowError) as exc:
             raise ProviderProtocolError(f"Invalid timestamp: {value!r}") from exc
 
-    def historical_bars(self, request: DataRequest) -> Sequence[MarketBar]:
-        if request.timeframe == Timeframe.TICK:
-            raise ValueError("historical_bars handles candles, not ticks")
-        if request.end - request.start > timedelta(days=self.settings.max_history_window_days):
-            raise ValueError("Request exceeds configured maximum historical window")
+    @staticmethod
+    def _source_interval(timeframe: Timeframe) -> timedelta:
+        return {
+            Timeframe.TEN_SECONDS: timedelta(seconds=10),
+            Timeframe.ONE_MINUTE: timedelta(minutes=1),
+            Timeframe.TEN_MINUTES: timedelta(minutes=10),
+            Timeframe.ONE_HOUR: timedelta(hours=1),
+            Timeframe.ONE_DAY: timedelta(days=1),
+            Timeframe.ONE_DAY_EET: timedelta(days=1),
+        }[timeframe]
 
-        payload = self._request(
-            self.HISTORICAL_PATH,
-            {
-                "instrument": request.instrument,
-                "timeFrame": request.timeframe.value,
-                "count": self.settings.max_bars_per_request,
-                "start": int(request.start.timestamp() * 1000),
-                "end": int(request.end.timestamp() * 1000),
-                "offerSide": request.offer_side.value,
-            },
-        )
+    def _parse_historical(self, payload: Any, request: DataRequest) -> list[MarketBar]:
         if not isinstance(payload, list):
             raise ProviderProtocolError("Expected historicalPrices response to be a JSON array")
-
         bars: list[MarketBar] = []
         for row in payload:
             if not isinstance(row, dict):
@@ -113,7 +108,43 @@ class DukascopyProvider:
                 )
             except KeyError as exc:
                 raise ProviderProtocolError(f"Missing historical field: {exc.args[0]}") from exc
-        return sorted(bars, key=lambda x: x.timestamp)
+        return bars
+
+    def historical_bars(self, request: DataRequest) -> Sequence[MarketBar]:
+        if request.timeframe == Timeframe.TICK:
+            raise ValueError("historical_bars handles candles, not ticks")
+        if request.end - request.start > timedelta(days=self.settings.max_history_window_days):
+            raise ValueError("Request exceeds configured maximum historical window")
+
+        interval = self._source_interval(request.timeframe)
+        max_span = interval * (self.settings.max_bars_per_request - 1)
+        cursor = request.start
+        all_bars: dict[datetime, MarketBar] = {}
+
+        # Dukascopy documents a maximum of 5000 records per historical request.
+        # Windows overlap at boundaries and are deduplicated by timestamp so the
+        # adapter cannot silently truncate a multi-thousand-bar request.
+        while cursor < request.end:
+            chunk_end = min(request.end, cursor + max_span)
+            payload = self._request(
+                self.HISTORICAL_PATH,
+                {
+                    "instrument": request.instrument,
+                    "timeFrame": request.timeframe.value,
+                    "count": self.settings.max_bars_per_request,
+                    "start": int(cursor.timestamp() * 1000),
+                    "end": int(chunk_end.timestamp() * 1000),
+                    "offerSide": request.offer_side.value,
+                },
+            )
+            for bar in self._parse_historical(payload, request):
+                if request.start <= bar.timestamp <= request.end:
+                    all_bars[bar.timestamp] = bar
+            if chunk_end >= request.end:
+                break
+            cursor = chunk_end
+
+        return [all_bars[k] for k in sorted(all_bars)]
 
     def current_quotes(self, instruments: Sequence[int]) -> Sequence[Quote]:
         if not instruments:
@@ -141,7 +172,7 @@ class DukascopyProvider:
 
     def health_check(self) -> bool:
         try:
-            self._request(self.CURRENT_PATH, {"instruments": "1"})
-            return True
+            payload = self._request(self.HEALTH_PATH, {})
+            return isinstance(payload, list)
         except Exception:
             return False
