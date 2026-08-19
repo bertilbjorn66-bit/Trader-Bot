@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Sequence
+from typing import Any
 
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..config import Settings, get_settings
 from ..data_provider import ProviderProtocolError, ProviderRateLimited, ProviderUnavailable
-from ..models import DataRequest, MarketBar, OfferSide, Quote, Timeframe
+from ..models import DataRequest, MarketBar, Quote, Timeframe
 
 
 class DukascopyProvider:
@@ -20,7 +21,9 @@ class DukascopyProvider:
     CURRENT_PATH = "api/currentPrices"
     HEALTH_PATH = "api/lastOneMinuteCandles"
 
-    def __init__(self, settings: Settings | None = None, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self, settings: Settings | None = None, client: httpx.Client | None = None
+    ) -> None:
         self.settings = settings or get_settings()
         self._client = client or httpx.Client(timeout=self.settings.request_timeout_seconds)
         self._owns_client = client is None
@@ -29,7 +32,7 @@ class DukascopyProvider:
         if self._owns_client:
             self._client.close()
 
-    def __enter__(self) -> "DukascopyProvider":
+    def __enter__(self) -> DukascopyProvider:
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -103,7 +106,11 @@ class DukascopyProvider:
                         high=self._decimal(row["high"]),
                         low=self._decimal(row["low"]),
                         close=self._decimal(row["close"]),
-                        volume=self._decimal(row["volume"]) if row.get("volume") is not None else None,
+                        volume=(
+                            self._decimal(row["volume"])
+                            if row.get("volume") is not None
+                            else None
+                        ),
                     )
                 )
             except KeyError as exc:
