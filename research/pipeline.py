@@ -63,32 +63,46 @@ def research_snapshot(
         raise ValueError("target_index must have sufficient history")
     states = build_states(bars)
     target_state = next(s for s in states if s.timestamp == bars[target_index].timestamp)
+    target_spread = float(target_state.features["spread"])
+    validate_spread(target_spread, costs)
+
     historical = [s for s in states if s.timestamp < target_state.timestamp]
     scaler = fit_scaler(historical, DEFAULT_FEATURES)
     neighbors = nearest_states(target_state, historical, scaler, k=k)
     direction = "long" if float(target_state.features["momentum"]) >= 0 else "short"
+
+    bar_index = {bar.timestamp: idx for idx, bar in enumerate(bars)}
+    eligible_neighbors = [
+        (state, distance)
+        for state, distance in neighbors
+        if costs.max_spread is None or float(state.features["spread"]) <= costs.max_spread
+    ]
+
     outcomes: list[float] = []
     mfe: list[float] = []
     mae: list[float] = []
-    neighbor_times = {s.timestamp for s, _ in neighbors}
-    for idx, bar in enumerate(bars):
-        if bar.timestamp in neighbor_times and idx + horizon < len(bars):
-            outcome = future_outcome(bars, idx, horizon, direction)
-            outcomes.append(outcome.return_abs)
-            mfe.append(outcome.mfe_abs)
-            mae.append(outcome.mae_abs)
-    spread = float(target_state.features["spread"])
-    validate_spread(spread, costs)
-    costed = [net_move(v, costs) for v in outcomes]
+    for neighbor, _distance in eligible_neighbors:
+        index = bar_index[neighbor.timestamp]
+        if index + horizon >= len(bars):
+            continue
+        outcome = future_outcome(bars, index, horizon, direction)
+        # BID/ASK execution is already represented by the outcome. Apply only
+        # additional costs such as slippage and commission.
+        outcomes.append(net_move(outcome.return_abs, costs))
+        mfe.append(outcome.mfe_abs)
+        mae.append(outcome.mae_abs)
+
     return {
         "timestamp": target_state.timestamp.isoformat(),
         "direction": direction,
         "neighbors": len(neighbors),
-        "probability": probability_summary(costed),
-        "expectancy": expectancy(costed),
+        "eligible_neighbors": len(outcomes),
+        "current_spread": target_spread,
+        "probability": probability_summary(outcomes),
+        "expectancy": expectancy(outcomes),
         "mfe_mean": mean(mfe) if mfe else None,
         "mae_mean": mean(mae) if mae else None,
-        "max_drawdown": max_drawdown(costed),
+        "max_drawdown": max_drawdown(outcomes),
         "empirical": False,
         "warning": "SYNTHETIC OR UNPOPULATED UNTIL REAL MARKET DATA IS PROVIDED",
     }
