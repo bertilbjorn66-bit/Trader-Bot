@@ -3,11 +3,11 @@ from datetime import timedelta
 import pytest
 
 from research.outcomes import future_outcome
+from research.pipeline import build_states, research_snapshot
 from research.similarity import fit_scaler, nearest_states
 from research.statistics import expectancy, probability_summary
 from research.synthetic import generate_bars
 from research.validation import expanding_walk_forward
-from research.pipeline import build_states, research_snapshot
 
 
 def test_synthetic_data_and_states_are_deterministic() -> None:
