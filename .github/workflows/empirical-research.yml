@@ -4,7 +4,7 @@ on:
   push:
     branches: [research/quant-pipeline]
     paths:
-      - "research/**"
+      - "research/EMPIRICAL_TRIGGER"
       - ".github/workflows/empirical-research.yml"
   workflow_dispatch:
     inputs:
