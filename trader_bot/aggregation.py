@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Sequence
 
@@ -13,7 +14,7 @@ SUPPORTED_AGGREGATIONS = {
 }
 
 
-def _is_boundary(timestamp, target: Timeframe) -> bool:
+def _is_boundary(timestamp: datetime, target: Timeframe) -> bool:
     if target is Timeframe.FIVE_MINUTES:
         return timestamp.second == 0 and timestamp.microsecond == 0 and timestamp.minute % 5 == 0
     if target is Timeframe.FIFTEEN_MINUTES:
@@ -44,7 +45,11 @@ def aggregate_bars(group: Sequence[MarketBar], target: Timeframe) -> MarketBar:
     if expected_span.total_seconds() != (target_size - 1) * source_seconds:
         raise ValueError("group has a timestamp gap")
     volumes = [bar.volume for bar in group]
-    total_volume = sum((v for v in volumes if v is not None), Decimal("0")) if any(v is not None for v in volumes) else None
+    total_volume = (
+        sum((v for v in volumes if v is not None), Decimal("0"))
+        if any(v is not None for v in volumes)
+        else None
+    )
     return MarketBar(
         timestamp=start,
         instrument=group[0].instrument,
