@@ -13,6 +13,21 @@ SUPPORTED_AGGREGATIONS = {
 }
 
 
+def _is_boundary(timestamp, target: Timeframe) -> bool:
+    if target is Timeframe.FIVE_MINUTES:
+        return timestamp.second == 0 and timestamp.microsecond == 0 and timestamp.minute % 5 == 0
+    if target is Timeframe.FIFTEEN_MINUTES:
+        return timestamp.second == 0 and timestamp.microsecond == 0 and timestamp.minute % 15 == 0
+    if target is Timeframe.FOUR_HOURS:
+        return (
+            timestamp.minute == 0
+            and timestamp.second == 0
+            and timestamp.microsecond == 0
+            and timestamp.hour % 4 == 0
+        )
+    raise ValueError("unsupported target timeframe")
+
+
 def aggregate_bars(group: Sequence[MarketBar], target: Timeframe) -> MarketBar:
     if not group:
         raise ValueError("cannot aggregate an empty group")
@@ -22,11 +37,11 @@ def aggregate_bars(group: Sequence[MarketBar], target: Timeframe) -> MarketBar:
     if any(bar.timeframe is not source for bar in group):
         raise ValueError("source timeframe mismatch")
     start = group[0].timestamp
+    if not _is_boundary(start, target):
+        raise ValueError("group does not start on a timeframe boundary")
+    source_seconds = {Timeframe.ONE_MINUTE: 60, Timeframe.ONE_HOUR: 3600}[source]
     expected_span = group[-1].timestamp - start
-    if expected_span.total_seconds() != (target_size - 1) * {
-        Timeframe.ONE_MINUTE: 60,
-        Timeframe.ONE_HOUR: 3600,
-    }[source]:
+    if expected_span.total_seconds() != (target_size - 1) * source_seconds:
         raise ValueError("group has a timestamp gap")
     volumes = [bar.volume for bar in group]
     total_volume = sum((v for v in volumes if v is not None), Decimal("0")) if any(v is not None for v in volumes) else None
@@ -53,12 +68,17 @@ def aggregate_series(bars: Sequence[MarketBar], target: Timeframe) -> list[Marke
     if any(bar.timeframe is not source for bar in bars):
         raise ValueError("source timeframe mismatch")
     output: list[MarketBar] = []
-    for i in range(0, len(bars), size):
+    i = 0
+    while i < len(bars):
+        if not _is_boundary(bars[i].timestamp, target):
+            i += 1
+            continue
         group = bars[i : i + size]
         if len(group) != size:
-            continue
+            break
         try:
             output.append(aggregate_bars(group, target))
+            i += size
         except ValueError:
-            continue
+            i += 1
     return output
