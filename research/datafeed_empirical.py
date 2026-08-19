@@ -14,14 +14,8 @@ from . import sequential_empirical as empirical
 from .execution import ExecutionAssumptions
 
 PAIR_TO_SYMBOL = {
-    "EUR/USD": "eurusd",
-    "GBP/USD": "gbpusd",
-    "USD/JPY": "usdjpy",
-    "AUD/USD": "audusd",
-    "USD/CAD": "usdcad",
-    "USD/CHF": "usdchf",
-    "NZD/USD": "nzdusd",
-    "EUR/JPY": "eurjpy",
+    "EUR/USD": "eurusd", "GBP/USD": "gbpusd", "USD/JPY": "usdjpy", "AUD/USD": "audusd",
+    "USD/CAD": "usdcad", "USD/CHF": "usdchf", "NZD/USD": "nzdusd", "EUR/JPY": "eurjpy",
     "GBP/JPY": "gbpjpy",
 }
 
@@ -68,37 +62,17 @@ def load_feed_bars(path: Path) -> list[dict[str, object]]:
     return rows
 
 
-def _market_bars(
-    rows: list[dict[str, object]],
-) -> tuple[tuple[MarketBar, ...], tuple[MarketBar, ...]]:
+def _market_bars(rows: list[dict[str, object]]) -> tuple[tuple[MarketBar, ...], tuple[MarketBar, ...]]:
     bid: list[MarketBar] = []
     ask: list[MarketBar] = []
     for row in rows:
         timestamp = datetime.fromtimestamp(_timestamp_ms(row) / 1000, tz=timezone.utc)
-        bid.append(
-            MarketBar(
-                timestamp=timestamp,
-                instrument=1,
-                timeframe=Timeframe.TEN_MINUTES,
-                offer_side=OfferSide.BID,
-                open=Decimal(str(_number(row, "bid_open"))),
-                high=Decimal(str(_number(row, "bid_high"))),
-                low=Decimal(str(_number(row, "bid_low"))),
-                close=Decimal(str(_number(row, "bid_close"))),
-            )
-        )
-        ask.append(
-            MarketBar(
-                timestamp=timestamp,
-                instrument=1,
-                timeframe=Timeframe.TEN_MINUTES,
-                offer_side=OfferSide.ASK,
-                open=Decimal(str(_number(row, "ask_open"))),
-                high=Decimal(str(_number(row, "ask_high"))),
-                low=Decimal(str(_number(row, "ask_low"))),
-                close=Decimal(str(_number(row, "ask_close"))),
-            )
-        )
+        bid.append(MarketBar(timestamp=timestamp, instrument=1, timeframe=Timeframe.TEN_MINUTES, offer_side=OfferSide.BID,
+                              open=Decimal(str(_number(row, "bid_open"))), high=Decimal(str(_number(row, "bid_high"))),
+                              low=Decimal(str(_number(row, "bid_low"))), close=Decimal(str(_number(row, "bid_close")))))
+        ask.append(MarketBar(timestamp=timestamp, instrument=1, timeframe=Timeframe.TEN_MINUTES, offer_side=OfferSide.ASK,
+                              open=Decimal(str(_number(row, "ask_open"))), high=Decimal(str(_number(row, "ask_high"))),
+                              low=Decimal(str(_number(row, "ask_low"))), close=Decimal(str(_number(row, "ask_close")))))
     return tuple(bid), tuple(ask)
 
 
@@ -113,35 +87,22 @@ def analyze_from_feed(
     costs: ExecutionAssumptions,
 ) -> tuple[dict[str, object], list[tuple[datetime, float]]]:
     bid, ask = _market_bars(rows)
-    original_iter = getattr(empirical, "iter_bid_ask_batches")
+    original_iter = empirical.iter_bid_ask_batches  # type: ignore[attr-defined]
 
     def feed_iter(
-        _provider: object,
-        _instrument_id: int,
-        _timeframe: Timeframe,
-        _start: datetime,
-        _end: datetime,
-        _max_days_per_batch: int,
+        _provider: object, _instrument_id: int, _timeframe: Timeframe,
+        _start: datetime, _end: datetime, _max_days_per_batch: int,
     ) -> Iterator[tuple[tuple[MarketBar, ...], tuple[MarketBar, ...]]]:
         yield bid, ask
 
-    setattr(empirical, "iter_bid_ask_batches", feed_iter)
+    empirical.iter_bid_ask_batches = feed_iter  # type: ignore[attr-defined,assignment]
     try:
         report, returns = empirical.analyze_pair(
-            cast(DukascopyProvider, object()),
-            pair,
-            1,
-            start,
-            end,
-            Timeframe.TEN_MINUTES,
-            sample_stride,
-            history_states,
-            empirical.DEFAULT_HORIZONS,
-            max_days_per_batch,
-            costs,
+            cast(DukascopyProvider, object()), pair, 1, start, end, Timeframe.TEN_MINUTES,
+            sample_stride, history_states, empirical.DEFAULT_HORIZONS, max_days_per_batch, costs,
         )
     finally:
-        setattr(empirical, "iter_bid_ask_batches", original_iter)
+        empirical.iter_bid_ask_batches = original_iter  # type: ignore[attr-defined,assignment]
     return report, returns
 
 
@@ -167,31 +128,19 @@ def main() -> None:
     end = datetime.fromisoformat(args.end)
     if start.tzinfo is None or end.tzinfo is None or start >= end:
         raise SystemExit("start/end must be timezone-aware and start < end")
-
     pairs = tuple(item.strip() for item in args.pairs.split(",") if item.strip())
     unknown = [pair for pair in pairs if pair not in PAIR_TO_SYMBOL]
     if unknown:
         raise SystemExit(f"Unsupported datafeed pair(s): {', '.join(unknown)}")
-
     reports: list[dict[str, object]] = []
     series: dict[str, list[tuple[datetime, float]]] = {}
     costs = ExecutionAssumptions()
     input_dir = Path(args.input_dir)
     for pair in pairs:
         rows = load_feed_bars(input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl")
-        report, returns = analyze_from_feed(
-            pair,
-            rows,
-            start,
-            end,
-            args.sample_stride,
-            args.history_states,
-            args.max_days_per_batch,
-            costs,
-        )
+        report, returns = analyze_from_feed(pair, rows, start, end, args.sample_stride, args.history_states, args.max_days_per_batch, costs)
         reports.append(report)
         series[pair] = returns
-
     payload = {
         "research_status": "EMPIRICAL_DATAFEED_RUN_COMPLETED",
         "source": "Dukascopy public datafeed via dukascopy-node; native m5 aggregated to complete 10m bars",
