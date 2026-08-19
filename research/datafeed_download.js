@@ -76,22 +76,40 @@ function indexRows(rows) {
   return map;
 }
 
-async function fetchMonth(instrument, from, to, priceType) {
-  return getHistoricRates({
-    instrument,
-    dates: { from, to },
-    timeframe: 'm5',
-    priceType,
-    format: 'array',
-    volumes: false,
-    ignoreFlats: true,
-    batchSize: 10,
-    pauseBetweenBatchesMs: 1500,
-    retryCount: 6,
-    pauseBetweenRetriesMs: 5000,
-    retryOnEmpty: true,
-    failAfterRetryCount: true,
-  });
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchPriceType(instrument, from, to, priceType) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      return await getHistoricRates({
+        instrument,
+        dates: { from, to },
+        timeframe: 'm5',
+        priceType,
+        format: 'array',
+        volumes: false,
+        ignoreFlats: true,
+        batchSize: 5,
+        pauseBetweenBatchesMs: 2500,
+        retryCount: 10,
+        pauseBetweenRetriesMs: 8000,
+        retryOnEmpty: true,
+        failAfterRetryCount: true,
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt === 5) break;
+      const backoff = Math.min(60000, 5000 * 2 ** (attempt - 1));
+      console.warn(
+        `Retrying ${instrument} ${priceType} ${from.toISOString()} after transient provider failure; attempt=${attempt + 1}, backoffMs=${backoff}`,
+      );
+      await sleep(backoff);
+    }
+  }
+  throw lastError;
 }
 
 async function main() {
@@ -113,8 +131,8 @@ async function main() {
         const monthEnd = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1));
         const from = month < start ? start : month;
         const to = monthEnd > end ? end : monthEnd;
-        const bidRaw = await fetchMonth(instrument, from, to, 'bid');
-        const askRaw = await fetchMonth(instrument, from, to, 'ask');
+        const bidRaw = await fetchPriceType(instrument, from, to, 'bid');
+        const askRaw = await fetchPriceType(instrument, from, to, 'ask');
         const bidMap = indexRows(aggregateToTenMinutes(bidRaw));
         const askMap = indexRows(aggregateToTenMinutes(askRaw));
         const bars = [];
