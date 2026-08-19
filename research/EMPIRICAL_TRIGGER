@@ -1,3 +1,4 @@
-2026-08-19T22:06:00+03:00
-Intent: trigger the audited sequential empirical research workflow after static/tests pass.
-Scope: 2020-01-01 to present, nine default liquid FX pairs, 10m baseline, no live execution.
+2026-08-19T22:16:00+03:00
+Intent: run the audited sequential empirical research sweep.
+Scope: 2020-01-01 to present; nine default liquid FX pairs; 10m baseline; live execution disabled.
+Validated runner: research/sequential_empirical.py
