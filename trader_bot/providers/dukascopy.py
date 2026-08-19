@@ -13,12 +13,7 @@ from ..models import DataRequest, MarketBar, OfferSide, Quote, Timeframe
 
 
 class DukascopyProvider:
-    """Dukascopy REST adapter.
-
-    The adapter is deliberately isolated from the rest of the system. Dukascopy's
-    documented historical endpoint caps a response at 5000 records, so requests
-    are bounded and the caller receives a normalized, validated sequence.
-    """
+    """Dukascopy REST adapter isolated behind the provider interface."""
 
     BASE_URL = "https://freeserv.dukascopy.com/2.0/"
     HISTORICAL_PATH = "api/historicalPrices"
@@ -39,11 +34,18 @@ class DukascopyProvider:
     def __exit__(self, *_: object) -> None:
         self.close()
 
+    @retry(
+        retry=retry_if_exception_type((ProviderUnavailable, ProviderRateLimited)),
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=8),
+        reraise=True,
+    )
     def _request(self, path: str, params: dict[str, Any]) -> Any:
+        query = {"path": path, **params}
         if self.settings.dukascopy_api_key:
-            params["key"] = self.settings.dukascopy_api_key
+            query["key"] = self.settings.dukascopy_api_key
         try:
-            response = self._client.get(self.BASE_URL, params={"path": path, **params})
+            response = self._client.get(self.BASE_URL, params=query)
         except httpx.HTTPError as exc:
             raise ProviderUnavailable(str(exc)) from exc
         if response.status_code == 429:
@@ -67,17 +69,13 @@ class DukascopyProvider:
     @staticmethod
     def _timestamp(value: Any) -> datetime:
         try:
-            # Dukascopy timestamps are Unix milliseconds.
             return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc)
         except (ValueError, TypeError, OverflowError) as exc:
             raise ProviderProtocolError(f"Invalid timestamp: {value!r}") from exc
 
     def historical_bars(self, request: DataRequest) -> Sequence[MarketBar]:
         if request.timeframe == Timeframe.TICK:
-            raise ValueError("historical_bars returns candles; use a future tick adapter for tick data")
-
-        # The official endpoint allows max=5000. We additionally bound the time
-        # range to avoid accidental multi-month single requests.
+            raise ValueError("historical_bars handles candles, not ticks")
         if request.end - request.start > timedelta(days=self.settings.max_history_window_days):
             raise ValueError("Request exceeds configured maximum historical window")
 
@@ -115,7 +113,6 @@ class DukascopyProvider:
                 )
             except KeyError as exc:
                 raise ProviderProtocolError(f"Missing historical field: {exc.args[0]}") from exc
-
         return sorted(bars, key=lambda x: x.timestamp)
 
     def current_quotes(self, instruments: Sequence[int]) -> Sequence[Quote]:
@@ -144,8 +141,6 @@ class DukascopyProvider:
 
     def health_check(self) -> bool:
         try:
-            # A lightweight request for a documented endpoint. We do not treat an
-            # empty result as proof of market availability; only transport/API health.
             self._request(self.CURRENT_PATH, {"instruments": "1"})
             return True
         except Exception:
