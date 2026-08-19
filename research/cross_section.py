@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from math import sqrt
-from collections.abc import Sequence
 from typing import Mapping
 
 
