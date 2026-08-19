@@ -5,7 +5,6 @@ import pytest
 from research.execution import ExecutionAssumptions
 from research.sequential_empirical import _calibration
 from research.synthetic import generate_bars
-from trader_bot.models import MarketBar, OfferSide, Timeframe
 from trader_bot.validation import expanding_walk_forward
 
 
@@ -18,7 +17,8 @@ def test_calibration_is_bounded_and_shape_safe() -> None:
 
 
 def test_walk_forward_purge_stays_before_test_window() -> None:
-    timestamps = [generate_bars(250)[i].timestamp for i in range(250)]
+    bars = generate_bars(250)
+    timestamps = [bar.timestamp for bar in bars]
     folds = expanding_walk_forward(
         timestamps,
         timedelta(days=2),
