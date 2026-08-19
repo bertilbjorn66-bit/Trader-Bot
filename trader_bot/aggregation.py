@@ -7,7 +7,6 @@ from decimal import Decimal
 
 from .models import MarketBar, Timeframe
 
-
 DERIVED_FROM: dict[Timeframe, tuple[Timeframe, int]] = {
     Timeframe.FIVE_MINUTES: (Timeframe.ONE_MINUTE, 5),
     Timeframe.FIFTEEN_MINUTES: (Timeframe.ONE_MINUTE, 15),
