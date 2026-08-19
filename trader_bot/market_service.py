@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 from collections.abc import Sequence
+from datetime import datetime
 
 from .data_provider import MarketDataProvider
 from .integrity import validate_bid_ask_alignment, validate_bars
@@ -16,8 +16,9 @@ class MarketDataService:
 
     def resolve_instrument_id(self, symbol: str) -> int:
         normalized = symbol.replace("/", "").replace("_", "").upper()
-        for instrument in self.provider.instruments():  # type: ignore[attr-defined]
-            if instrument.name.replace("/", "").replace("_", "").upper() == normalized:
+        for instrument in self.provider.instruments():
+            candidate = instrument.name.replace("/", "").replace("_", "").upper()
+            if candidate == normalized:
                 return instrument.id
         raise ValueError(f"Instrument not found: {symbol}")
 
