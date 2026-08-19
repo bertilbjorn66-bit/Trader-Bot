@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from math import sqrt
-from typing import Mapping, Sequence
+from collections.abc import Sequence
+from typing import Mapping
 
 
 def session_label(ts: datetime) -> str:
     if ts.tzinfo is None:
         raise ValueError("timestamp must be timezone-aware")
-    hour = ts.astimezone(__import__("datetime").timezone.utc).hour
+    hour = ts.astimezone(timezone.utc).hour
     if hour < 7:
         return "asia"
     if hour < 13:
