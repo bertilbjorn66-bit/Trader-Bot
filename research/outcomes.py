@@ -24,14 +24,15 @@ def future_outcome(
 
     entry_bar = bars[index]
     entry = entry_bar.ask_close if direction == "long" else entry_bar.bid_close
+    future = bars[index + 1 : end + 1]
     if direction == "long":
-        favorable = max(b.bid_high - entry for b in bars[index + 1 : end + 1])
-        adverse = max(entry - b.bid_low for b in bars[index + 1 : end + 1])
+        favorable = max(b.bid_high - entry for b in future)
+        adverse = max(entry - b.bid_low for b in future)
         exit_price = bars[end].bid_close
         movement = exit_price - entry
     else:
-        favorable = max(entry - b.ask_low for b in bars[index + 1 : end + 1])
-        adverse = max(b.ask_high - entry for b in bars[index + 1 : end + 1])
+        favorable = max(entry - b.ask_low for b in future)
+        adverse = max(b.ask_high - entry for b in future)
         exit_price = bars[end].ask_close
         movement = entry - exit_price
 
@@ -39,15 +40,15 @@ def future_outcome(
     if target is not None and stop is not None:
         if target <= 0 or stop <= 0:
             raise ValueError("target and stop must be positive distances")
-        for b in bars[index + 1 : end + 1]:
+        for bar in future:
             if direction == "long":
-                target_hit = b.bid_high >= entry + target
-                stop_hit = b.bid_low <= entry - stop
+                target_hit = bar.bid_high >= entry + target
+                stop_hit = bar.bid_low <= entry - stop
             else:
-                target_hit = b.ask_low <= entry - target
-                stop_hit = b.ask_high >= entry + stop
+                target_hit = bar.ask_low <= entry - target
+                stop_hit = bar.ask_high >= entry + stop
             if target_hit and stop_hit:
-                hit = None  # Intrabar ordering is unknown at bar resolution.
+                hit = None
                 break
             if target_hit:
                 hit = True
@@ -57,10 +58,14 @@ def future_outcome(
                 break
 
     values = (entry, exit_price, movement, favorable, adverse)
-    if not all(isfinite(v) for v in values):
+    if not all(isfinite(value) for value in values):
         raise ValueError("non-finite outcome")
     return Outcome(bars[index].timestamp, horizon, direction, entry, exit_price, movement, favorable, adverse, hit)
 
 
 def horizon_outcomes(bars: Sequence[Bar], index: int, horizons: Sequence[int], direction: str) -> list[Outcome]:
-    return [future_outcome(bars, index, h, direction) for h in horizons if index + h < len(bars)]
+    return [
+        future_outcome(bars, index, horizon, direction)
+        for horizon in horizons
+        if index + horizon <= len(bars) - 1
+    ]
