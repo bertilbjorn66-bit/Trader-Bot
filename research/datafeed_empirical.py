@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Iterator, cast
 
+from trader_bot.data_provider import MarketDataProvider
 from trader_bot.models import MarketBar, OfferSide, Timeframe
 from trader_bot.providers.dukascopy import DukascopyProvider
 
@@ -67,12 +68,16 @@ def _market_bars(rows: list[dict[str, object]]) -> tuple[tuple[MarketBar, ...], 
     ask: list[MarketBar] = []
     for row in rows:
         timestamp = datetime.fromtimestamp(_timestamp_ms(row) / 1000, tz=timezone.utc)
-        bid.append(MarketBar(timestamp=timestamp, instrument=1, timeframe=Timeframe.TEN_MINUTES, offer_side=OfferSide.BID,
-                              open=Decimal(str(_number(row, "bid_open"))), high=Decimal(str(_number(row, "bid_high"))),
-                              low=Decimal(str(_number(row, "bid_low"))), close=Decimal(str(_number(row, "bid_close")))))
-        ask.append(MarketBar(timestamp=timestamp, instrument=1, timeframe=Timeframe.TEN_MINUTES, offer_side=OfferSide.ASK,
-                              open=Decimal(str(_number(row, "ask_open"))), high=Decimal(str(_number(row, "ask_high"))),
-                              low=Decimal(str(_number(row, "ask_low"))), close=Decimal(str(_number(row, "ask_close")))))
+        bid.append(MarketBar(
+            timestamp=timestamp, instrument=1, timeframe=Timeframe.TEN_MINUTES, offer_side=OfferSide.BID,
+            open=Decimal(str(_number(row, "bid_open"))), high=Decimal(str(_number(row, "bid_high"))),
+            low=Decimal(str(_number(row, "bid_low"))), close=Decimal(str(_number(row, "bid_close"))),
+        ))
+        ask.append(MarketBar(
+            timestamp=timestamp, instrument=1, timeframe=Timeframe.TEN_MINUTES, offer_side=OfferSide.ASK,
+            open=Decimal(str(_number(row, "ask_open"))), high=Decimal(str(_number(row, "ask_high"))),
+            low=Decimal(str(_number(row, "ask_low"))), close=Decimal(str(_number(row, "ask_close"))),
+        ))
     return tuple(bid), tuple(ask)
 
 
@@ -90,8 +95,12 @@ def analyze_from_feed(
     original_iter = empirical.iter_bid_ask_batches  # type: ignore[attr-defined]
 
     def feed_iter(
-        _provider: object, _instrument_id: int, _timeframe: Timeframe,
-        _start: datetime, _end: datetime, _max_days_per_batch: int,
+        _provider: MarketDataProvider,
+        _instrument_id: int,
+        _timeframe: Timeframe,
+        _start: datetime,
+        _end: datetime,
+        _max_days_per_batch: int,
     ) -> Iterator[tuple[tuple[MarketBar, ...], tuple[MarketBar, ...]]]:
         yield bid, ask
 
@@ -102,7 +111,7 @@ def analyze_from_feed(
             sample_stride, history_states, empirical.DEFAULT_HORIZONS, max_days_per_batch, costs,
         )
     finally:
-        empirical.iter_bid_ask_batches = original_iter  # type: ignore[attr-defined,assignment]
+        empirical.iter_bid_ask_batches = original_iter  # type: ignore[attr-defined]
     return report, returns
 
 
