@@ -1,6 +1,11 @@
 name: Empirical Research
 
 on:
+  push:
+    branches: [research/quant-pipeline]
+    paths:
+      - "research/**"
+      - ".github/workflows/empirical-research.yml"
   workflow_dispatch:
     inputs:
       start:
@@ -14,7 +19,7 @@ on:
       pairs:
         description: "Comma-separated Dukascopy pair names"
         required: false
-        default: "EUR/USD"
+        default: "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY"
       timeframe:
         description: "Provider timeframe"
         required: false
@@ -30,7 +35,7 @@ on:
         required: false
         default: "120"
       history_states:
-        description: "Maximum historical states used per target"
+        description: "Historical states used per target"
         required: false
         default: "10000"
 
@@ -56,24 +61,25 @@ jobs:
           mypy trader_bot research
       - name: Run tests
         run: pytest
-      - name: Run empirical research
+      - name: Run sequential empirical research
         env:
-          RESEARCH_START: ${{ inputs.start }}
-          RESEARCH_END: ${{ inputs.end }}
-          RESEARCH_PAIRS: ${{ inputs.pairs }}
-          RESEARCH_TIMEFRAME: ${{ inputs.timeframe }}
-          RESEARCH_STRIDE: ${{ inputs.sample_stride }}
-          RESEARCH_HISTORY: ${{ inputs.history_states }}
+          RESEARCH_START: ${{ github.event.inputs.start || '2020-01-01T00:00:00+00:00' }}
+          RESEARCH_END: ${{ github.event.inputs.end || '' }}
+          RESEARCH_PAIRS: ${{ github.event.inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
+          RESEARCH_TIMEFRAME: ${{ github.event.inputs.timeframe || '10m' }}
+          RESEARCH_STRIDE: ${{ github.event.inputs.sample_stride || '120' }}
+          RESEARCH_HISTORY: ${{ github.event.inputs.history_states || '10000' }}
         run: |
           END_ARG=""
           if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
-          python -m research.real_data_run \
+          python -m research.sequential_empirical \
             --start "$RESEARCH_START" \
             $END_ARG \
             --pairs "$RESEARCH_PAIRS" \
             --timeframe "$RESEARCH_TIMEFRAME" \
             --sample-stride "$RESEARCH_STRIDE" \
             --history-states "$RESEARCH_HISTORY" \
+            --max-days-per-batch 7 \
             --output artifacts/empirical_report.json
       - name: Upload empirical report
         uses: actions/upload-artifact@v4
