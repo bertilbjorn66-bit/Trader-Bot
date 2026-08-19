@@ -4,6 +4,8 @@ from math import sqrt
 from statistics import mean, median
 from typing import Sequence
 
+from .multiple_testing import benjamini_hochberg, bonferroni, holm_bonferroni
+
 
 def wilson_interval(successes: int, n: int, z: float = 1.959963984540054) -> tuple[float, float]:
     if n <= 0 or successes < 0 or successes > n:
@@ -57,39 +59,14 @@ def max_drawdown(returns: Sequence[float]) -> float:
     return -worst
 
 
-def _validate_p_values(p_values: Sequence[float]) -> None:
-    if any(p < 0 or p > 1 for p in p_values):
-        raise ValueError("p-values must be within [0, 1]")
-
-
+# Backward-compatible aliases; canonical implementations live in research.multiple_testing.
 def multiple_testing_bonferroni(p_values: Sequence[float]) -> list[float]:
-    _validate_p_values(p_values)
-    m = len(p_values)
-    return [] if m == 0 else [min(1.0, p * m) for p in p_values]
+    return bonferroni(p_values)
 
 
 def multiple_testing_holm(p_values: Sequence[float]) -> list[float]:
-    _validate_p_values(p_values)
-    m = len(p_values)
-    adjusted = [0.0] * m
-    order = sorted(range(m), key=lambda index: p_values[index])
-    running = 0.0
-    for rank, index in enumerate(order, start=1):
-        running = max(running, min(1.0, p_values[index] * (m - rank + 1)))
-        adjusted[index] = running
-    return adjusted
+    return holm_bonferroni(p_values)
 
 
 def multiple_testing_bh_fdr(p_values: Sequence[float]) -> list[float]:
-    _validate_p_values(p_values)
-    m = len(p_values)
-    if m == 0:
-        return []
-    order = sorted(range(m), key=lambda index: p_values[index])
-    adjusted = [1.0] * m
-    running = 1.0
-    for rank in range(m, 0, -1):
-        index = order[rank - 1]
-        running = min(running, p_values[index] * m / rank)
-        adjusted[index] = min(1.0, running)
-    return adjusted
+    return benjamini_hochberg(p_values)
