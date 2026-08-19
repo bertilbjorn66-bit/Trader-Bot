@@ -1,4 +1,4 @@
-2026-08-19T22:23:00+03:00
-Intent: final audited sequential empirical research sweep.
+2026-08-19T22:40:00+03:00
+Intent: final empirical datafeed-backed sequential research sweep.
 Scope: 2020-01-01 to present; nine default liquid FX pairs; 10m baseline; live execution disabled.
-Runner and workflow are aligned with main.
+Data source: Dukascopy public datafeed via dukascopy-node; complete m5-to-10m aggregation; no permanent raw archive.
