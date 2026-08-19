@@ -24,20 +24,31 @@ class Bar:
     def __post_init__(self) -> None:
         if self.timestamp.tzinfo is None:
             raise ValueError("Bar timestamp must be timezone-aware")
-        bid = (self.bid_open, self.bid_high, self.bid_low, self.bid_close)
-        ask = (self.ask_open, self.ask_high, self.ask_low, self.ask_close)
-        if not all(isfinite(v) and v > 0 for v in bid + ask):
+        prices = (
+            self.bid_open,
+            self.bid_high,
+            self.bid_low,
+            self.bid_close,
+            self.ask_open,
+            self.ask_high,
+            self.ask_low,
+            self.ask_close,
+        )
+        if not all(isfinite(value) and value > 0 for value in prices):
             raise ValueError("Bar prices must be finite and positive")
         if self.bid_high < max(self.bid_open, self.bid_close) or self.bid_low > min(self.bid_open, self.bid_close):
             raise ValueError("Invalid BID OHLC")
         if self.ask_high < max(self.ask_open, self.ask_close) or self.ask_low > min(self.ask_open, self.ask_close):
             raise ValueError("Invalid ASK OHLC")
-        if self.ask_low < self.bid_low or self.ask_high < self.bid_high:
-            # Not necessarily invalid for independently sampled OHLC bars; only the
-            # close/open cross-side relationship is enforced below.
-            pass
         if self.ask_close < self.bid_close or self.ask_open < self.bid_open:
             raise ValueError("ASK must be >= BID at open and close")
+        spreads = (self.spread_open, self.spread_high, self.spread_low, self.spread_close)
+        if any(value is not None and (not isfinite(value) or value < 0) for value in spreads):
+            raise ValueError("provided spreads must be finite and non-negative")
+        if self.spread_open is not None and self.spread_open == 0 and self.ask_open != self.bid_open:
+            raise ValueError("spread_open conflicts with BID/ASK open prices")
+        if self.spread_close is not None and self.spread_close == 0 and self.ask_close != self.bid_close:
+            raise ValueError("spread_close conflicts with BID/ASK close prices")
 
     @property
     def spread(self) -> float:
