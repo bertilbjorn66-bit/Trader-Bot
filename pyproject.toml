@@ -26,7 +26,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["trader_bot*"]
+include = ["trader_bot*", "research*"]
 
 [tool.ruff]
 line-length = 100
