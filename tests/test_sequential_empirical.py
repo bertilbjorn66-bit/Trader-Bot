@@ -5,7 +5,7 @@ import pytest
 from research.execution import ExecutionAssumptions
 from research.sequential_empirical import _calibration
 from research.synthetic import generate_bars
-from trader_bot.validation import expanding_walk_forward
+from research.validation import expanding_walk_forward
 
 
 def test_calibration_is_bounded_and_shape_safe() -> None:
