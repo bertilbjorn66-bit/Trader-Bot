@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from .data_provider import MarketDataProvider
-from .integrity import validate_bid_ask_alignment, validate_bars
+from .integrity import validate_bars, validate_bid_ask_alignment
 from .models import DataRequest, MarketBar, OfferSide, Timeframe
 
 
