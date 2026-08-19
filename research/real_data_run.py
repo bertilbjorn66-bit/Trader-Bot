@@ -3,20 +3,20 @@ from __future__ import annotations
 import argparse
 import json
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from datetime import datetime, timezone
 from pathlib import Path
 
 from trader_bot.models import MarketBar, Timeframe
 from trader_bot.providers.dukascopy import DukascopyProvider
 
+from .execution import ExecutionAssumptions, net_move, validate_spread
 from .historical_scan import iter_bid_ask_batches
 from .outcomes import future_outcome
 from .pipeline import state_from_bar_window
+from .similarity import DEFAULT_FEATURES, fit_scaler, nearest_states
 from .statistics import expectancy, max_drawdown, probability_summary
 from .types import Bar, State
 from .validation import ensure_time_order
-from .similarity import DEFAULT_FEATURES, fit_scaler, nearest_states
 
 TIMEFRAMES = {
     "1min": Timeframe.ONE_MINUTE,
@@ -56,7 +56,7 @@ def _merge_batches(
     if set(bid_by_time) != set(ask_by_time):
         raise ValueError("BID/ASK timestamps are not identical")
     bars = [_to_bar(ts, bid_by_time[ts], ask_by_time[ts]) for ts in sorted(bid_by_time)]
-    ensure_time_order(bars)
+    ensure_time_order([Bar(**bar.__dict__) for bar in bars]) if False else None
     return bars
 
 
@@ -75,7 +75,11 @@ def analyze_pair(
     history_states: int,
     horizons: tuple[int, ...],
     max_days_per_batch: int,
+    costs: ExecutionAssumptions,
 ) -> dict[str, object]:
+    if sample_stride <= 0 or history_states <= 0 or max_days_per_batch <= 0:
+        raise ValueError("sample_stride, history_states, and max_days_per_batch must be positive")
+
     bars: list[Bar] = []
     for bid, ask in iter_bid_ask_batches(
         provider,
@@ -87,6 +91,7 @@ def analyze_pair(
     ):
         bars.extend(_merge_batches(bid, ask))
 
+    ensure_time_order(bars)
     if len(bars) < 100:
         raise ValueError(f"insufficient bars for {pair_name}: {len(bars)}")
 
@@ -97,21 +102,32 @@ def analyze_pair(
     maes: dict[int, list[float]] = defaultdict(list)
     distances: list[float] = []
     sampled = 0
+    spread_rejected = 0
 
     for pos in range(history_states, len(states), sample_stride):
         target = states[pos]
-        current_index = state_index[target.timestamp]
         history = states[max(0, pos - history_states):pos]
         if len(history) < 100:
             continue
+        current_spread = float(target.features.get("spread") or 0.0)
+        try:
+            validate_spread(current_spread, costs)
+        except ValueError:
+            spread_rejected += 1
+            continue
+
         scaler = fit_scaler(history, DEFAULT_FEATURES)
         neighbors = nearest_states(target, history, scaler, k=min(100, len(history)))
+        neighbors = [
+            (state, distance)
+            for state, distance in neighbors
+            if costs.max_spread is None or float(state.features.get("spread") or 0.0) <= costs.max_spread
+        ]
         if not neighbors:
             continue
         direction = "long" if float(target.features.get("momentum") or 0.0) >= 0 else "short"
         sampled += 1
-        for _, distance in neighbors:
-            distances.append(distance)
+        distances.extend(distance for _, distance in neighbors)
 
         for horizon in horizons:
             horizon_outcomes: list[float] = []
@@ -122,7 +138,7 @@ def analyze_pair(
                 if idx + horizon >= len(bars):
                     continue
                 outcome = future_outcome(bars, idx, horizon, direction)
-                horizon_outcomes.append(outcome.return_abs)
+                horizon_outcomes.append(net_move(outcome.return_abs, costs))
                 horizon_mfe.append(outcome.mfe_abs)
                 horizon_mae.append(outcome.mae_abs)
             results[horizon].extend(horizon_outcomes)
@@ -153,7 +169,13 @@ def analyze_pair(
         "sample_stride": sample_stride,
         "history_states": history_states,
         "sampled_targets": sampled,
+        "spread_rejected_targets": spread_rejected,
         "mean_neighbor_distance": sum(distances) / len(distances) if distances else None,
+        "cost_assumptions": {
+            "slippage": costs.slippage,
+            "commission": costs.commission,
+            "max_spread": costs.max_spread,
+        },
         "horizons": report_horizons,
         "empirical": True,
         "warning": "Empirical historical research only; not evidence of future profitability.",
@@ -170,6 +192,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--history-states", type=int, default=10000)
     parser.add_argument("--max-days-per-batch", type=int, default=30)
     parser.add_argument("--horizons", default=",".join(map(str, DEFAULT_HORIZONS)))
+    parser.add_argument("--slippage", type=float, default=0.0)
+    parser.add_argument("--commission", type=float, default=0.0)
+    parser.add_argument("--max-spread", type=float, default=None)
     parser.add_argument("--output", default="artifacts/empirical_report.json")
     return parser.parse_args()
 
@@ -187,6 +212,11 @@ def main() -> None:
     horizons = tuple(int(x) for x in args.horizons.split(",") if x.strip())
     if not horizons or any(x <= 0 for x in horizons):
         raise SystemExit("horizons must contain positive integers")
+    costs = ExecutionAssumptions(
+        slippage=args.slippage,
+        commission=args.commission,
+        max_spread=args.max_spread,
+    )
 
     with DukascopyProvider() as provider:
         instruments = {instrument.name.upper(): instrument for instrument in provider.instruments()}
@@ -207,6 +237,7 @@ def main() -> None:
                     args.history_states,
                     horizons,
                     args.max_days_per_batch,
+                    costs,
                 )
             )
 
