@@ -21,10 +21,10 @@ def test_walk_forward_purge_stays_before_test_window() -> None:
     timestamps = [bar.timestamp for bar in bars]
     folds = expanding_walk_forward(
         timestamps,
-        timedelta(days=2),
-        timedelta(days=1),
-        step=timedelta(days=1),
-        purge=timedelta(hours=2),
+        timedelta(hours=2),
+        timedelta(hours=1),
+        step=timedelta(hours=1),
+        purge=timedelta(minutes=10),
     )
     assert folds
     assert all(f.train_end < f.test_start < f.test_end for f in folds)
