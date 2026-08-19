@@ -17,12 +17,14 @@ class IntegrityReport:
 
     @property
     def ok(self) -> bool:
+        # Missing timestamps are reported but are not automatically fatal: FX has
+        # legitimate market-closure/session gaps. A trading-calendar-aware validator
+        # will decide whether an observed gap is expected or corrupt.
         return (
             self.rows > 0
             and self.strictly_increasing
             and self.duplicate_timestamps == 0
             and self.invalid_spans == 0
-            and self.missing_timestamps == 0
         )
 
 
@@ -32,9 +34,16 @@ def validate_bars(bars: Sequence[MarketBar]) -> IntegrityReport:
 
     ordered = sorted(bars, key=lambda x: x.timestamp)
     duplicates = sum(1 for a, b in zip(ordered, ordered[1:]) if a.timestamp == b.timestamp)
-    invalid_spans = sum(1 for b in ordered if b.low > b.high or b.open < b.low or b.open > b.high or b.close < b.low or b.close > b.high)
+    invalid_spans = sum(
+        1
+        for b in ordered
+        if b.low > b.high
+        or b.open < b.low
+        or b.open > b.high
+        or b.close < b.low
+        or b.close > b.high
+    )
 
-    # For candle timeframes we can detect gaps from the expected interval.
     interval = {
         "10sec": timedelta(seconds=10),
         "1min": timedelta(minutes=1),
@@ -65,7 +74,5 @@ def validate_bid_ask_alignment(bid: Sequence[MarketBar], ask: Sequence[MarketBar
         raise ValueError("BID collection contains a non-BID row")
     if any(x.offer_side != OfferSide.ASK for x in ask):
         raise ValueError("ASK collection contains a non-ASK row")
-    bid_ts = [x.timestamp for x in bid]
-    ask_ts = [x.timestamp for x in ask]
-    if bid_ts != ask_ts:
+    if [x.timestamp for x in bid] != [x.timestamp for x in ask]:
         raise ValueError("BID and ASK timestamps do not align exactly")
