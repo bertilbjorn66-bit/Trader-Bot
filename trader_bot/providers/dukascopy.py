@@ -22,9 +22,7 @@ class DukascopyProvider:
     HEALTH_PATH = "api/lastOneMinuteCandles"
     INSTRUMENTS_PATH = "api/instrumentList"
 
-    def __init__(
-        self, settings: Settings | None = None, client: httpx.Client | None = None
-    ) -> None:
+    def __init__(self, settings: Settings | None = None, client: httpx.Client | None = None) -> None:
         self.settings = settings or get_settings()
         self._client = client or httpx.Client(timeout=self.settings.request_timeout_seconds)
         self._owns_client = client is None
@@ -102,12 +100,10 @@ class DukascopyProvider:
                     Instrument(
                         id=int(row["id"]),
                         name=str(row["name"]),
-                        pip_value=(
-                            self._decimal(row["pipValue"])
-                            if row.get("pipValue") is not None
-                            else None
-                        ),
-                        name_long=(str(row["nameLong"]) if row.get("nameLong") else None),
+                        pip_value=self._decimal(row["pipValue"])
+                        if row.get("pipValue") is not None
+                        else None,
+                        name_long=str(row["nameLong"]) if row.get("nameLong") else None,
                     )
                 )
             except (KeyError, ValueError, TypeError) as exc:
@@ -132,11 +128,9 @@ class DukascopyProvider:
                         high=self._decimal(row["high"]),
                         low=self._decimal(row["low"]),
                         close=self._decimal(row["close"]),
-                        volume=(
-                            self._decimal(row["volume"])
-                            if row.get("volume") is not None
-                            else None
-                        ),
+                        volume=self._decimal(row["volume"])
+                        if row.get("volume") is not None
+                        else None,
                     )
                 )
             except KeyError as exc:
@@ -168,7 +162,7 @@ class DukascopyProvider:
                 },
             )
             for bar in self._parse_historical(payload, request):
-                if request.start <= bar.timestamp <= request.end:
+                if request.start <= bar.timestamp < request.end:
                     all_bars[bar.timestamp] = bar
             if chunk_end >= request.end:
                 break
