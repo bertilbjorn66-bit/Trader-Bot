@@ -3,6 +3,7 @@ from datetime import timedelta
 import pytest
 
 from research.execution import ExecutionAssumptions, net_move, validate_spread
+from research.multiple_testing import benjamini_hochberg, bonferroni, holm_bonferroni
 from research.outcomes import future_outcome
 from research.pipeline import build_states, research_snapshot
 from research.similarity import fit_scaler, nearest_states
@@ -46,6 +47,13 @@ def test_execution_cost_does_not_double_charge_spread() -> None:
     assert net_move(2.0, assumptions) == pytest.approx(1.7)
     with pytest.raises(ValueError):
         validate_spread(1.1, assumptions)
+
+
+def test_multiple_testing_adjustments_preserve_shape() -> None:
+    p_values = [0.001, 0.02, 0.2, 0.9]
+    for adjusted in (bonferroni(p_values), holm_bonferroni(p_values), benjamini_hochberg(p_values)):
+        assert len(adjusted) == len(p_values)
+        assert all(0.0 <= p <= 1.0 for p in adjusted)
 
 
 def test_statistics_and_walk_forward() -> None:
