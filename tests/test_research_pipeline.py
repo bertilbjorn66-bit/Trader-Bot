@@ -4,7 +4,7 @@ import pytest
 
 from research.execution import ExecutionAssumptions, net_move, validate_spread
 from research.multiple_testing import benjamini_hochberg, bonferroni, holm_bonferroni
-from research.outcomes import future_outcome
+from research.outcomes import future_outcome, horizon_outcomes
 from research.pipeline import build_states, research_snapshot
 from research.similarity import fit_scaler, nearest_states
 from research.statistics import expectancy, probability_summary
@@ -29,6 +29,12 @@ def test_outcome_uses_direction_correct_bid_ask() -> None:
     assert short_outcome.entry == bars[50].bid_close
     assert long_outcome.mfe_abs >= 0
     assert long_outcome.mae_abs >= 0
+
+
+def test_horizon_includes_terminal_bar() -> None:
+    bars = generate_bars(100)
+    outcomes = horizon_outcomes(bars, 94, [5], "long")
+    assert len(outcomes) == 1
 
 
 def test_similarity_excludes_future_states() -> None:
@@ -63,9 +69,9 @@ def test_statistics_and_walk_forward() -> None:
     assert 0 <= float(stats["probability"]) <= 1
     assert ev["expectancy"] is not None
     timestamps = [generate_bars(30)[i].timestamp for i in range(30)]
-    folds = expanding_walk_forward(timestamps, timedelta(days=1), timedelta(hours=6))
+    folds = expanding_walk_forward(timestamps, timedelta(days=1), timedelta(hours=6), purge=timedelta(hours=1))
     assert folds
-    assert all(f.train_end <= f.test_start for f in folds)
+    assert all(f.train_end < f.test_start for f in folds)
 
 
 def test_end_to_end_snapshot_is_explicitly_non_empirical() -> None:
