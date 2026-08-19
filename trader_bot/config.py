@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     cache_root: Path = Path(".data/cache")
     request_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
     request_retries: int = Field(default=4, ge=0, le=10)
-    max_bars_per_request: int = Field(default=5000, ge=1, le=5000)
+    max_bars_per_request: int = Field(default=5000, ge=2, le=5000)
     max_history_window_days: int = Field(default=7, ge=1, le=31)
     live_trading_enabled: bool = False
 
