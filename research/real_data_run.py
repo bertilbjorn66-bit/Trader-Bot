@@ -16,7 +16,6 @@ from .pipeline import state_from_bar_window
 from .similarity import DEFAULT_FEATURES, fit_scaler, nearest_states
 from .statistics import expectancy, max_drawdown, probability_summary
 from .types import Bar, State
-from .validation import ensure_time_order
 
 TIMEFRAMES = {
     "1min": Timeframe.ONE_MINUTE,
@@ -27,6 +26,7 @@ TIMEFRAMES = {
 
 DEFAULT_PAIRS = ("EUR/USD",)
 DEFAULT_HORIZONS = (1, 2, 3, 6)
+STATE_LOOKBACK = 20
 
 
 def _to_bar(timestamp: datetime, bid: MarketBar, ask: MarketBar) -> Bar:
@@ -55,13 +55,11 @@ def _merge_batches(
     ask_by_time = {bar.timestamp: bar for bar in ask_bars}
     if set(bid_by_time) != set(ask_by_time):
         raise ValueError("BID/ASK timestamps are not identical")
-    bars = [_to_bar(ts, bid_by_time[ts], ask_by_time[ts]) for ts in sorted(bid_by_time)]
-    ensure_time_order([Bar(**bar.__dict__) for bar in bars]) if False else None
-    return bars
+    return [_to_bar(ts, bid_by_time[ts], ask_by_time[ts]) for ts in sorted(bid_by_time)]
 
 
-def _states_for_bars(bars: list[Bar], lookback: int = 20) -> list[State]:
-    return [state_from_bar_window(bars, i, lookback) for i in range(lookback, len(bars))]
+def _states_for_bars(bars: list[Bar]) -> list[State]:
+    return [state_from_bar_window(bars, i, STATE_LOOKBACK) for i in range(STATE_LOOKBACK, len(bars))]
 
 
 def analyze_pair(
@@ -91,12 +89,14 @@ def analyze_pair(
     ):
         bars.extend(_merge_batches(bid, ask))
 
-    ensure_time_order(bars)
+    for previous, current in zip(bars, bars[1:]):
+        if current.timestamp <= previous.timestamp:
+            raise ValueError("empirical bars must be strictly time ordered")
     if len(bars) < 100:
         raise ValueError(f"insufficient bars for {pair_name}: {len(bars)}")
 
     states = _states_for_bars(bars)
-    state_index = {state.timestamp: i + 20 for i, state in enumerate(states)}
+    state_index = {state.timestamp: i + STATE_LOOKBACK for i, state in enumerate(states)}
     results: dict[int, list[float]] = defaultdict(list)
     mfes: dict[int, list[float]] = defaultdict(list)
     maes: dict[int, list[float]] = defaultdict(list)
@@ -106,7 +106,7 @@ def analyze_pair(
 
     for pos in range(history_states, len(states), sample_stride):
         target = states[pos]
-        history = states[max(0, pos - history_states):pos]
+        history = states[max(0, pos - history_states) : pos]
         if len(history) < 100:
             continue
         current_spread = float(target.features.get("spread") or 0.0)
