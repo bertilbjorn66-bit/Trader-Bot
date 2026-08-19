@@ -6,6 +6,8 @@ on:
     paths:
       - "research/EMPIRICAL_TRIGGER"
       - ".github/workflows/empirical-research.yml"
+      - "research/datafeed_download.js"
+      - "research/datafeed_empirical.py"
   workflow_dispatch:
     inputs:
       start:
@@ -20,18 +22,8 @@ on:
         description: "Comma-separated Dukascopy pair names"
         required: false
         default: "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY"
-      timeframe:
-        description: "Provider timeframe"
-        required: false
-        default: "10m"
-        type: choice
-        options:
-          - 10m
-          - 1min
-          - 1hour
-          - 1day
       sample_stride:
-        description: "Target stride in bars"
+        description: "Target stride in 10m bars"
         required: false
         default: "120"
       history_states:
@@ -53,33 +45,52 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install Python dependencies
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Install Dukascopy datafeed client
+        run: npm install --no-save dukascopy-node@1.27.0
       - name: Static checks
         run: |
           ruff check .
           mypy trader_bot research
       - name: Run tests
         run: pytest
+      - name: Download and aggregate transient datafeed data
+        env:
+          RESEARCH_START: ${{ github.event.inputs.start || '2020-01-01T00:00:00+00:00' }}
+          RESEARCH_END: ${{ github.event.inputs.end || '' }}
+          RESEARCH_PAIRS: ${{ github.event.inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
+        run: |
+          END_ARG=""
+          if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
+          node research/datafeed_download.js \
+            --start "$RESEARCH_START" \
+            $END_ARG \
+            --pairs "${RESEARCH_PAIRS//\//}" \
+            --out-dir .data/empirical_feed
       - name: Run sequential empirical research
         env:
           RESEARCH_START: ${{ github.event.inputs.start || '2020-01-01T00:00:00+00:00' }}
           RESEARCH_END: ${{ github.event.inputs.end || '' }}
           RESEARCH_PAIRS: ${{ github.event.inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
-          RESEARCH_TIMEFRAME: ${{ github.event.inputs.timeframe || '10m' }}
           RESEARCH_STRIDE: ${{ github.event.inputs.sample_stride || '120' }}
           RESEARCH_HISTORY: ${{ github.event.inputs.history_states || '10000' }}
         run: |
           END_ARG=""
           if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
-          python -m research.sequential_empirical \
+          python -m research.datafeed_empirical \
             --start "$RESEARCH_START" \
             $END_ARG \
             --pairs "$RESEARCH_PAIRS" \
-            --timeframe "$RESEARCH_TIMEFRAME" \
             --sample-stride "$RESEARCH_STRIDE" \
             --history-states "$RESEARCH_HISTORY" \
             --max-days-per-batch 7 \
+            --input-dir .data/empirical_feed \
             --output artifacts/empirical_report.json
       - name: Upload empirical report
         uses: actions/upload-artifact@v4
