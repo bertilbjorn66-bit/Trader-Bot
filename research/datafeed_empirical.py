@@ -5,12 +5,13 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Iterator
+from typing import Iterator, cast
 
 from trader_bot.models import MarketBar, OfferSide, Timeframe
+from trader_bot.providers.dukascopy import DukascopyProvider
 
 from . import sequential_empirical as empirical
+from .execution import ExecutionAssumptions
 
 PAIR_TO_SYMBOL = {
     "EUR/USD": "eurusd",
@@ -32,6 +33,13 @@ def _number(row: dict[str, object], key: str) -> float:
     return float(value)
 
 
+def _timestamp_ms(row: dict[str, object]) -> int:
+    value = row.get("timestamp")
+    if not isinstance(value, (int, float)):
+        raise ValueError("Feed timestamp must be numeric")
+    return int(value)
+
+
 def load_feed_bars(path: Path) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     with path.open("r", encoding="utf-8") as handle:
@@ -44,25 +52,29 @@ def load_feed_bars(path: Path) -> list[dict[str, object]]:
             for item in payload["bars"]:
                 if not isinstance(item, dict):
                     raise ValueError(f"Invalid bar at {path}:{line_number}")
-                if not isinstance(item.get("timestamp"), (int, float)):
-                    raise ValueError(f"Invalid timestamp at {path}:{line_number}")
-                for key in ("bid_open", "bid_high", "bid_low", "bid_close", "ask_open", "ask_high", "ask_low", "ask_close"):
+                _timestamp_ms(item)
+                for key in (
+                    "bid_open", "bid_high", "bid_low", "bid_close",
+                    "ask_open", "ask_high", "ask_low", "ask_close",
+                ):
                     _number(item, key)
                 rows.append(dict(item))
-    rows.sort(key=lambda value: int(value["timestamp"]))
+    rows.sort(key=_timestamp_ms)
     if not rows:
         raise ValueError(f"No bars loaded for {path}")
-    timestamps = [int(row["timestamp"]) for row in rows]
+    timestamps = [_timestamp_ms(row) for row in rows]
     if len(timestamps) != len(set(timestamps)):
         raise ValueError(f"Duplicate timestamps in {path}")
     return rows
 
 
-def _market_bars(rows: list[dict[str, object]]) -> tuple[tuple[MarketBar, ...], tuple[MarketBar, ...]]:
+def _market_bars(
+    rows: list[dict[str, object]],
+) -> tuple[tuple[MarketBar, ...], tuple[MarketBar, ...]]:
     bid: list[MarketBar] = []
     ask: list[MarketBar] = []
     for row in rows:
-        timestamp = datetime.fromtimestamp(int(row["timestamp"]) / 1000, tz=timezone.utc)
+        timestamp = datetime.fromtimestamp(_timestamp_ms(row) / 1000, tz=timezone.utc)
         bid.append(
             MarketBar(
                 timestamp=timestamp,
@@ -98,10 +110,10 @@ def analyze_from_feed(
     sample_stride: int,
     history_states: int,
     max_days_per_batch: int,
-    costs: empirical.ExecutionAssumptions,
+    costs: ExecutionAssumptions,
 ) -> tuple[dict[str, object], list[tuple[datetime, float]]]:
     bid, ask = _market_bars(rows)
-    original_iter = empirical.iter_bid_ask_batches
+    original_iter = getattr(empirical, "iter_bid_ask_batches")
 
     def feed_iter(
         _provider: object,
@@ -113,10 +125,10 @@ def analyze_from_feed(
     ) -> Iterator[tuple[tuple[MarketBar, ...], tuple[MarketBar, ...]]]:
         yield bid, ask
 
-    empirical.iter_bid_ask_batches = feed_iter  # type: ignore[assignment]
+    setattr(empirical, "iter_bid_ask_batches", feed_iter)
     try:
         report, returns = empirical.analyze_pair(
-            SimpleNamespace(),
+            cast(DukascopyProvider, object()),
             pair,
             1,
             start,
@@ -129,7 +141,7 @@ def analyze_from_feed(
             costs,
         )
     finally:
-        empirical.iter_bid_ask_batches = original_iter
+        setattr(empirical, "iter_bid_ask_batches", original_iter)
     return report, returns
 
 
@@ -163,7 +175,7 @@ def main() -> None:
 
     reports: list[dict[str, object]] = []
     series: dict[str, list[tuple[datetime, float]]] = {}
-    costs = empirical.ExecutionAssumptions()
+    costs = ExecutionAssumptions()
     input_dir = Path(args.input_dir)
     for pair in pairs:
         rows = load_feed_bars(input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl")
