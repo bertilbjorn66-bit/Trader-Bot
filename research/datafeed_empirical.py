@@ -95,7 +95,7 @@ def analyze_from_feed(
     ) -> Iterator[tuple[tuple[MarketBar, ...], tuple[MarketBar, ...]]]:
         yield bid, ask
 
-    empirical.iter_bid_ask_batches = feed_iter  # type: ignore[attr-defined,assignment]
+    empirical.iter_bid_ask_batches = feed_iter  # type: ignore[attr-defined]
     try:
         report, returns = empirical.analyze_pair(
             cast(DukascopyProvider, object()), pair, 1, start, end, Timeframe.TEN_MINUTES,
