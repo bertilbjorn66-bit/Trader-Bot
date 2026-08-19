@@ -1,6 +1,13 @@
 name: Empirical Research
 
 on:
+  push:
+    branches: ["empirical-rest-v1"]
+    paths:
+      - "research/EMPIRICAL_TRIGGER"
+      - ".github/workflows/empirical-research.yml"
+      - "research/rest_datafeed_download.py"
+      - "research/datafeed_empirical.py"
   pull_request:
     branches: [main]
     paths:
