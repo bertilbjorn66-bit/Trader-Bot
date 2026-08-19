@@ -5,8 +5,8 @@ from datetime import datetime
 from statistics import mean
 from typing import Sequence
 
+from .execution import ExecutionAssumptions, net_move, validate_spread
 from .outcomes import future_outcome
-from .risk import ExecutionAssumptions, net_move
 from .similarity import DEFAULT_FEATURES, fit_scaler, nearest_states
 from .statistics import expectancy, max_drawdown, probability_summary
 from .types import Bar, State
@@ -59,6 +59,8 @@ def research_snapshot(
 ) -> dict[str, object]:
     if costs is None:
         costs = ExecutionAssumptions()
+    if target_index < 20 or target_index >= len(bars):
+        raise ValueError("target_index must have sufficient history")
     states = build_states(bars)
     target_state = next(s for s in states if s.timestamp == bars[target_index].timestamp)
     historical = [s for s in states if s.timestamp < target_state.timestamp]
@@ -75,8 +77,9 @@ def research_snapshot(
             outcomes.append(outcome.return_abs)
             mfe.append(outcome.mfe_abs)
             mae.append(outcome.mae_abs)
-    spread = target_state.features["spread"]
-    costed = [net_move(v, float(spread), costs) for v in outcomes]
+    spread = float(target_state.features["spread"])
+    validate_spread(spread, costs)
+    costed = [net_move(v, costs) for v in outcomes]
     return {
         "timestamp": target_state.timestamp.isoformat(),
         "direction": direction,
@@ -87,9 +90,18 @@ def research_snapshot(
         "mae_mean": mean(mae) if mae else None,
         "max_drawdown": max_drawdown(costed),
         "empirical": False,
-        "warning": "SYNTHETIC OR UNPOPULATED UNTIL REAL MARKET DATA IS PROVIDED" if bars else "NO DATA",
+        "warning": "SYNTHETIC OR UNPOPULATED UNTIL REAL MARKET DATA IS PROVIDED",
     }
 
 
 def snapshot_as_jsonable(snapshot: dict[str, object]) -> dict[str, object]:
-    return {k: (v.isoformat() if isinstance(v, datetime) else asdict(v) if hasattr(v, "__dataclass_fields__") else v) for k, v in snapshot.items()}
+    return {
+        k: (
+            v.isoformat()
+            if isinstance(v, datetime)
+            else asdict(v)
+            if hasattr(v, "__dataclass_fields__")
+            else v
+        )
+        for k, v in snapshot.items()
+    }
