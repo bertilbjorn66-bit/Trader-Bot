@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from .models import DataRequest, MarketBar, Quote
+from .models import DataRequest, Instrument, MarketBar, Quote
 
 
 class MarketDataProvider(Protocol):
     """Provider-independent contract used by the rest of the application."""
+
+    def instruments(self) -> Sequence[Instrument]: ...
 
     def historical_bars(self, request: DataRequest) -> Sequence[MarketBar]: ...
 
