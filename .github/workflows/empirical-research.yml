@@ -1,0 +1,84 @@
+name: Empirical Research
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "UTC start timestamp"
+        required: false
+        default: "2020-01-01T00:00:00+00:00"
+      end:
+        description: "UTC end timestamp"
+        required: false
+        default: ""
+      pairs:
+        description: "Comma-separated Dukascopy pair names"
+        required: false
+        default: "EUR/USD"
+      timeframe:
+        description: "Provider timeframe"
+        required: false
+        default: "10m"
+        type: choice
+        options:
+          - 10m
+          - 1min
+          - 1hour
+          - 1day
+      sample_stride:
+        description: "Target stride in bars"
+        required: false
+        default: "120"
+      history_states:
+        description: "Maximum historical states used per target"
+        required: false
+        default: "10000"
+
+jobs:
+  research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check .
+          mypy trader_bot research
+      - name: Run tests
+        run: pytest
+      - name: Run empirical research
+        env:
+          RESEARCH_START: ${{ inputs.start }}
+          RESEARCH_END: ${{ inputs.end }}
+          RESEARCH_PAIRS: ${{ inputs.pairs }}
+          RESEARCH_TIMEFRAME: ${{ inputs.timeframe }}
+          RESEARCH_STRIDE: ${{ inputs.sample_stride }}
+          RESEARCH_HISTORY: ${{ inputs.history_states }}
+        run: |
+          END_ARG=""
+          if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
+          python -m research.real_data_run \
+            --start "$RESEARCH_START" \
+            $END_ARG \
+            --pairs "$RESEARCH_PAIRS" \
+            --timeframe "$RESEARCH_TIMEFRAME" \
+            --sample-stride "$RESEARCH_STRIDE" \
+            --history-states "$RESEARCH_HISTORY" \
+            --output artifacts/empirical_report.json
+      - name: Upload empirical report
+        uses: actions/upload-artifact@v4
+        with:
+          name: empirical-research-report
+          path: artifacts/empirical_report.json
+          if-no-files-found: error
+          retention-days: 30
