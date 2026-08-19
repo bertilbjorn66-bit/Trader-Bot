@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Protocol, Sequence
+
+from .models import DataRequest, MarketBar, Quote
+
+
+class MarketDataProvider(Protocol):
+    """Provider-independent contract used by the rest of the application."""
+
+    def historical_bars(self, request: DataRequest) -> Sequence[MarketBar]: ...
+
+    def current_quotes(self, instruments: Sequence[int]) -> Sequence[Quote]: ...
+
+    def health_check(self) -> bool: ...
+
+
+class ProviderError(RuntimeError):
+    """Base error for provider failures."""
+
+
+class ProviderUnavailable(ProviderError):
+    """The provider could not be reached or is temporarily unavailable."""
+
+
+class ProviderProtocolError(ProviderError):
+    """The provider response was malformed or violated the expected contract."""
+
+
+class ProviderRateLimited(ProviderError):
+    """The provider requested that the client slow down."""
