@@ -72,11 +72,11 @@ def _merge(bid: tuple[MarketBar, ...], ask: tuple[MarketBar, ...]) -> list[Bar]:
 
 
 def _volatility_z(state: State, history: list[State]) -> float:
-    values = [
-        float(item.features["volatility"])
-        for item in history
-        if isinstance(item.features.get("volatility"), (int, float))
-    ]
+    values: list[float] = []
+    for item in history:
+        value = item.features.get("volatility")
+        if isinstance(value, (int, float)):
+            values.append(float(value))
     if len(values) < 2:
         return 0.0
     average = mean(values)
