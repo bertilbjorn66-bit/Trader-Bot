@@ -6,7 +6,6 @@ from typing import Sequence
 from .models import MarketBar, Timeframe
 from .validation import validate_bar_sequence
 
-
 SUPPORTED_AGGREGATIONS = {
     Timeframe.FIVE_MINUTES: (5, Timeframe.ONE_MINUTE),
     Timeframe.FIFTEEN_MINUTES: (15, Timeframe.ONE_MINUTE),
