@@ -5,7 +5,7 @@ import pytest
 
 from trader_bot.context import build_state
 from trader_bot.decision import Action, decide
-from trader_bot.integrity import validate_bid_ask_alignment, validate_bars
+from trader_bot.integrity import validate_bars, validate_bid_ask_alignment
 from trader_bot.models import DataRequest, MarketBar, OfferSide, Timeframe
 from trader_bot.risk import OutcomeSummary, RiskLimits
 from trader_bot.safety import SafetyState, authorize_live_action
@@ -40,7 +40,10 @@ def test_data_request_requires_timezone_aware_times():
 def test_bid_ask_alignment_rejects_mismatch():
     ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
     with pytest.raises(ValueError):
-        validate_bid_ask_alignment([bar(ts, OfferSide.BID, 1)], [bar(ts + timedelta(minutes=1), OfferSide.ASK, 1)])
+        validate_bid_ask_alignment(
+            [bar(ts, OfferSide.BID, 1)],
+            [bar(ts + timedelta(minutes=1), OfferSide.ASK, 1)],
+        )
 
 
 def test_integrity_rejects_duplicate_timestamps():
@@ -67,5 +70,12 @@ def test_live_execution_is_default_denied():
 
 def test_walk_forward_boundaries_are_strict():
     t = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    split = TimeSplit(t, t + timedelta(days=1), t + timedelta(days=2), t + timedelta(days=3), t + timedelta(days=4), t + timedelta(days=5))
+    split = TimeSplit(
+        t,
+        t + timedelta(days=1),
+        t + timedelta(days=2),
+        t + timedelta(days=3),
+        t + timedelta(days=4),
+        t + timedelta(days=5),
+    )
     validate_split(split)
