@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from math import sqrt
 from collections.abc import Iterable
+from math import sqrt
 
 from .types import State
-
 
 DEFAULT_FEATURES = (
     "trend",
