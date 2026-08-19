@@ -10,7 +10,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from ..config import Settings, get_settings
 from ..data_provider import ProviderProtocolError, ProviderRateLimited, ProviderUnavailable
-from ..models import DataRequest, MarketBar, Quote, Timeframe
+from ..models import DataRequest, Instrument, MarketBar, Quote, Timeframe
 
 
 class DukascopyProvider:
@@ -20,6 +20,7 @@ class DukascopyProvider:
     HISTORICAL_PATH = "api/historicalPrices"
     CURRENT_PATH = "api/currentPrices"
     HEALTH_PATH = "api/lastOneMinuteCandles"
+    INSTRUMENTS_PATH = "api/instrumentList"
 
     def __init__(
         self, settings: Settings | None = None, client: httpx.Client | None = None
@@ -88,6 +89,31 @@ class DukascopyProvider:
             Timeframe.ONE_DAY_EET: timedelta(days=1),
         }[timeframe]
 
+    def instruments(self) -> Sequence[Instrument]:
+        payload = self._request(self.INSTRUMENTS_PATH, {})
+        if not isinstance(payload, list):
+            raise ProviderProtocolError("Expected instrumentList response to be a JSON array")
+        result: list[Instrument] = []
+        for row in payload:
+            if not isinstance(row, dict):
+                raise ProviderProtocolError("Instrument row is not an object")
+            try:
+                result.append(
+                    Instrument(
+                        id=int(row["id"]),
+                        name=str(row["name"]),
+                        pip_value=(
+                            self._decimal(row["pipValue"])
+                            if row.get("pipValue") is not None
+                            else None
+                        ),
+                        name_long=(str(row["nameLong"]) if row.get("nameLong") else None),
+                    )
+                )
+            except (KeyError, ValueError, TypeError) as exc:
+                raise ProviderProtocolError("Malformed instrument row") from exc
+        return result
+
     def _parse_historical(self, payload: Any, request: DataRequest) -> list[MarketBar]:
         if not isinstance(payload, list):
             raise ProviderProtocolError("Expected historicalPrices response to be a JSON array")
@@ -128,9 +154,6 @@ class DukascopyProvider:
         cursor = request.start
         all_bars: dict[datetime, MarketBar] = {}
 
-        # Dukascopy documents a maximum of 5000 records per historical request.
-        # Windows overlap at boundaries and are deduplicated by timestamp so the
-        # adapter cannot silently truncate a multi-thousand-bar request.
         while cursor < request.end:
             chunk_end = min(request.end, cursor + max_span)
             payload = self._request(
