@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -22,7 +23,7 @@ def _bucket_start(ts: datetime, minutes: int) -> datetime:
     return ts.replace(minute=(ts.minute // minutes) * minutes, second=0, microsecond=0)
 
 
-def aggregate_bars(bars, target: Timeframe) -> list[MarketBar]:
+def aggregate_bars(bars: Sequence[MarketBar], target: Timeframe) -> list[MarketBar]:
     """Aggregate provider-native candles into 5m/15m/4h candles."""
     if target not in DERIVED_FROM:
         raise ValueError(f"Unsupported derived timeframe: {target}")
