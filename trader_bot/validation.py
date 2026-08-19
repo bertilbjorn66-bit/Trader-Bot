@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Sequence
+
+from .models import MarketBar
 
 
 @dataclass(frozen=True)
@@ -34,3 +37,23 @@ def can_use_observation(observation_time: datetime, feature_time: datetime, outc
     if observation_time.tzinfo is None or feature_time.tzinfo is None or outcome_end.tzinfo is None:
         raise ValueError("Times must be timezone-aware")
     return feature_time < observation_time and outcome_end <= observation_time
+
+
+def validate_bar_sequence(bars: Sequence[MarketBar]) -> None:
+    """Validate chronology and identity before aggregation or storage."""
+    if not bars:
+        return
+    first = bars[0]
+    if first.timestamp.tzinfo is None:
+        raise ValueError("bar timestamps must be timezone-aware")
+    for previous, current in zip(bars, bars[1:]):
+        if current.timestamp.tzinfo is None:
+            raise ValueError("bar timestamps must be timezone-aware")
+        if current.timestamp <= previous.timestamp:
+            raise ValueError("bar timestamps must be strictly increasing")
+        if (
+            current.instrument != first.instrument
+            or current.timeframe != first.timeframe
+            or current.offer_side != first.offer_side
+        ):
+            raise ValueError("bar sequence must have consistent instrument, timeframe, and offer side")
