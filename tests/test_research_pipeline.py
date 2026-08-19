@@ -2,6 +2,7 @@ from datetime import timedelta
 
 import pytest
 
+from research.execution import ExecutionAssumptions, net_move, validate_spread
 from research.outcomes import future_outcome
 from research.pipeline import build_states, research_snapshot
 from research.similarity import fit_scaler, nearest_states
@@ -37,6 +38,14 @@ def test_similarity_excludes_future_states() -> None:
     neighbors = nearest_states(target, history, scaler, k=10)
     assert neighbors
     assert all(s.timestamp < target.timestamp for s, _ in neighbors)
+
+
+def test_execution_cost_does_not_double_charge_spread() -> None:
+    assumptions = ExecutionAssumptions(slippage=0.2, commission=0.1, max_spread=1.0)
+    validate_spread(0.8, assumptions)
+    assert net_move(2.0, assumptions) == pytest.approx(1.7)
+    with pytest.raises(ValueError):
+        validate_spread(1.1, assumptions)
 
 
 def test_statistics_and_walk_forward() -> None:
