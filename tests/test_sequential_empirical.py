@@ -1,0 +1,41 @@
+from datetime import timedelta
+
+import pytest
+
+from research.execution import ExecutionAssumptions
+from research.sequential_empirical import _calibration
+from research.synthetic import generate_bars
+from research.validation import expanding_walk_forward
+
+
+def test_calibration_is_bounded_and_shape_safe() -> None:
+    result = _calibration([0.25, 0.75, 1.0], [False, True, True])
+    assert result["n"] == 3
+    assert 0.0 <= float(result["brier"]) <= 1.0
+    assert 0.0 <= float(result["predicted_rate"]) <= 1.0
+    assert 0.0 <= float(result["realized_rate"]) <= 1.0
+
+
+def test_walk_forward_purge_stays_before_test_window() -> None:
+    bars = generate_bars(250)
+    timestamps = [bar.timestamp for bar in bars]
+    folds = expanding_walk_forward(
+        timestamps,
+        timedelta(hours=2),
+        timedelta(hours=1),
+        step=timedelta(hours=1),
+        purge=timedelta(minutes=10),
+    )
+    assert folds
+    assert all(f.train_end < f.test_start < f.test_end for f in folds)
+
+
+def test_execution_assumptions_reject_negative_costs() -> None:
+    with pytest.raises(ValueError):
+        ExecutionAssumptions(slippage=-0.1)
+
+
+def test_synthetic_generator_provides_timezone_aware_market_bars() -> None:
+    bars = generate_bars(120)
+    assert bars
+    assert all(bar.timestamp.tzinfo is not None for bar in bars)
