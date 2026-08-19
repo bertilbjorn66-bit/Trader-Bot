@@ -6,10 +6,6 @@ on:
     paths:
       - "research/EMPIRICAL_TRIGGER"
       - ".github/workflows/empirical-research.yml"
-  push:
-    branches: [research/quant-pipeline]
-    paths:
-      - "research/EMPIRICAL_TRIGGER"
   workflow_dispatch:
     inputs:
       start:
