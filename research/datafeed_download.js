@@ -109,10 +109,8 @@ async function main() {
         const monthEnd = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1));
         const from = month < start ? start : month;
         const to = monthEnd > end ? end : monthEnd;
-        const [bidRaw, askRaw] = await Promise.all([
-          fetchMonth(instrument, from, to, 'bid'),
-          fetchMonth(instrument, from, to, 'ask'),
-        ]);
+        const bidRaw = await fetchMonth(instrument, from, to, 'bid');
+        const askRaw = await fetchMonth(instrument, from, to, 'ask');
         const bid = aggregateToTenMinutes(bidRaw);
         const ask = aggregateToTenMinutes(askRaw);
         const bidMap = indexRows(bid);
