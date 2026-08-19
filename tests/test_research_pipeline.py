@@ -68,7 +68,8 @@ def test_statistics_and_walk_forward() -> None:
     assert stats["n"] == 4
     assert 0 <= float(stats["probability"]) <= 1
     assert ev["expectancy"] is not None
-    timestamps = [generate_bars(80)[i].timestamp for i in range(80)]
+    walk_forward_bars = generate_bars(2500)
+    timestamps = [bar.timestamp for bar in walk_forward_bars]
     folds = expanding_walk_forward(timestamps, timedelta(days=1), timedelta(hours=6), purge=timedelta(hours=1))
     assert folds
     assert all(f.train_end < f.test_start for f in folds)
