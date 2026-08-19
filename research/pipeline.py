@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import datetime
 from statistics import mean
 from typing import Sequence
@@ -11,6 +10,13 @@ from .similarity import DEFAULT_FEATURES, fit_scaler, nearest_states
 from .statistics import expectancy, max_drawdown, probability_summary
 from .types import Bar, State
 from .validation import ensure_time_order
+
+
+def _feature_float(state: State, name: str) -> float:
+    value = state.features.get(name)
+    if not isinstance(value, (float, int)):
+        raise ValueError(f"state feature {name!r} must be numeric")
+    return float(value)
 
 
 def state_from_bar_window(bars: Sequence[Bar], index: int, lookback: int = 20) -> State:
@@ -63,19 +69,19 @@ def research_snapshot(
         raise ValueError("target_index must have sufficient history")
     states = build_states(bars)
     target_state = next(s for s in states if s.timestamp == bars[target_index].timestamp)
-    target_spread = float(target_state.features["spread"])
+    target_spread = _feature_float(target_state, "spread")
     validate_spread(target_spread, costs)
 
     historical = [s for s in states if s.timestamp < target_state.timestamp]
     scaler = fit_scaler(historical, DEFAULT_FEATURES)
     neighbors = nearest_states(target_state, historical, scaler, k=k)
-    direction = "long" if float(target_state.features["momentum"]) >= 0 else "short"
+    direction = "long" if _feature_float(target_state, "momentum") >= 0 else "short"
 
     bar_index = {bar.timestamp: idx for idx, bar in enumerate(bars)}
     eligible_neighbors = [
         (state, distance)
         for state, distance in neighbors
-        if costs.max_spread is None or float(state.features["spread"]) <= costs.max_spread
+        if costs.max_spread is None or _feature_float(state, "spread") <= costs.max_spread
     ]
 
     outcomes: list[float] = []
@@ -86,8 +92,6 @@ def research_snapshot(
         if index + horizon >= len(bars):
             continue
         outcome = future_outcome(bars, index, horizon, direction)
-        # BID/ASK execution is already represented by the outcome. Apply only
-        # additional costs such as slippage and commission.
         outcomes.append(net_move(outcome.return_abs, costs))
         mfe.append(outcome.mfe_abs)
         mae.append(outcome.mae_abs)
@@ -110,12 +114,6 @@ def research_snapshot(
 
 def snapshot_as_jsonable(snapshot: dict[str, object]) -> dict[str, object]:
     return {
-        k: (
-            v.isoformat()
-            if isinstance(v, datetime)
-            else asdict(v)
-            if hasattr(v, "__dataclass_fields__")
-            else v
-        )
+        k: v.isoformat() if isinstance(v, datetime) else v
         for k, v in snapshot.items()
     }
