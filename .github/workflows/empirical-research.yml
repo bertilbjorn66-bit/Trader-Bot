@@ -125,9 +125,9 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Install JETTA data client
+      - name: Install pinned JETTA data client
         run: |
-          go install github.com/Nosvemos/dukascopy-go/cmd/dukascopy-go@latest
+          go install github.com/Nosvemos/dukascopy-go/cmd/dukascopy-go@79a7354184f984fb006bc68f55681f8e7973aba5
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Install runtime dependencies
         run: python -m pip install --upgrade pip && pip install -e .
