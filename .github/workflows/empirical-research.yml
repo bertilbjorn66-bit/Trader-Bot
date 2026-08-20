@@ -1,63 +1,66 @@
-name: Empirical Research
+name: "🚀 EMPIRICAL RESEARCH — LATEST"
 
 on:
   workflow_dispatch:
     inputs:
       start:
         description: "UTC start timestamp"
-        required: false
+        required: true
         default: "2020-01-01T00:00:00+00:00"
       end:
-        description: "UTC end timestamp"
+        description: "UTC end timestamp (leave blank for current UTC time)"
         required: false
         default: ""
       pairs:
-        description: "Comma-separated FX pairs"
-        required: false
+        description: "FX pairs to analyze"
+        required: true
         default: "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY"
       sample_stride:
-        description: "Target stride in 10m bars"
-        required: false
+        description: "Target stride in 10-minute bars"
+        required: true
         default: "120"
       history_states:
         description: "Historical states used per target"
-        required: false
+        required: true
         default: "10000"
-  pull_request:
-    branches: [main]
-    paths:
-      - "research/EMPIRICAL_TRIGGER"
-      - ".github/workflows/empirical-research.yml"
-      - "research/rest_datafeed_download.py"
-      - "research/datafeed_empirical.py"
+  
+permissions:
+  contents: read
 
 jobs:
-  research:
+  empirical-research:
+    name: "REAL MARKET DATA — 2020 to present"
     runs-on: ubuntu-24.04
     timeout-minutes: 360
-    permissions:
-      contents: read
+
     steps:
-      - name: Checkout
+      - name: Checkout audited research branch
         uses: actions/checkout@v4
-      - name: Set up Python
+        with:
+          ref: empirical-rest-v1
+
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install Python dependencies
+
+      - name: Install research dependencies
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
       - name: Static checks
         run: |
           ruff check .
           mypy trader_bot research
-      - name: Run tests
+
+      - name: Run complete test suite
         run: pytest
-      - name: Download transient 10m BID/ASK data from official Dukascopy REST API
+
+      - name: Download REAL Dukascopy BID/ASK historical data
         env:
-          RESEARCH_START: ${{ github.event.inputs.start || '2020-01-01T00:00:00+00:00' }}
-          RESEARCH_END: ${{ github.event.inputs.end || '' }}
-          RESEARCH_PAIRS: ${{ github.event.inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
+          RESEARCH_START: ${{ inputs.start }}
+          RESEARCH_END: ${{ inputs.end }}
+          RESEARCH_PAIRS: ${{ inputs.pairs }}
         run: |
           END_ARG=""
           if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
@@ -66,13 +69,14 @@ jobs:
             $END_ARG \
             --pairs "$RESEARCH_PAIRS" \
             --out-dir .data/empirical_feed
-      - name: Run sequential empirical research
+
+      - name: Run sequential empirical analysis
         env:
-          RESEARCH_START: ${{ github.event.inputs.start || '2020-01-01T00:00:00+00:00' }}
-          RESEARCH_END: ${{ github.event.inputs.end || '' }}
-          RESEARCH_PAIRS: ${{ github.event.inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
-          RESEARCH_STRIDE: ${{ github.event.inputs.sample_stride || '120' }}
-          RESEARCH_HISTORY: ${{ github.event.inputs.history_states || '10000' }}
+          RESEARCH_START: ${{ inputs.start }}
+          RESEARCH_END: ${{ inputs.end }}
+          RESEARCH_PAIRS: ${{ inputs.pairs }}
+          RESEARCH_STRIDE: ${{ inputs.sample_stride }}
+          RESEARCH_HISTORY: ${{ inputs.history_states }}
         run: |
           END_ARG=""
           if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
@@ -85,10 +89,11 @@ jobs:
             --max-days-per-batch 7 \
             --input-dir .data/empirical_feed \
             --output artifacts/empirical_report.json
-      - name: Upload empirical report
+
+      - name: Upload VERIFIED empirical report
         uses: actions/upload-artifact@v4
         with:
-          name: empirical-research-report
+          name: VERIFIED-EMPIRICAL-RESEARCH-REPORT
           path: artifacts/empirical_report.json
           if-no-files-found: error
           retention-days: 30
