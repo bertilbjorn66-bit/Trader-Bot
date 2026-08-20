@@ -28,48 +28,157 @@ permissions:
   contents: read
 
 jobs:
-  empirical-research:
-    name: "REAL MARKET DATA — 2020 to present"
+  prepare:
+    name: "Prepare research pair matrix"
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
+    outputs:
+      matrix: ${{ steps.make-matrix.outputs.matrix }}
+    steps:
+      - id: make-matrix
+        env:
+          RESEARCH_PAIRS: ${{ inputs.pairs }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
 
+          mapping = {
+              "EUR/USD": "eurusd",
+              "GBP/USD": "gbpusd",
+              "USD/JPY": "usdjpy",
+              "AUD/USD": "audusd",
+              "USD/CAD": "usdcad",
+              "USD/CHF": "usdchf",
+              "NZD/USD": "nzdusd",
+              "EUR/JPY": "eurjpy",
+              "GBP/JPY": "gbpjpy",
+          }
+          pairs = [p.strip() for p in os.environ["RESEARCH_PAIRS"].split(",") if p.strip()]
+          unknown = [p for p in pairs if p not in mapping]
+          if not pairs or unknown:
+              print(f"Unsupported/empty pair list: {unknown}", file=sys.stderr)
+              raise SystemExit(1)
+          matrix = [{"pair": p, "slug": mapping[p]} for p in pairs]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write("matrix=" + json.dumps(matrix, separators=(",", ":")) + "\n")
+          PY
+
+  validate:
+    name: "Validate research engine"
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout audited research branch
         uses: actions/checkout@v7
         with:
           ref: empirical-rest-v1
-
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
-
       - name: Install research dependencies
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
-
       - name: Static checks
         run: |
           ruff check .
           mypy trader_bot research
-
       - name: Run complete test suite
         run: pytest
 
-      - name: Download REAL Dukascopy BID/ASK historical data
+  download:
+    name: "Download ${{ matrix.pair }} BID/ASK"
+    needs: [prepare, validate]
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout audited research branch
+        uses: actions/checkout@v7
+        with:
+          ref: empirical-rest-v1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install runtime dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Download real Dukascopy BID/ASK data for ${{ matrix.pair }}
         env:
           RESEARCH_START: ${{ inputs.start }}
           RESEARCH_END: ${{ inputs.end }}
-          RESEARCH_PAIRS: ${{ inputs.pairs }}
         run: |
           END_ARG=""
           if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
           python -m research.rest_datafeed_download \
             --start "$RESEARCH_START" \
             $END_ARG \
-            --pairs "$RESEARCH_PAIRS" \
+            --pairs "${{ matrix.pair }}" \
             --out-dir .data/empirical_feed
+      - name: Upload verified pair data
+        uses: actions/upload-artifact@v7
+        with:
+          name: empirical-feed-${{ matrix.slug }}
+          path: .data/empirical_feed/${{ matrix.slug }}.jsonl
+          if-no-files-found: error
+          retention-days: 3
 
+  analyze:
+    name: "Run full empirical analysis"
+    needs: [prepare, validate, download]
+    if: ${{ !cancelled() && needs.validate.result == 'success' && needs.download.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout audited research branch
+        uses: actions/checkout@v7
+        with:
+          ref: empirical-rest-v1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Download all verified pair artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: empirical-feed-*
+          path: .data/empirical_feed
+          merge-multiple: true
+      - name: Verify all expected pair files are present
+        env:
+          RESEARCH_PAIRS: ${{ inputs.pairs }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          mapping = {
+              "EUR/USD": "eurusd",
+              "GBP/USD": "gbpusd",
+              "USD/JPY": "usdjpy",
+              "AUD/USD": "audusd",
+              "USD/CAD": "usdcad",
+              "USD/CHF": "usdchf",
+              "NZD/USD": "nzdusd",
+              "EUR/JPY": "eurjpy",
+              "GBP/JPY": "gbpjpy",
+          }
+          root = Path(".data/empirical_feed")
+          missing = [
+              mapping[p.strip()] + ".jsonl"
+              for p in os.environ["RESEARCH_PAIRS"].split(",")
+              if p.strip() and not (root / (mapping[p.strip()] + ".jsonl")).is_file()
+          ]
+          if missing:
+              raise SystemExit("Missing verified pair data: " + ", ".join(missing))
+          print("All requested pair artifacts are present.")
+          PY
       - name: Run sequential empirical analysis
         env:
           RESEARCH_START: ${{ inputs.start }}
@@ -89,7 +198,6 @@ jobs:
             --max-days-per-batch 7 \
             --input-dir .data/empirical_feed \
             --output artifacts/empirical_report.json
-
       - name: Upload VERIFIED empirical report
         uses: actions/upload-artifact@v7
         with:
