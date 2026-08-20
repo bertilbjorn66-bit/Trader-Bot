@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,6 +17,8 @@ PAIRS = (
 )
 BARS_PER_REQUEST = 5000
 CHUNK_DAYS = 30
+MIN_REQUEST_INTERVAL_SECONDS = 0.75
+MAX_RETRY_SLEEP_SECONDS = 300.0
 
 
 def normalize(symbol: str) -> str:
@@ -31,14 +34,51 @@ def _int_value(value: object, field: str) -> int:
         raise ValueError(f"Feed field {field!r} must be an integer-compatible value") from exc
 
 
-def request_json(client: httpx.Client, params: dict[str, Any]) -> Any:
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    value = response.headers.get("Retry-After")
+    if value is None:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        return None
+
+
+class _RequestPacer:
+    def __init__(self, minimum_interval: float = MIN_REQUEST_INTERVAL_SECONDS) -> None:
+        self.minimum_interval = minimum_interval
+        self._last_request: float | None = None
+
+    def wait(self) -> None:
+        now = time.monotonic()
+        if self._last_request is not None:
+            remaining = self.minimum_interval - (now - self._last_request)
+            if remaining > 0:
+                time.sleep(remaining)
+        self._last_request = time.monotonic()
+
+
+def request_json(
+    client: httpx.Client,
+    params: dict[str, Any],
+    pacer: _RequestPacer | None = None,
+) -> Any:
     request_params = dict(params)
     path = request_params.pop("path")
+    active_pacer = pacer or _RequestPacer()
     last: Exception | None = None
     for attempt in range(1, 9):
         try:
+            active_pacer.wait()
             response = client.get(API_URL, params={"path": path, **request_params})
             if response.status_code in (429, 500, 502, 503, 504):
+                retry_after = _retry_after_seconds(response)
+                if retry_after is None:
+                    retry_after = min(
+                        MAX_RETRY_SLEEP_SECONDS,
+                        30.0 * (2 ** (attempt - 1)),
+                    )
+                time.sleep(min(MAX_RETRY_SLEEP_SECONDS, retry_after) + random.uniform(0.0, 3.0))
                 raise RuntimeError(f"provider HTTP {response.status_code}")
             response.raise_for_status()
             return response.json()
@@ -46,11 +86,11 @@ def request_json(client: httpx.Client, params: dict[str, Any]) -> Any:
             last = exc
             if attempt == 8:
                 break
-            time.sleep(min(60.0, 2.0 ** (attempt - 1)))
     raise RuntimeError(f"Dukascopy REST request failed after retries: {last}") from last
 
 
 def load_instruments(client: httpx.Client) -> dict[str, int]:
+    """Retained for diagnostics/tests; the empirical path avoids this rate-limited call."""
     payload = request_json(client, {"path": "api/instrumentList", "fields": "id,name,nameLong"})
     if not isinstance(payload, list):
         raise RuntimeError("instrumentList did not return an array")
@@ -78,16 +118,17 @@ def parse_dt(value: str) -> datetime:
 
 def fetch_window(
     client: httpx.Client,
-    instrument_id: int,
+    instrument: int | str,
     start: datetime,
     end: datetime,
     side: str,
+    pacer: _RequestPacer | None = None,
 ) -> list[dict[str, object]]:
     payload = request_json(
         client,
         {
             "path": "api/historicalPrices",
-            "instrument": instrument_id,
+            "instrument": instrument,
             "timeFrame": "10m",
             "count": BARS_PER_REQUEST,
             "start": int(start.timestamp() * 1000),
@@ -95,6 +136,7 @@ def fetch_window(
             "offerSide": side,
             "dayStartTime": "UTC",
         },
+        pacer=pacer,
     )
     if not isinstance(payload, list):
         raise RuntimeError("historicalPrices did not return an array")
@@ -111,7 +153,8 @@ def fetch_window(
 
 
 def merge_sides(
-    bid: list[dict[str, object]], ask: list[dict[str, object]]
+    bid: list[dict[str, object]],
+    ask: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     bid_by_ts = {_int_value(row["timestamp"], "timestamp"): row for row in bid}
     ask_by_ts = {_int_value(row["timestamp"], "timestamp"): row for row in ask}
@@ -122,10 +165,14 @@ def merge_sides(
         bars.append(
             {
                 "timestamp": timestamp,
-                "bid_open": b["open"], "bid_high": b["high"],
-                "bid_low": b["low"], "bid_close": b["close"],
-                "ask_open": a["open"], "ask_high": a["high"],
-                "ask_low": a["low"], "ask_close": a["close"],
+                "bid_open": b["open"],
+                "bid_high": b["high"],
+                "bid_low": b["low"],
+                "bid_close": b["close"],
+                "ask_open": a["open"],
+                "ask_high": a["high"],
+                "ask_low": a["low"],
+                "ask_close": a["close"],
             }
         )
     return bars
@@ -146,25 +193,32 @@ def main() -> None:
     if start >= end:
         raise SystemExit("start must be before end")
     pairs = tuple(item.strip() for item in args.pairs.split(",") if item.strip())
+    allowed = {item.upper() for item in PAIRS}
+    unknown = [pair for pair in pairs if pair.upper() not in allowed]
+    if unknown:
+        raise SystemExit(f"Unsupported empirical pair(s): {', '.join(unknown)}")
+
     output_dir = Path(args.out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    limits = httpx.Limits(max_connections=2, max_keepalive_connections=1)
+    pacer = _RequestPacer()
 
-    limits = httpx.Limits(max_connections=4, max_keepalive_connections=2)
     with httpx.Client(timeout=httpx.Timeout(45.0, connect=20.0), limits=limits) as client:
-        instruments = load_instruments(client)
         for pair in pairs:
-            instrument_id = instruments.get(normalize(pair))
-            if instrument_id is None:
-                raise SystemExit(f"Dukascopy instrument not found in official instrumentList: {pair}")
             path = output_dir / f"{normalize(pair).lower()}.jsonl"
             path.unlink(missing_ok=True)
             cursor = start
             with path.open("w", encoding="utf-8") as handle:
                 while cursor < end:
                     chunk_end = min(end, cursor + timedelta(days=CHUNK_DAYS))
-                    bid = fetch_window(client, instrument_id, cursor, chunk_end, "B")
-                    ask = fetch_window(client, instrument_id, cursor, chunk_end, "A")
+                    bid = fetch_window(client, pair, cursor, chunk_end, "B", pacer=pacer)
+                    ask = fetch_window(client, pair, cursor, chunk_end, "A", pacer=pacer)
                     bars = merge_sides(bid, ask)
+                    if not bars:
+                        raise RuntimeError(
+                            f"No overlapping BID/ASK candles returned for {pair} "
+                            f"{cursor.isoformat()} to {chunk_end.isoformat()}"
+                        )
                     handle.write(
                         json.dumps({"chunk_start": cursor.isoformat(), "bars": bars}) + "\n"
                     )
