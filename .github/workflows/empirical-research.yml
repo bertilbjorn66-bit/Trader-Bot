@@ -23,7 +23,7 @@ on:
         description: "Historical states used per target"
         required: true
         default: "10000"
-  
+
 permissions:
   contents: read
 
@@ -35,12 +35,12 @@ jobs:
 
     steps:
       - name: Checkout audited research branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: empirical-rest-v1
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -91,7 +91,7 @@ jobs:
             --output artifacts/empirical_report.json
 
       - name: Upload VERIFIED empirical report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: VERIFIED-EMPIRICAL-RESEARCH-REPORT
           path: artifacts/empirical_report.json
