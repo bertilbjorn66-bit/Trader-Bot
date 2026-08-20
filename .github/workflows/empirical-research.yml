@@ -5,23 +5,23 @@ on:
     inputs:
       start:
         description: "UTC start timestamp"
-        required: true
+        required: false
         default: "2020-01-01T00:00:00+00:00"
       end:
-        description: "UTC end timestamp (leave blank for current UTC time)"
+        description: "UTC end timestamp (blank = current UTC time)"
         required: false
         default: ""
       pairs:
-        description: "FX pairs to analyze"
-        required: true
+        description: "Comma-separated FX pair names"
+        required: false
         default: "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY"
       sample_stride:
-        description: "Target stride in 10-minute bars"
-        required: true
+        description: "Target stride in 10m bars"
+        required: false
         default: "120"
       history_states:
         description: "Historical states used per target"
-        required: true
+        required: false
         default: "10000"
 
 permissions:
@@ -36,7 +36,7 @@ jobs:
     steps:
       - id: make-matrix
         env:
-          RESEARCH_PAIRS: ${{ inputs.pairs }}
+          RESEARCH_PAIRS: ${{ inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
         run: |
           python - <<'PY'
           import json
@@ -95,29 +95,37 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout audited research branch
         uses: actions/checkout@v7
         with:
           ref: empirical-rest-v1
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - name: Install JETTA data client
+        run: |
+          go install github.com/Nosvemos/dukascopy-go/cmd/dukascopy-go@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Install runtime dependencies
         run: python -m pip install --upgrade pip && pip install -e .
-      - name: Download real Dukascopy BID/ASK data for ${{ matrix.pair }}
+      - name: Download real Dukascopy BID/ASK through JETTA
         env:
-          RESEARCH_START: ${{ inputs.start }}
-          RESEARCH_END: ${{ inputs.end }}
+          RESEARCH_START: ${{ inputs.start || '2020-01-01T00:00:00+00:00' }}
+          RESEARCH_END: ${{ inputs.end || '' }}
         run: |
           END_ARG=""
           if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
-          python -m research.rest_datafeed_download \
+          python -m research.jetta_datafeed_download \
+            --pair "${{ matrix.pair }}" \
             --start "$RESEARCH_START" \
             $END_ARG \
-            --pairs "${{ matrix.pair }}" \
             --out-dir .data/empirical_feed
       - name: Upload verified pair data
         uses: actions/upload-artifact@v7
@@ -152,22 +160,16 @@ jobs:
           merge-multiple: true
       - name: Verify all expected pair files are present
         env:
-          RESEARCH_PAIRS: ${{ inputs.pairs }}
+          RESEARCH_PAIRS: ${{ inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
         run: |
           python - <<'PY'
           import os
           from pathlib import Path
 
           mapping = {
-              "EUR/USD": "eurusd",
-              "GBP/USD": "gbpusd",
-              "USD/JPY": "usdjpy",
-              "AUD/USD": "audusd",
-              "USD/CAD": "usdcad",
-              "USD/CHF": "usdchf",
-              "NZD/USD": "nzdusd",
-              "EUR/JPY": "eurjpy",
-              "GBP/JPY": "gbpjpy",
+              "EUR/USD": "eurusd", "GBP/USD": "gbpusd", "USD/JPY": "usdjpy",
+              "AUD/USD": "audusd", "USD/CAD": "usdcad", "USD/CHF": "usdchf",
+              "NZD/USD": "nzdusd", "EUR/JPY": "eurjpy", "GBP/JPY": "gbpjpy",
           }
           root = Path(".data/empirical_feed")
           missing = [
@@ -181,11 +183,11 @@ jobs:
           PY
       - name: Run sequential empirical analysis
         env:
-          RESEARCH_START: ${{ inputs.start }}
-          RESEARCH_END: ${{ inputs.end }}
-          RESEARCH_PAIRS: ${{ inputs.pairs }}
-          RESEARCH_STRIDE: ${{ inputs.sample_stride }}
-          RESEARCH_HISTORY: ${{ inputs.history_states }}
+          RESEARCH_START: ${{ inputs.start || '2020-01-01T00:00:00+00:00' }}
+          RESEARCH_END: ${{ inputs.end || '' }}
+          RESEARCH_PAIRS: ${{ inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
+          RESEARCH_STRIDE: ${{ inputs.sample_stride || '120' }}
+          RESEARCH_HISTORY: ${{ inputs.history_states || '10000' }}
         run: |
           END_ARG=""
           if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
