@@ -22,6 +22,15 @@ def normalize(symbol: str) -> str:
     return symbol.replace("/", "").replace("_", "").replace("-", "").upper()
 
 
+def _int_value(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(f"Feed field {field!r} must be an integer-compatible value")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Feed field {field!r} must be an integer-compatible value") from exc
+
+
 def request_json(client: httpx.Client, params: dict[str, Any]) -> Any:
     request_params = dict(params)
     path = request_params.pop("path")
@@ -50,8 +59,8 @@ def load_instruments(client: httpx.Client) -> dict[str, int]:
         if not isinstance(row, dict):
             continue
         try:
-            instrument_id = int(row["id"])
-        except (KeyError, TypeError, ValueError):
+            instrument_id = _int_value(row.get("id"), "id")
+        except ValueError:
             continue
         for key in ("name", "nameLong"):
             value = row.get(key)
@@ -67,7 +76,13 @@ def parse_dt(value: str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
-def fetch_window(client: httpx.Client, instrument_id: int, start: datetime, end: datetime, side: str) -> list[dict[str, object]]:
+def fetch_window(
+    client: httpx.Client,
+    instrument_id: int,
+    start: datetime,
+    end: datetime,
+    side: str,
+) -> list[dict[str, object]]:
     payload = request_json(
         client,
         {
@@ -91,13 +106,15 @@ def fetch_window(client: httpx.Client, instrument_id: int, start: datetime, end:
         if not all(key in row for key in required):
             continue
         rows.append({key: row[key] for key in required})
-    rows.sort(key=lambda row: int(row["timestamp"]))
+    rows.sort(key=lambda row: _int_value(row["timestamp"], "timestamp"))
     return rows
 
 
-def merge_sides(bid: list[dict[str, object]], ask: list[dict[str, object]]) -> list[dict[str, object]]:
-    bid_by_ts = {int(row["timestamp"]): row for row in bid}
-    ask_by_ts = {int(row["timestamp"]): row for row in ask}
+def merge_sides(
+    bid: list[dict[str, object]], ask: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    bid_by_ts = {_int_value(row["timestamp"], "timestamp"): row for row in bid}
+    ask_by_ts = {_int_value(row["timestamp"], "timestamp"): row for row in ask}
     bars: list[dict[str, object]] = []
     for timestamp in sorted(set(bid_by_ts) & set(ask_by_ts)):
         b = bid_by_ts[timestamp]
@@ -105,15 +122,19 @@ def merge_sides(bid: list[dict[str, object]], ask: list[dict[str, object]]) -> l
         bars.append(
             {
                 "timestamp": timestamp,
-                "bid_open": b["open"], "bid_high": b["high"], "bid_low": b["low"], "bid_close": b["close"],
-                "ask_open": a["open"], "ask_high": a["high"], "ask_low": a["low"], "ask_close": a["close"],
+                "bid_open": b["open"], "bid_high": b["high"],
+                "bid_low": b["low"], "bid_close": b["close"],
+                "ask_open": a["open"], "ask_high": a["high"],
+                "ask_low": a["low"], "ask_close": a["close"],
             }
         )
     return bars
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Download empirical 10m BID/ASK data through Dukascopy official REST API.")
+    parser = argparse.ArgumentParser(
+        description="Download empirical 10m BID/ASK data through Dukascopy official REST API."
+    )
     parser.add_argument("--start", default="2020-01-01T00:00:00+00:00")
     parser.add_argument("--end", default=datetime.now(timezone.utc).isoformat())
     parser.add_argument("--pairs", default=",".join(PAIRS))
@@ -144,7 +165,9 @@ def main() -> None:
                     bid = fetch_window(client, instrument_id, cursor, chunk_end, "B")
                     ask = fetch_window(client, instrument_id, cursor, chunk_end, "A")
                     bars = merge_sides(bid, ask)
-                    handle.write(json.dumps({"chunk_start": cursor.isoformat(), "bars": bars}) + "\n")
+                    handle.write(
+                        json.dumps({"chunk_start": cursor.isoformat(), "bars": bars}) + "\n"
+                    )
                     cursor = chunk_end
 
 
