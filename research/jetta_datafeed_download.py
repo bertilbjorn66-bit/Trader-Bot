@@ -10,9 +10,9 @@ from typing import Iterable
 
 
 def parse_dt(value: str) -> datetime:
-    dt = datetime.fromisoformat(value)
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        raise ValueError("timestamps must include a timezone")
+        raise ValueError("timestamp must include a timezone")
     return dt.astimezone(timezone.utc)
 
 
@@ -20,19 +20,18 @@ def parse_timestamp(value: str) -> int:
     value = value.strip()
     try:
         numeric = float(value)
-    except ValueError as exc:
+    except ValueError:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if dt.tzinfo is None:
-            raise ValueError("timestamp must include a timezone") from exc
+            raise ValueError("timestamp must include a timezone") from None
         return int(dt.timestamp() * 1000)
-    # Dukascopy CSVs use millisecond timestamps; accept second timestamps defensively.
     return int(numeric if abs(numeric) >= 100_000_000_000 else numeric * 1000)
 
 
 def run_download(
     symbol: str,
     start: datetime,
-    end: datetime | None,
+    end: datetime,
     side: str,
     output: Path,
 ) -> None:
@@ -50,12 +49,12 @@ def run_download(
         side,
         "--from",
         start.isoformat(),
+        "--to",
+        end.isoformat(),
         "--output",
         str(output),
         "--resume",
     ]
-    if end is not None:
-        command.extend(["--to", end.isoformat()])
     subprocess.run(command, check=True)
 
 
@@ -164,7 +163,10 @@ def main() -> None:
     args = parser.parse_args()
 
     start = parse_dt(args.start)
-    end = parse_dt(args.end) if args.end else None
+    end = parse_dt(args.end) if args.end else datetime.now(timezone.utc)
+    if end <= start:
+        raise ValueError("end timestamp must be later than start timestamp")
+
     slug = args.pair.replace("/", "").replace("_", "").replace("-", "").lower()
     out_dir = Path(args.out_dir)
     raw_dir = out_dir / "raw"
