@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,19 @@ def parse_dt(value: str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+def parse_timestamp(value: str) -> int:
+    value = value.strip()
+    try:
+        numeric = float(value)
+    except ValueError:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            raise ValueError("timestamp must include a timezone")
+        return int(dt.timestamp() * 1000)
+    # Dukascopy CSVs use millisecond timestamps; accept second timestamps defensively.
+    return int(numeric if abs(numeric) >= 100_000_000_000 else numeric * 1000)
+
+
 def run_download(
     symbol: str,
     start: datetime,
@@ -26,6 +40,8 @@ def run_download(
     command = [
         "dukascopy-go",
         "download",
+        "--engine",
+        "jetta",
         "--symbol",
         slug,
         "--timeframe",
@@ -46,17 +62,19 @@ def run_download(
 def read_bars(path: Path) -> Iterable[tuple[int, float, float, float, float, float]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
+        headers = {name.strip().lower(): name for name in (reader.fieldnames or [])}
         required = {"timestamp", "open", "high", "low", "close"}
-        if not required.issubset(set(reader.fieldnames or [])):
+        if not required.issubset(headers):
             raise RuntimeError(f"Unexpected Dukascopy-go CSV schema in {path}: {reader.fieldnames}")
+        volume_key = headers.get("volume")
         for row in reader:
             yield (
-                int(float(row["timestamp"])),
-                float(row["open"]),
-                float(row["high"]),
-                float(row["low"]),
-                float(row["close"]),
-                float(row.get("volume") or 0.0),
+                parse_timestamp(row[headers["timestamp"]]),
+                float(row[headers["open"]]),
+                float(row[headers["high"]]),
+                float(row[headers["low"]]),
+                float(row[headers["close"]]),
+                float(row[volume_key] or 0.0) if volume_key else 0.0,
             )
 
 
@@ -113,8 +131,6 @@ def merge_sides(
     if not common:
         raise RuntimeError("No timestamp overlap between BID and ASK data")
     with output.open("w", encoding="utf-8") as handle:
-        import json
-
         for ts in common:
             b = bid_by_ts[ts]
             a = ask_by_ts[ts]
@@ -138,7 +154,9 @@ def merge_sides(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Download Dukascopy 5m BID/ASK through JETTA and resample to 10m.")
+    parser = argparse.ArgumentParser(
+        description="Download Dukascopy 5m BID/ASK through JETTA and resample to 10m."
+    )
     parser.add_argument("--pair", required=True)
     parser.add_argument("--start", default="2020-01-01T00:00:00+00:00")
     parser.add_argument("--end", default="")
