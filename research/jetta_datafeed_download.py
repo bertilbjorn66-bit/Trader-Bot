@@ -20,10 +20,10 @@ def parse_timestamp(value: str) -> int:
     value = value.strip()
     try:
         numeric = float(value)
-    except ValueError:
+    except ValueError as exc:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if dt.tzinfo is None:
-            raise ValueError("timestamp must include a timezone")
+            raise ValueError("timestamp must include a timezone") from exc
         return int(dt.timestamp() * 1000)
     # Dukascopy CSVs use millisecond timestamps; accept second timestamps defensively.
     return int(numeric if abs(numeric) >= 100_000_000_000 else numeric * 1000)
