@@ -12,7 +12,7 @@ on:
         required: true
         default: "32489667825"
       start:
-        description: "UTC research start (used only if a feed is missing and fallback download is available)"
+        description: "UTC research start (used only if a feed is missing and fallback download is explicitly added later)"
         required: true
         default: "2020-01-01T00:00:00+00:00"
       end:
@@ -27,10 +27,6 @@ on:
         description: "Historical states per target"
         required: true
         default: "10000"
-      pr_number:
-        description: "PR to receive the run summary"
-        required: true
-        default: "26"
 
 permissions:
   contents: read
@@ -49,7 +45,19 @@ jobs:
         with:
           ref: ${{ inputs.research_ref }}
 
-      - name: Verify local runner prerequisites
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Setup Go 1.24
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
+          cache: false
+
+      - name: Verify runner prerequisites
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -88,14 +96,15 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.source_run_id }}
 
-      - name: Verify restored feed set
+      - name: Verify restored nine-pair feed set
         id: feeds
         shell: powershell
         run: |
           $expected = @('eurusd','gbpusd','usdjpy','audusd','usdcad','usdchf','nzdusd','eurjpy','gbpjpy')
           $missing = @()
           foreach ($name in $expected) {
-            if (-not (Test-Path ".data/empirical_feed/$name.jsonl")) {
+            $path = ".data/empirical_feed/$name.jsonl"
+            if (-not (Test-Path $path) -or (Get-Item $path).Length -eq 0) {
               $missing += $name
             }
           }
@@ -107,11 +116,11 @@ jobs:
             'complete=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           }
 
-      - name: Stop rather than silently redownload missing research data
+      - name: Stop if verified feeds are incomplete
         if: steps.feeds.outputs.complete != 'true'
         shell: powershell
         run: |
-          throw "The selected source run did not provide all nine verified empirical feeds. No silent replacement dataset will be substituted. Choose a source run containing all nine feeds or explicitly authorize a fresh download."
+          throw "The selected source run did not provide all nine verified empirical feeds. The workflow stops instead of silently substituting or redownloading research data."
 
       - name: Run enriched conditional experiment
         shell: powershell
@@ -147,17 +156,3 @@ jobs:
             artifacts/conditional_robustness.json
           if-no-files-found: error
           retention-days: 30
-
-      - name: Publish run summary to PR
-        if: always()
-        continue-on-error: true
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ inputs.pr_number }}
-          REF: ${{ inputs.research_ref }}
-          SOURCE_RUN: ${{ inputs.source_run_id }}
-        run: |
-          $status = if ($env:status -eq 'success') { '✅' } else { '❌' }
-          gh api "repos/$env:REPO/issues/$env:PR_NUMBER/comments" -f body="### Trader Bot self-hosted survival-gate run`n`nRef: `$env:REF``nSource feed run: `$env:SOURCE_RUN``n`nStatus: workflow completed; see the authoritative Actions result and uploaded artifact.`n`nWorkflow run: $env:GITHUB_SERVER_URL/$env:REPO/actions/runs/$env:GITHUB_RUN_ID" | Out-Null
