@@ -1,0 +1,95 @@
+name: "🏁 FINAL EMPIRICAL RESEARCH — VALIDATE → ANALYZE — NO DOWNLOAD"
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Research start (UTC)"
+        required: true
+        default: "2020-01-01T00:00:00+00:00"
+      end:
+        description: "Research end (blank = current UTC)"
+        required: false
+        default: ""
+      pairs:
+        description: "Nine existing FX pairs"
+        required: true
+        default: "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY"
+      sample_stride:
+        description: "Sample stride"
+        required: true
+        default: "120"
+      history_states:
+        description: "Historical states"
+        required: true
+        default: "10000"
+
+jobs:
+  validate:
+    name: "1️⃣ VALIDATE corrected analysis engine"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout corrected research branch
+        uses: actions/checkout@v7
+        with:
+          ref: empirical-rest-v1
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static validation
+        run: |
+          ruff check .
+          mypy trader_bot research
+      - name: Run complete test suite
+        run: pytest
+
+  analyze:
+    name: "2️⃣ RUN full empirical analysis — EXISTING 9-PAIR DATA"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout corrected research branch
+        uses: actions/checkout@v7
+        with:
+          ref: empirical-rest-v1
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install runtime dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Confirm existing data is present
+        run: |
+          test -d .data/empirical_feed || { echo 'Existing nine-pair data directory not present in repository.'; exit 1; }
+          find .data/empirical_feed -type f -maxdepth 2 -print
+      - name: Run empirical analysis — NO DOWNLOAD
+        env:
+          RESEARCH_START: ${{ inputs.start }}
+          RESEARCH_END: ${{ inputs.end }}
+          RESEARCH_PAIRS: ${{ inputs.pairs }}
+          RESEARCH_STRIDE: ${{ inputs.sample_stride }}
+          RESEARCH_HISTORY: ${{ inputs.history_states }}
+        run: |
+          END_ARG=""
+          if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
+          python -m research.datafeed_empirical \
+            --start "$RESEARCH_START" \
+            $END_ARG \
+            --pairs "$RESEARCH_PAIRS" \
+            --sample-stride "$RESEARCH_STRIDE" \
+            --history-states "$RESEARCH_HISTORY" \
+            --max-days-per-batch 7 \
+            --input-dir .data/empirical_feed \
+            --output artifacts/empirical_report.json
+      - name: Upload final empirical report
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL
+          path: artifacts/empirical_report.json
+          if-no-files-found: error
+          retention-days: 30
