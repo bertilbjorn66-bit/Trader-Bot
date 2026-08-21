@@ -16,6 +16,9 @@ on:
       - "research/pipeline.py"
       - "research/regimes.py"
       - "research/cross_section.py"
+  pull_request:
+    types: [synchronize]
+    branches: ["empirical-rest-v1"]
   workflow_dispatch:
     inputs:
       start:
