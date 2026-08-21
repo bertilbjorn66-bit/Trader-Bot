@@ -5,9 +5,18 @@ import json
 from datetime import datetime
 from pathlib import Path
 from statistics import mean
+from typing import TypedDict
 
 
-def stats(values: list[float]) -> dict[str, float | int | None] | None:
+class StatsResult(TypedDict):
+    n: int
+    expectancy_pips: float
+    profit_factor: float | None
+    win_rate: float
+    max_drawdown_pips: float
+
+
+def stats(values: list[float]) -> StatsResult | None:
     if not values:
         return None
     wins = sum(value > 0.0 for value in values)
@@ -29,15 +38,11 @@ def stats(values: list[float]) -> dict[str, float | int | None] | None:
     }
 
 
-def stress_pass(stress: dict[str, dict[str, float | int | None] | None], cost: float) -> bool:
+def stress_pass(stress: dict[str, StatsResult | None], cost: float) -> bool:
     result = stress[str(cost)]
-    return bool(
-        result
-        and result["expectancy_pips"] is not None
-        and result["expectancy_pips"] > 0.0
-        and result["profit_factor"] is not None
-        and result["profit_factor"] > 1.0
-    )
+    if result is None:
+        return False
+    return result["expectancy_pips"] > 0.0 and result["profit_factor"] is not None and result["profit_factor"] > 1.0
 
 
 def main() -> None:
@@ -76,25 +81,28 @@ def main() -> None:
         pair_stats = {key: stats(values) for key, values in by_pair.items()}
         year_stats = {key: stats(values) for key, values in by_year.items()}
         direction_stats = {key: stats(values) for key, values in by_direction.items()}
-        stress = {
+        stress: dict[str, StatsResult | None] = {
             str(cost): stats([float(record["outcome_pips"]) - cost for record in chosen])
             for cost in (0.0, 0.2, 0.5, 1.0)
         }
         positive_pairs = sum(
             1
             for result in pair_stats.values()
-            if result and result["expectancy_pips"] > 0.0 and result["profit_factor"] is not None and result["profit_factor"] > 1.0
+            if result is not None
+            and result["expectancy_pips"] > 0.0
+            and result["profit_factor"] is not None
+            and result["profit_factor"] > 1.0
         )
 
         promotion_gate = {
-            "confirmation_pf_gt_1": bool(confirmation and confirmation["profit_factor"] and confirmation["profit_factor"] > 1.0),
+            "confirmation_pf_gt_1": bool(confirmation and confirmation["profit_factor"] is not None and confirmation["profit_factor"] > 1.0),
             "confirmation_expectancy_positive": bool(confirmation and confirmation["expectancy_pips"] > 0.0),
             "confirmation_sample_min_100": bool(confirmation and confirmation["n"] >= 100),
             "stress_0_2_pips_positive": stress_pass(stress, 0.2),
             "stress_0_5_pips_positive": stress_pass(stress, 0.5),
             "stress_1_0_pips_positive": stress_pass(stress, 1.0),
             "positive_pair_count_min_2": positive_pairs >= 2,
-            "max_drawdown_recorded": bool(confirmation and confirmation["max_drawdown_pips"] is not None),
+            "max_drawdown_recorded": bool(confirmation),
         }
         results.append({
             "candidate": finalist,
