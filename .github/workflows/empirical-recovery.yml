@@ -8,7 +8,7 @@ on:
         required: true
         default: "32426379638"
       retry_pairs:
-        description: "Pairs to redownload with the corrected JETTA path"
+        description: "Pairs to redownload"
         required: true
         default: "EUR/USD,GBP/USD,USD/JPY"
       start:
@@ -56,53 +56,33 @@ jobs:
         run: pytest
 
   reuse:
-    name: "Reuse successful artifacts from run ${{ inputs.source_run_id }}"
+    name: "Reuse six successful artifacts"
     needs: validate
     runs-on: ubuntu-24.04
     steps:
-      - name: Create artifact directory
+      - name: Create input directory
         run: mkdir -p .data/empirical_feed
-      - name: Download and verify six successful artifacts
+      - name: Download six successful artifacts
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         run: |
           set -euo pipefail
-          repo="$GITHUB_REPOSITORY"
-          api="https://api.github.com/repos/$repo"
+          api="https://api.github.com/repos/$GITHUB_REPOSITORY"
           mkdir -p /tmp/recovery
-          declare -A expected=(
-            [empirical-feed-audusd]=audusd
-            [empirical-feed-usdcad]=usdcad
-            [empirical-feed-usdchf]=usdchf
-            [empirical-feed-nzdusd]=nzdusd
-            [empirical-feed-eurjpy]=eurjpy
-            [empirical-feed-gbpjpy]=gbpjpy
-          )
-          artifacts_json="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100")"
-          for artifact_name in "${!expected[@]}"; do
-            slug="${expected[$artifact_name]}"
-            artifact_id="$(python - <<'PY' "$artifact_name" "$artifacts_json"
-import json, sys
-name = sys.argv[1]
-data = json.loads(sys.argv[2])
-for item in data.get('artifacts', []):
-    if item.get('name') == name and not item.get('expired', False):
-        print(item['id'])
-        raise SystemExit(0)
-raise SystemExit(f"Missing non-expired artifact: {name}")
-PY
-)"
+          for spec in "empirical-feed-audusd audusd" "empirical-feed-usdcad usdcad" "empirical-feed-usdchf usdchf" "empirical-feed-nzdusd nzdusd" "empirical-feed-eurjpy eurjpy" "empirical-feed-gbpjpy gbpjpy"; do
+            artifact_name="${spec%% *}"
+            slug="${spec##* }"
+            artifact_id="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" | jq -r --arg n "$artifact_name" '.artifacts[] | select(.name == $n and .expired == false) | .id' | head -n1)"
+            test -n "$artifact_id" -a "$artifact_id" != "null"
             archive="/tmp/recovery/$artifact_name.zip"
             curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/artifacts/$artifact_id/zip" -o "$archive"
             unzip -q -o "$archive" -d "/tmp/recovery/$artifact_name"
-            source_file="/tmp/recovery/$artifact_name/$slug.jsonl"
-            test -s "$source_file"
-            cp "$source_file" ".data/empirical_feed/$slug.jsonl"
-            echo "Reused verified artifact: $artifact_name"
+            test -s "/tmp/recovery/$artifact_name/$slug.jsonl"
+            cp "/tmp/recovery/$artifact_name/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
           done
           ls -lh .data/empirical_feed
-      - name: Upload reused verified artifacts
+      - name: Upload reused bundle
         uses: actions/upload-artifact@v7
         with:
           name: empirical-recovery-reused-artifacts
@@ -146,9 +126,8 @@ PY
           INPUT_END: ${{ inputs.end }}
         run: |
           set -euo pipefail
-          if [ -n "$INPUT_END" ]; then end="$INPUT_END"; else end="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
-          echo "value=$end" >> "$GITHUB_OUTPUT"
-          echo "Using end=$end"
+          if [ -n "$INPUT_END" ]; then value="$INPUT_END"; else value="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
+          echo "value=$value" >> "$GITHUB_OUTPUT"
       - name: Download corrected real Dukascopy BID/ASK through JETTA
         run: |
           python -m research.jetta_datafeed_download \
@@ -156,7 +135,7 @@ PY
             --start "${{ inputs.start }}" \
             --end "${{ steps.end.outputs.value }}" \
             --out-dir .data/empirical_feed
-      - name: Upload verified retry artifact
+      - name: Upload repaired pair artifact
         uses: actions/upload-artifact@v7
         with:
           name: empirical-recovery-${{ matrix.pair }}
@@ -183,40 +162,39 @@ PY
         run: python -m pip install --upgrade pip && pip install -e .
       - name: Create input directory
         run: mkdir -p .data/empirical_feed
-      - name: Download reused six-pair artifact bundle
+      - name: Download reused bundle
         uses: actions/download-artifact@v8
         with:
           name: empirical-recovery-reused-artifacts
           path: .data/empirical_feed
-      - name: Download three repaired-pair artifacts
+      - name: Download repaired pair artifacts
         uses: actions/download-artifact@v8
         with:
           pattern: empirical-recovery-*
           path: .data/empirical_feed
           merge-multiple: true
-      - name: Verify all nine pair files are present
+      - name: Verify all nine pair files
         run: |
           set -euo pipefail
-          for f in audusd gbpjpy eurjpy nzdusd usdcad usdchf eurusd gbpusd usdjpy; do
-            test -s ".data/empirical_feed/$f.jsonl" || { echo "Missing $f.jsonl"; exit 1; }
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/$slug.jsonl"
           done
-          echo "All nine verified pair files are present."
-      - name: Run sequential recovery empirical analysis
+      - name: Run recovery empirical analysis
         env:
-          RESEARCH_END: ${{ inputs.end }}
+          INPUT_END: ${{ inputs.end }}
         run: |
           set -euo pipefail
-          if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; else END_ARG="--end $(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
+          if [ -n "$INPUT_END" ]; then end="$INPUT_END"; else end="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
           python -m research.datafeed_empirical \
             --start "${{ inputs.start }}" \
-            $END_ARG \
+            --end "$end" \
             --pairs "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY" \
             --sample-stride "${{ inputs.sample_stride }}" \
             --history-states "${{ inputs.history_states }}" \
             --max-days-per-batch 7 \
             --input-dir .data/empirical_feed \
             --output artifacts/empirical_report.json
-      - name: Upload VERIFIED recovery empirical report
+      - name: Upload VERIFIED recovery report
         uses: actions/upload-artifact@v7
         with:
           name: VERIFIED-EMPIRICAL-RECOVERY-REPORT
