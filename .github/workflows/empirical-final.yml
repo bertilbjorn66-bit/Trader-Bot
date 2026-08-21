@@ -1,0 +1,110 @@
+name: "🏁 FINAL EMPIRICAL VALIDATION + ANALYSIS — NO DOWNLOAD"
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "UTC start timestamp"
+        required: false
+        default: "2020-01-01T00:00:00+00:00"
+      end:
+        description: "UTC end timestamp (blank = current UTC time)"
+        required: false
+        default: ""
+      pairs:
+        description: "Comma-separated FX pair names"
+        required: false
+        default: "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY"
+      sample_stride:
+        description: "Target stride in 10m bars"
+        required: false
+        default: "120"
+      history_states:
+        description: "Historical states used per target"
+        required: false
+        default: "10000"
+
+permissions:
+  contents: read
+
+env:
+  DATA_ARTIFACT_RUN_ID: "32472159546"
+
+jobs:
+  validate:
+    name: "✅ Validate corrected research engine"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout corrected empirical branch
+        uses: actions/checkout@v7
+        with:
+          ref: empirical-rest-v1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check .
+          mypy trader_bot research
+      - name: Run complete test suite
+        run: pytest
+
+  analyze:
+    name: "🏁 Run full empirical analysis — existing 9-pair data"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout corrected empirical branch
+        uses: actions/checkout@v7
+        with:
+          ref: empirical-rest-v1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Download existing verified 9-pair data artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: empirical-feed-*
+          path: .data/empirical_feed
+          merge-multiple: true
+          run-id: ${{ env.DATA_ARTIFACT_RUN_ID }}
+      - name: Verify all nine existing pair files are present
+        env:
+          RESEARCH_PAIRS: ${{ inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          mapping = {"EUR/USD":"eurusd","GBP/USD":"gbpusd","USD/JPY":"usdjpy","AUD/USD":"audusd","USD/CAD":"usdcad","USD/CHF":"usdchf","NZD/USD":"nzdusd","EUR/JPY":"eurjpy","GBP/JPY":"gbpjpy"}
+          root = Path('.data/empirical_feed')
+          missing = [mapping[p.strip()]+'.jsonl' for p in os.environ['RESEARCH_PAIRS'].split(',') if p.strip() and not (root/(mapping[p.strip()]+'.jsonl')).is_file()]
+          if missing:
+              raise SystemExit('Missing existing verified pair data: ' + ', '.join(missing))
+          print('All nine existing verified pair datasets are present. No market-data download will run.')
+          PY
+      - name: Run sequential empirical analysis
+        env:
+          RESEARCH_START: ${{ inputs.start || '2020-01-01T00:00:00+00:00' }}
+          RESEARCH_END: ${{ inputs.end || '' }}
+          RESEARCH_PAIRS: ${{ inputs.pairs || 'EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY' }}
+          RESEARCH_STRIDE: ${{ inputs.sample_stride || '120' }}
+          RESEARCH_HISTORY: ${{ inputs.history_states || '10000' }}
+        run: |
+          END_ARG=""
+          if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
+          python -m research.datafeed_empirical --start "$RESEARCH_START" $END_ARG --pairs "$RESEARCH_PAIRS" --sample-stride "$RESEARCH_STRIDE" --history-states "$RESEARCH_HISTORY" --max-days-per-batch 7 --input-dir .data/empirical_feed --output artifacts/empirical_report.json
+      - name: Upload VERIFIED empirical report
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL
+          path: artifacts/empirical_report.json
+          if-no-files-found: error
+          retention-days: 30
