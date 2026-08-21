@@ -29,3 +29,10 @@ def test_load_feed_bars_flattens_month_records_and_sorts(tmp_path: Path) -> None
     )
     rows = load_feed_bars(path)
     assert [row["timestamp"] for row in rows] == [1000, 2000]
+
+
+def test_load_feed_bars_accepts_canonical_bar_per_line_jsonl(tmp_path: Path) -> None:
+    path = tmp_path / "eurusd.jsonl"
+    path.write_text(json.dumps(_bar(3000)) + "\n" + json.dumps(_bar(1000)) + "\n", encoding="utf-8")
+    rows = load_feed_bars(path)
+    assert [row["timestamp"] for row in rows] == [1000, 3000]
