@@ -1,3 +1,4 @@
+# Research execution trigger: non-semantic workflow change; experiment logic unchanged.
 name: "🔬 ENRICHED CONDITIONAL EDGE EXPERIMENT"
 
 on:
