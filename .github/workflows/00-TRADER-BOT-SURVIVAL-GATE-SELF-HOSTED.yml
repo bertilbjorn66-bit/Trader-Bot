@@ -1,0 +1,163 @@
+name: "🚨 00 — TRADER BOT SURVIVAL GATE — SELF-HOSTED"
+
+on:
+  workflow_dispatch:
+    inputs:
+      research_ref:
+        description: "Research branch/commit to execute"
+        required: true
+        default: "research/enriched-conditional-experiment-v1"
+      source_run_id:
+        description: "Verified prior run containing survival-gate feed artifacts"
+        required: true
+        default: "32489667825"
+      start:
+        description: "UTC research start (used only if a feed is missing and fallback download is available)"
+        required: true
+        default: "2020-01-01T00:00:00+00:00"
+      end:
+        description: "UTC research end (blank = current UTC time)"
+        required: false
+        default: ""
+      sample_stride:
+        description: "Target stride in 10m bars"
+        required: true
+        default: "120"
+      history_states:
+        description: "Historical states per target"
+        required: true
+        default: "10000"
+      pr_number:
+        description: "PR to receive the run summary"
+        required: true
+        default: "26"
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  survival_gate:
+    name: "🛡️ Full Survival Gate"
+    runs-on: self-hosted
+    timeout-minutes: 480
+    steps:
+      - name: Checkout selected research ref
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.research_ref }}
+
+      - name: Verify local runner prerequisites
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python --version
+          git --version
+          go version
+
+      - name: Install Python project and development tools
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+
+      - name: Static checks
+        shell: powershell
+        run: |
+          ruff check research trader_bot tests
+          mypy research trader_bot
+
+      - name: Test suite
+        shell: powershell
+        run: python -m pytest
+
+      - name: Create feed directory
+        shell: powershell
+        run: New-Item -ItemType Directory -Force -Path .data/empirical_feed | Out-Null
+
+      - name: Restore verified feeds from prior run
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: survival-gate-feed-*
+          path: .data/empirical_feed
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run_id }}
+
+      - name: Verify restored feed set
+        id: feeds
+        shell: powershell
+        run: |
+          $expected = @('eurusd','gbpusd','usdjpy','audusd','usdcad','usdchf','nzdusd','eurjpy','gbpjpy')
+          $missing = @()
+          foreach ($name in $expected) {
+            if (-not (Test-Path ".data/empirical_feed/$name.jsonl")) {
+              $missing += $name
+            }
+          }
+          if ($missing.Count -eq 0) {
+            Write-Host 'All nine verified feed artifacts restored.'
+            'complete=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Host ('Missing feeds: ' + ($missing -join ', '))
+            'complete=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Stop rather than silently redownload missing research data
+        if: steps.feeds.outputs.complete != 'true'
+        shell: powershell
+        run: |
+          throw "The selected source run did not provide all nine verified empirical feeds. No silent replacement dataset will be substituted. Choose a source run containing all nine feeds or explicitly authorize a fresh download."
+
+      - name: Run enriched conditional experiment
+        shell: powershell
+        env:
+          STRIDE: ${{ inputs.sample_stride }}
+          HISTORY: ${{ inputs.history_states }}
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          python -m research.enriched_conditional_experiment --input-dir .data/empirical_feed --sample-stride $env:STRIDE --history-states $env:HISTORY --output artifacts/enriched_conditional_experiment.json
+
+      - name: Run confirmation robustness and cost stress audit
+        shell: powershell
+        run: |
+          python -m research.conditional_robustness --input artifacts/enriched_conditional_experiment.json --output artifacts/conditional_robustness.json
+
+      - name: Cross-check survival artifacts
+        shell: powershell
+        run: |
+          $experiment = Get-Content artifacts/enriched_conditional_experiment.json -Raw | ConvertFrom-Json
+          $robustness = Get-Content artifacts/conditional_robustness.json -Raw | ConvertFrom-Json
+          if ($experiment.status -ne 'ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED') { throw 'Unexpected enriched experiment status.' }
+          if ($robustness.status -ne 'CONDITIONAL_ROBUSTNESS_AUDIT_COMPLETED') { throw 'Unexpected robustness audit status.' }
+          if (-not $robustness.results) { throw 'Robustness audit returned no finalist results.' }
+          Write-Host ('Experiment records: ' + $experiment.record_count)
+          Write-Host ('Robustness results: ' + $robustness.results.Count)
+
+      - name: Upload verified survival-gate result
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-TRADER-BOT-SURVIVAL-GATE-SELF-HOSTED
+          path: |
+            artifacts/enriched_conditional_experiment.json
+            artifacts/conditional_robustness.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish run summary to PR
+        if: always()
+        continue-on-error: true
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REF: ${{ inputs.research_ref }}
+          SOURCE_RUN: ${{ inputs.source_run_id }}
+        run: |
+          $status = if ($env:status -eq 'success') { '✅' } else { '❌' }
+          gh api "repos/$env:REPO/issues/$env:PR_NUMBER/comments" -f body="### Trader Bot self-hosted survival-gate run`n`nRef: `$env:REF``nSource feed run: `$env:SOURCE_RUN``n`nStatus: workflow completed; see the authoritative Actions result and uploaded artifact.`n`nWorkflow run: $env:GITHUB_SERVER_URL/$env:REPO/actions/runs/$env:GITHUB_RUN_ID" | Out-Null
