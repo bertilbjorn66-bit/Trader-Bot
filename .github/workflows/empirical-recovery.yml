@@ -1,4 +1,4 @@
-name: "🚑 EMPIRICAL RECOVERY — RETRY FAILED PAIRS"
+name: "🚑 RUN THIS — EMPIRICAL RECOVERY — LATEST"
 
 on:
   workflow_dispatch:
@@ -212,18 +212,6 @@ PY
           pattern: empirical-recovery-*
           path: .data/empirical_feed
           merge-multiple: true
-      - name: Normalize retry artifact filenames
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          for f in .data/empirical_feed/*.jsonl; do
-            base="$(basename "$f")"
-            case "$base" in
-              eurusd_bid_*.jsonl|gbpusd_bid_*.jsonl|usdjpy_bid_*.jsonl) ;;
-            esac
-          done
-          echo "Input files:"
-          ls -lh .data/empirical_feed
       - name: Verify all nine pair files are present
         run: |
           set -euo pipefail
@@ -242,7 +230,7 @@ PY
           python -m research.datafeed_empirical \
             --start "${{ inputs.start }}" \
             $END_ARG \
-            --pairs "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY" \
+            --pairs "EUR/USD,GBP/USD,USD/JPY, AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY" \
             --sample-stride "${{ inputs.sample_stride }}" \
             --history-states "${{ inputs.history_states }}" \
             --max-days-per-batch 7 \
