@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/ENRICHED-CONDITIONAL-EXPERIMENT.yml"
       - "research/enriched_conditional_experiment.py"
+      - "research/conditional_robustness.py"
       - "research/sequential_empirical.py"
       - "research/datafeed_empirical.py"
       - "research/jetta_datafeed_download.py"
@@ -147,10 +148,15 @@ jobs:
           HISTORY: ${{ inputs.history_states || '10000' }}
         run: |
           python -m research.enriched_conditional_experiment --input-dir .data/empirical_feed --sample-stride "$STRIDE" --history-states "$HISTORY" --output artifacts/enriched_conditional_experiment.json
+      - name: Run confirmation robustness and cost stress audit
+        run: |
+          python -m research.conditional_robustness --input artifacts/enriched_conditional_experiment.json --output artifacts/conditional_robustness.json
       - name: Upload enriched research artifact
         uses: actions/upload-artifact@v7
         with:
           name: VERIFIED-ENRICHED-CONDITIONAL-EDGE-EXPERIMENT
-          path: artifacts/enriched_conditional_experiment.json
+          path: |
+            artifacts/enriched_conditional_experiment.json
+            artifacts/conditional_robustness.json
           if-no-files-found: error
           retention-days: 30
