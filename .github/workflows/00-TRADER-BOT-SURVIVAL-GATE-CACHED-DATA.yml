@@ -8,7 +8,7 @@ on:
         required: true
         default: "research/enriched-conditional-experiment-v1"
       source_run_id:
-        description: "Existing workflow run containing verified feed artifacts"
+        description: "Existing workflow run to reuse verified feed artifacts from"
         required: true
         default: "32489667825"
       start:
@@ -88,6 +88,7 @@ jobs:
       - name: Create feed directory
         run: mkdir -p .data/empirical_feed
       - name: Restore verified feed from previous run
+        id: restore
         uses: actions/download-artifact@v8
         continue-on-error: true
         with:
@@ -95,22 +96,23 @@ jobs:
           path: .data/empirical_feed
           github-token: ${{ github.token }}
           run-id: ${{ inputs.source_run_id }}
-      - name: Check whether existing verified feed was restored
+      - name: Determine whether existing verified feed was restored
         id: cache_check
         shell: bash
         run: |
           if test -s ".data/empirical_feed/${{ matrix.slug }}.jsonl"; then
             echo "present=true" >> "$GITHUB_OUTPUT"
-            echo "Reused existing verified artifact for ${{ matrix.pair }} from run ${{ inputs.source_run_id }}."
+            echo "REUSED: ${{ matrix.pair }} from source run ${{ inputs.source_run_id }}"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "No reusable artifact found for ${{ matrix.pair }}; this pair must be downloaded."
+            echo "MISSING: ${{ matrix.pair }} — fallback download required"
           fi
       - name: Setup Go for fallback downloader
         if: steps.cache_check.outputs.present != 'true'
         uses: actions/setup-go@v6
         with:
           go-version: "1.24.x"
+          cache: false
       - name: Install pinned JETTA client for fallback
         if: steps.cache_check.outputs.present != 'true'
         run: |
@@ -163,11 +165,10 @@ jobs:
           from pathlib import Path
           expected = ['eurusd','gbpusd','usdjpy','audusd','usdcad','usdchf','nzdusd','eurjpy','gbpjpy']
           root = Path('.data/empirical_feed')
-          missing = [name for name in expected if not (root / f'{name}.jsonl').is_file()
-          ]
+          missing = [name for name in expected if not (root / f'{name}.jsonl').is_file()]
           if missing:
               raise SystemExit('Missing feeds: ' + ', '.join(missing))
-          print('All nine verified feed artifacts present. No unnecessary redownloads remain.')
+          print('All nine verified feed artifacts present; no unnecessary redownloads remain.')
           PY
       - name: Run enriched experiment
         env:
