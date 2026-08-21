@@ -35,25 +35,42 @@ def _timestamp_ms(row: dict[str, object]) -> int:
     return int(value)
 
 
+def _validate_bar(item: object, path: Path, line_number: int) -> dict[str, object]:
+    if not isinstance(item, dict):
+        raise ValueError(f"Invalid bar at {path}:{line_number}")
+    _timestamp_ms(item)
+    for key in (
+        "bid_open", "bid_high", "bid_low", "bid_close",
+        "ask_open", "ask_high", "ask_low", "ask_close",
+    ):
+        _number(item, key)
+    return dict(item)
+
+
 def load_feed_bars(path: Path) -> list[dict[str, object]]:
+    """Load the canonical JETTA bar-per-line JSONL format.
+
+    Backward compatibility is retained for older wrapped records of the form
+    {"month_start": ..., "bars": [...]}. Both forms are normalized to a flat
+    list of validated 10-minute BID/ASK bar dictionaries.
+    """
     rows: list[dict[str, object]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
             if not line.strip():
                 continue
             payload = json.loads(line)
-            if not isinstance(payload, dict) or not isinstance(payload.get("bars"), list):
+            if not isinstance(payload, dict):
                 raise ValueError(f"Invalid feed record at {path}:{line_number}")
-            for item in payload["bars"]:
-                if not isinstance(item, dict):
-                    raise ValueError(f"Invalid bar at {path}:{line_number}")
-                _timestamp_ms(item)
-                for key in (
-                    "bid_open", "bid_high", "bid_low", "bid_close",
-                    "ask_open", "ask_high", "ask_low", "ask_close",
-                ):
-                    _number(item, key)
-                rows.append(dict(item))
+
+            if isinstance(payload.get("bars"), list):
+                for item in payload["bars"]:
+                    rows.append(_validate_bar(item, path, line_number))
+            elif "timestamp" in payload:
+                rows.append(_validate_bar(payload, path, line_number))
+            else:
+                raise ValueError(f"Invalid feed record at {path}:{line_number}")
+
     rows.sort(key=_timestamp_ms)
     if not rows:
         raise ValueError(f"No bars loaded for {path}")
@@ -152,7 +169,7 @@ def main() -> None:
         series[pair] = returns
     payload = {
         "research_status": "EMPIRICAL_DATAFEED_RUN_COMPLETED",
-        "source": "Dukascopy public datafeed via dukascopy-node; native m5 aggregated to complete 10m bars",
+        "source": "Dukascopy public datafeed via dukascopy-go JETTA transport; native m5 aggregated to complete 10m bars",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "pairs": reports,
         "cross_pair_return_correlation": empirical._correlation_matrix(pairs, series),
