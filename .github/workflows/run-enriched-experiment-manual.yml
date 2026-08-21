@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       research_ref:
-        description: "Research branch/commit to execute (default is current enriched branch)"
+        description: "Research branch/commit to execute"
         required: true
         default: "research/enriched-conditional-experiment-v1"
       start:
@@ -23,10 +23,15 @@ on:
         description: "Historical states per target"
         required: true
         default: "10000"
+      pr_number:
+        description: "PR to receive the run summary"
+        required: true
+        default: "26"
 
 permissions:
   contents: read
   actions: read
+  issues: write
 
 jobs:
   validate:
@@ -151,3 +156,26 @@ jobs:
             artifacts/conditional_robustness.json
           if-no-files-found: error
           retention-days: 30
+
+  report:
+    name: "4️⃣ Post research-gate result to PR"
+    needs: [validate, download, experiment]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish run summary to PR #26
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          VALIDATE: ${{ needs.validate.result }}
+          DOWNLOAD: ${{ needs.download.result }}
+          EXPERIMENT: ${{ needs.experiment.result }}
+          REF: ${{ inputs.research_ref }}
+        run: |
+          if [ "$VALIDATE" = "success" ] && [ "$DOWNLOAD" = "success" ] && [ "$EXPERIMENT" = "success" ]; then
+            STATUS="✅ Research experiment completed successfully. Artifacts uploaded for independent inspection. This does NOT authorize live trading."
+          else
+            STATUS="❌ Research experiment did not complete successfully. Validation=${VALIDATE}, download=${DOWNLOAD}, experiment=${EXPERIMENT}. Live trading remains disabled."
+          fi
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" -f body="### Enriched research gate run\n\nRef: \`$REF\`\n\n$STATUS\n\nWorkflow run: $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID"
