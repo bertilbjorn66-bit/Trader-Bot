@@ -1,4 +1,5 @@
 # Research execution trigger: non-semantic workflow change; experiment logic unchanged.
+# PR bridge is hosted on empirical-rest-v1; this file remains the direct branch workflow.
 name: "🔬 ENRICHED CONDITIONAL EDGE EXPERIMENT"
 
 on:
