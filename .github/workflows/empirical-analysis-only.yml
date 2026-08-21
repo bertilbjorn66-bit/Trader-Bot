@@ -77,21 +77,36 @@ jobs:
           run-id: ${{ inputs.source_run_id }}
           github-token: ${{ github.token }}
           path: .data/empirical_feed
-      - name: Download three repaired pair artifacts
+      - name: Download EUR/USD repaired artifact
         uses: actions/download-artifact@v8
         with:
-          pattern: empirical-recovery-eurusd|empirical-recovery-gbpusd|empirical-recovery-usdjpy
+          name: empirical-recovery-eurusd
           repository: ${{ github.repository }}
           run-id: ${{ inputs.source_run_id }}
           github-token: ${{ github.token }}
-          path: /tmp/repaired
-          merge-multiple: true
+          path: /tmp/repaired/eurusd
+      - name: Download GBP/USD repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-gbpusd
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/gbpusd
+      - name: Download USD/JPY repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-usdjpy
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/usdjpy
       - name: Place repaired pair files
         run: |
           set -euo pipefail
           for slug in eurusd gbpusd usdjpy; do
-            test -s "/tmp/repaired/$slug.jsonl"
-            cp "/tmp/repaired/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
+            test -s "/tmp/repaired/$slug/$slug.jsonl"
+            cp "/tmp/repaired/$slug/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
           done
       - name: Verify all nine pair files
         run: |
