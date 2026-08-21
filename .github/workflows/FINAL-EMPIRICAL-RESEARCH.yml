@@ -1,4 +1,4 @@
-name: "🏁 FINAL EMPIRICAL RESEARCH — VALIDATE → ANALYZE — NO DOWNLOAD"
+name: "🏁 FINAL EMPIRICAL RESEARCH — VALIDATE → ANALYZE — NO MARKET-DATA DOWNLOAD"
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
         required: false
         default: ""
       pairs:
-        description: "Nine existing FX pairs"
+        description: "Nine completed FX pairs"
         required: true
         default: "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY"
       sample_stride:
@@ -23,6 +23,13 @@ on:
         description: "Historical states"
         required: true
         default: "10000"
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  ARTIFACT_API: "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?per_page=100"
 
 jobs:
   validate:
@@ -48,7 +55,7 @@ jobs:
         run: pytest
 
   analyze:
-    name: "2️⃣ RUN full empirical analysis — EXISTING 9-PAIR DATA"
+    name: "2️⃣ RUN full empirical analysis — EXISTING 9-PAIR DATA — NO REDOWNLOAD"
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -63,11 +70,46 @@ jobs:
           python-version: "3.12"
       - name: Install runtime dependencies
         run: python -m pip install --upgrade pip && pip install -e .
-      - name: Confirm existing data is present
+      - name: Restore completed 9-pair datasets from existing GitHub artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESEARCH_PAIRS: ${{ inputs.pairs }}
         run: |
-          test -d .data/empirical_feed || { echo 'Existing nine-pair data directory not present in repository.'; exit 1; }
-          find .data/empirical_feed -type f -maxdepth 2 -print
-      - name: Run empirical analysis — NO DOWNLOAD
+          set -euo pipefail
+          mkdir -p .data/empirical_feed
+          declare -A MAP=(
+            ["EUR/USD"]="eurusd" ["GBP/USD"]="gbpusd" ["USD/JPY"]="usdjpy"
+            ["AUD/USD"]="audusd" ["USD/CAD"]="usdcad" ["USD/CHF"]="usdchf"
+            ["NZD/USD"]="nzdusd" ["EUR/JPY"]="eurjpy" ["GBP/JPY"]="gbpjpy"
+          )
+          artifacts_json="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$ARTIFACT_API")"
+          for pair in ${RESEARCH_PAIRS//,/ }; do
+            slug="${MAP[$pair]}"
+            name="empirical-feed-${slug}"
+            artifact_id="$(printf '%s' "$artifacts_json" | jq -r --arg n "$name" '[.artifacts[] | select(.name==$n and .expired==false)] | sort_by(.created_at) | last | .id // empty')"
+            if [ -z "$artifact_id" ]; then
+              echo "ERROR: completed artifact $name is not available. This workflow will NOT redownload market data." >&2
+              exit 1
+            fi
+            echo "Restoring $name (artifact $artifact_id)"
+            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -o "/tmp/${slug}.zip" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip"
+            unzip -oq "/tmp/${slug}.zip" -d .data/empirical_feed
+          done
+      - name: Verify all nine completed pair files
+        env:
+          RESEARCH_PAIRS: ${{ inputs.pairs }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          mapping = {"EUR/USD":"eurusd","GBP/USD":"gbpusd","USD/JPY":"usdjpy","AUD/USD":"audusd","USD/CAD":"usdcad","USD/CHF":"usdchf","NZD/USD":"nzdusd","EUR/JPY":"eurjpy","GBP/JPY":"gbpjpy"}
+          root = Path('.data/empirical_feed')
+          missing = [mapping[p.strip()]+'.jsonl' for p in os.environ['RESEARCH_PAIRS'].split(',') if p.strip() and not (root/(mapping[p.strip()]+'.jsonl')).is_file()]
+          if missing:
+              raise SystemExit('Missing completed pair data: ' + ', '.join(missing))
+          print('All nine completed datasets restored. No market-data download was performed.')
+          PY
+      - name: Run empirical analysis — NO MARKET-DATA DOWNLOAD
         env:
           RESEARCH_START: ${{ inputs.start }}
           RESEARCH_END: ${{ inputs.end }}
