@@ -1,0 +1,124 @@
+name: "02 — ▶️ CONTINUE EMPIRICAL ANALYSIS — USE COMPLETED DATA"
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Completed recovery run containing all nine verified pair artifacts"
+        required: true
+        default: "32470594197"
+      start:
+        description: "UTC analysis start timestamp"
+        required: true
+        default: "2020-01-01T00:00:00+00:00"
+      end:
+        description: "UTC analysis end timestamp (blank = current UTC time)"
+        required: false
+        default: ""
+      sample_stride:
+        description: "Target stride in 10m bars"
+        required: true
+        default: "120"
+      history_states:
+        description: "Historical states used per target"
+        required: true
+        default: "10000"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate:
+    name: "Validate analysis engine"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout corrected research branch
+        uses: actions/checkout@v7
+        with:
+          ref: empirical-rest-v1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check .
+          mypy trader_bot research
+      - name: Run complete test suite
+        run: pytest
+
+  analyze:
+    name: "Continue empirical analysis from completed nine-pair data"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout corrected research branch
+        uses: actions/checkout@v7
+        with:
+          ref: empirical-rest-v1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Create input directory
+        run: mkdir -p .data/empirical_feed
+      - name: Download six-pair reused artifact bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-reused-artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: .data/empirical_feed
+      - name: Download three repaired pair artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: empirical-recovery-eurusd|empirical-recovery-gbpusd|empirical-recovery-usdjpy
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired
+          merge-multiple: true
+      - name: Place repaired pair files
+        run: |
+          set -euo pipefail
+          for slug in eurusd gbpusd usdjpy; do
+            test -s "/tmp/repaired/$slug.jsonl"
+            cp "/tmp/repaired/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
+          done
+      - name: Verify all nine pair files
+        run: |
+          set -euo pipefail
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/$slug.jsonl" || { echo "Missing $slug.jsonl"; exit 1; }
+          done
+          echo "All nine completed pair datasets are present; no market-data download will occur."
+      - name: Run empirical analysis only
+        env:
+          INPUT_END: ${{ inputs.end }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_END" ]; then end="$INPUT_END"; else end="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
+          python -m research.datafeed_empirical \
+            --start "${{ inputs.start }}" \
+            --end "$end" \
+            --pairs "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY" \
+            --sample-stride "${{ inputs.sample_stride }}" \
+            --history-states "${{ inputs.history_states }}" \
+            --max-days-per-batch 7 \
+            --input-dir .data/empirical_feed \
+            --output artifacts/empirical_report.json
+      - name: Upload VERIFIED empirical report
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-EMPIRICAL-RESEARCH-REPORT
+          path: artifacts/empirical_report.json
+          if-no-files-found: error
+          retention-days: 30
