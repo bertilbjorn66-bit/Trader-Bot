@@ -32,6 +32,7 @@ permissions:
   contents: read
   actions: read
   issues: write
+  pull-requests: write
 
 jobs:
   validate:
@@ -164,6 +165,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Publish run summary
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -178,4 +180,4 @@ jobs:
           else
             STATUS="❌ Survival-gate experiment did not complete successfully. Validation=${VALIDATE}, download=${DOWNLOAD}, experiment=${EXPERIMENT}. Live trading remains disabled."
           fi
-          gh api "repos/$REPO/issues/$PR_NUMBER/comments" -f body="### Trader Bot survival-gate run\n\nRef: \`$REF\`\n\n$STATUS\n\nWorkflow run: $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID"
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" -f body="### Trader Bot survival-gate run\n\nRef: \`$REF\`\n\n$STATUS\n\nWorkflow run: $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID" || echo "PR summary could not be posted; workflow result remains authoritative."
