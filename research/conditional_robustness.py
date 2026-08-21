@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime
 from pathlib import Path
 from statistics import mean
 
@@ -49,6 +50,8 @@ def main() -> None:
             and (finalist["distance_max"] is None or record["median_distance"] <= finalist["distance_max"])
             and record["agreement"] >= finalist["agreement_min"]
         ]
+        chosen.sort(key=lambda record: datetime.fromisoformat(str(record["timestamp"])))
+
         by_pair: dict[str, list[float]] = {}
         by_year: dict[str, list[float]] = {}
         by_direction: dict[str, list[float]] = {}
@@ -71,16 +74,23 @@ def main() -> None:
             for result in pair_stats.values()
             if result and result["expectancy_pips"] > 0.0 and result["profit_factor"] is not None and result["profit_factor"] > 1.0
         )
+
+        def stress_pass(cost: float) -> bool:
+            result = stress[str(cost)]
+            return bool(
+                result
+                and result["expectancy_pips"] > 0.0
+                and result["profit_factor"] is not None
+                and result["profit_factor"] > 1.0
+            )
+
         promotion_gate = {
             "confirmation_pf_gt_1": bool(confirmation and confirmation["profit_factor"] and confirmation["profit_factor"] > 1.0),
             "confirmation_expectancy_positive": bool(confirmation and confirmation["expectancy_pips"] > 0.0),
             "confirmation_sample_min_100": bool(confirmation and confirmation["n"] >= 100),
-            "stress_0_5_pips_positive": bool(
-                stress["0.5"]
-                and stress["0.5"]["expectancy_pips"] > 0.0
-                and stress["0.5"]["profit_factor"] is not None
-                and stress["0.5"]["profit_factor"] > 1.0
-            ),
+            "stress_0_2_pips_positive": stress_pass(0.2),
+            "stress_0_5_pips_positive": stress_pass(0.5),
+            "stress_1_0_pips_positive": stress_pass(1.0),
             "positive_pair_count_min_2": positive_pairs >= 2,
             "max_drawdown_recorded": bool(confirmation and confirmation["max_drawdown_pips"] is not None),
         }
@@ -99,6 +109,7 @@ def main() -> None:
     output = {
         "status": "CONDITIONAL_ROBUSTNESS_AUDIT_COMPLETED",
         "promotion_policy": "No live execution authorization. Promotion requires every gate to pass plus a separate paper-trading period and independent review.",
+        "drawdown_method": "Confirmation records are sorted chronologically before cumulative equity and max drawdown are calculated.",
         "results": results,
     }
     output_path = Path(args.output)
