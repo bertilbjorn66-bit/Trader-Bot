@@ -1,0 +1,148 @@
+name: "🔬 ENRICHED CONDITIONAL EDGE EXPERIMENT"
+
+on:
+  push:
+    branches: ["research/enriched-conditional-experiment-v1"]
+    paths:
+      - ".github/workflows/ENRICHED-CONDITIONAL-EXPERIMENT.yml"
+      - "research/enriched_conditional_experiment.py"
+      - "research/sequential_empirical.py"
+      - "research/datafeed_empirical.py"
+      - "research/jetta_datafeed_download.py"
+      - "research/outcomes.py"
+      - "research/similarity.py"
+      - "research/pipeline.py"
+      - "research/regimes.py"
+      - "research/cross_section.py"
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "UTC research start"
+        required: true
+        default: "2020-01-01T00:00:00+00:00"
+      end:
+        description: "UTC research end"
+        required: false
+        default: ""
+      sample_stride:
+        description: "Target stride in 10m bars"
+        required: true
+        default: "120"
+      history_states:
+        description: "Historical states per target"
+        required: true
+        default: "10000"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate:
+    name: "1️⃣ Validate enriched research engine"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: research/enriched-conditional-experiment-v1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check research trader_bot tests
+          mypy research trader_bot
+      - name: Test suite
+        run: pytest
+
+  download:
+    name: "2️⃣ Download ${{ matrix.pair }} empirical BID/ASK"
+    needs: validate
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        pair: [EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD, EUR/JPY, GBP/JPY]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: research/enriched-conditional-experiment-v1
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install pinned JETTA client
+        run: |
+          go install github.com/Nosvemos/dukascopy-go/cmd/dukascopy-go@79a7354184f984fb006bc68f55681f8e7973aba5
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Install runtime
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Download public Dukascopy BID/ASK data
+        env:
+          START: ${{ inputs.start || '2020-01-01T00:00:00+00:00' }}
+          END: ${{ inputs.end || '' }}
+        run: |
+          END_ARG=""
+          if [ -n "$END" ]; then END_ARG="--end $END"; fi
+          python -m research.jetta_datafeed_download --pair "${{ matrix.pair }}" --start "$START" $END_ARG --out-dir .data/empirical_feed
+      - name: Verify feed file
+        run: test -s ".data/empirical_feed/$(echo '${{ matrix.pair }}' | tr -d '/-' | tr '[:upper:]' '[:lower:]').jsonl"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: enriched-feed-${{ matrix.pair }}
+          path: .data/empirical_feed/*.jsonl
+          if-no-files-found: error
+          retention-days: 3
+
+  experiment:
+    name: "3️⃣ Run enriched conditional experiment"
+    needs: [validate, download]
+    if: ${{ !cancelled() && needs.validate.result == 'success' && needs.download.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: research/enriched-conditional-experiment-v1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install runtime
+        run: python -m pip install --upgrade pip && pip install -e .
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: enriched-feed-*
+          path: .data/empirical_feed
+          merge-multiple: true
+      - name: Verify all nine feeds
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          expected = ['eurusd','gbpusd','usdjpy','audusd','usdcad','usdchf','nzdusd','eurjpy','gbpjpy']
+          root = Path('.data/empirical_feed')
+          missing = [name for name in expected if not (root / f'{name}.jsonl').is_file()
+          ]
+          if missing:
+              raise SystemExit('Missing feeds: ' + ', '.join(missing))
+          print('All nine verified feed artifacts present.')
+          PY
+      - name: Run enriched experiment
+        env:
+          STRIDE: ${{ inputs.sample_stride || '120' }}
+          HISTORY: ${{ inputs.history_states || '10000' }}
+        run: |
+          python -m research.enriched_conditional_experiment --input-dir .data/empirical_feed --sample-stride "$STRIDE" --history-states "$HISTORY" --output artifacts/enriched_conditional_experiment.json
+      - name: Upload enriched research artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-ENRICHED-CONDITIONAL-EDGE-EXPERIMENT
+          path: artifacts/enriched_conditional_experiment.json
+          if-no-files-found: error
+          retention-days: 30
