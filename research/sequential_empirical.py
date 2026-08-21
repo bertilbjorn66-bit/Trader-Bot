@@ -155,7 +155,7 @@ def analyze_pair(
     minimum_bars = STATE_LOOKBACK + history_states + max(horizons) + 10
     if len(bars) < minimum_bars:
         raise ValueError(f"insufficient bars for {pair}: {len(bars)} < {minimum_bars}")
-    for previous, current in zip(bars, bars[1:], strict=True):
+    for previous, current in zip(bars[:-1], bars[1:], strict=True):
         if current.timestamp <= previous.timestamp:
             raise ValueError("empirical bars must be strictly time ordered")
 
@@ -298,7 +298,7 @@ def analyze_pair(
 
     returns = [
         (current.timestamp, (current.bid_close / previous.bid_close) - 1.0)
-        for previous, current in zip(bars, bars[1:], strict=True)
+        for previous, current in zip(bars[:-1], bars[1:], strict=True)
     ]
     return report, returns
 
