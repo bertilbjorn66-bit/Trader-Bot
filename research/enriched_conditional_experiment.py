@@ -103,7 +103,9 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
         neighbors = []
         for state, distance in nearest:
             state_index_value = state_index[state.timestamp]
-            if any(state_index_value + horizon > target_index for horizon in horizons):
+            # Require the entire analogue outcome window to finish strictly before
+            # the target bar. Allowing equality would leak target-bar market data.
+            if any(state_index_value + horizon >= target_index for horizon in horizons):
                 continue
             neighbors.append((state, distance))
         if not neighbors:
@@ -202,7 +204,7 @@ def main() -> None:
             "split": "chronological 70/30 discovery/confirmation within each pair",
             "candidate_search": "finite threshold grid selected only on discovery data, then frozen",
             "analogue_k": 100,
-            "leakage_rule": "an analogue's complete future outcome must end no later than the target timestamp",
+            "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp",
             "outcome": "directional executable movement using BID/ASK, converted to pair-specific pips",
             "cost_model": "BID/ASK embedded; additional slippage and commission fixed at zero in this research artifact",
             "interpretation": "confirmation is the only segment eligible for strategy candidacy; discovery results are not deployment evidence",
