@@ -19,6 +19,7 @@ PAIR_TO_SYMBOL = {
     "USD/CAD": "usdcad", "USD/CHF": "usdchf", "NZD/USD": "nzdusd", "EUR/JPY": "eurjpy",
     "GBP/JPY": "gbpjpy",
 }
+MAX_CROSSED_BAR_FRACTION = 0.001
 
 
 def _number(row: dict[str, object], key: str) -> float:
@@ -48,12 +49,6 @@ def _validate_bar(item: object, path: Path, line_number: int) -> dict[str, objec
 
 
 def load_feed_bars(path: Path) -> list[dict[str, object]]:
-    """Load the canonical JETTA bar-per-line JSONL format.
-
-    Backward compatibility is retained for older wrapped records of the form
-    {"month_start": ..., "bars": [...]}. Both forms are normalized to a flat
-    list of validated 10-minute BID/ASK bar dictionaries.
-    """
     rows: list[dict[str, object]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
@@ -62,7 +57,6 @@ def load_feed_bars(path: Path) -> list[dict[str, object]]:
             payload = json.loads(line)
             if not isinstance(payload, dict):
                 raise ValueError(f"Invalid feed record at {path}:{line_number}")
-
             if isinstance(payload.get("bars"), list):
                 for item in payload["bars"]:
                     rows.append(_validate_bar(item, path, line_number))
@@ -70,7 +64,6 @@ def load_feed_bars(path: Path) -> list[dict[str, object]]:
                 rows.append(_validate_bar(payload, path, line_number))
             else:
                 raise ValueError(f"Invalid feed record at {path}:{line_number}")
-
     rows.sort(key=_timestamp_ms)
     if not rows:
         raise ValueError(f"No bars loaded for {path}")
@@ -78,6 +71,32 @@ def load_feed_bars(path: Path) -> list[dict[str, object]]:
     if len(timestamps) != len(set(timestamps)):
         raise ValueError(f"Duplicate timestamps in {path}")
     return rows
+
+
+def _execution_valid_rows(rows: list[dict[str, object]], pair: str) -> tuple[list[dict[str, object]], dict[str, object]]:
+    valid: list[dict[str, object]] = []
+    crossed = 0
+    for row in rows:
+        bid_open = _number(row, "bid_open")
+        bid_close = _number(row, "bid_close")
+        ask_open = _number(row, "ask_open")
+        ask_close = _number(row, "ask_close")
+        if ask_open < bid_open or ask_close < bid_close:
+            crossed += 1
+            continue
+        valid.append(row)
+    fraction = crossed / len(rows)
+    if fraction > MAX_CROSSED_BAR_FRACTION:
+        raise ValueError(
+            f"{pair} has {crossed}/{len(rows)} crossed execution bars "
+            f"({fraction:.4%}), above the {MAX_CROSSED_BAR_FRACTION:.2%} safety threshold"
+        )
+    return valid, {
+        "input_bars": len(rows),
+        "crossed_execution_bars_excluded": crossed,
+        "crossed_execution_bar_fraction": fraction,
+        "execution_bar_policy": "exclude ASK<BID open/close bars; never clip or repair prices",
+    }
 
 
 def _market_bars(rows: list[dict[str, object]]) -> tuple[tuple[MarketBar, ...], tuple[MarketBar, ...]]:
@@ -108,6 +127,7 @@ def analyze_from_feed(
     max_days_per_batch: int,
     costs: ExecutionAssumptions,
 ) -> tuple[dict[str, object], list[tuple[datetime, float]]]:
+    rows, quality = _execution_valid_rows(rows, pair)
     bid, ask = _market_bars(rows)
     original_iter = empirical.iter_bid_ask_batches  # type: ignore[attr-defined]
 
@@ -129,6 +149,7 @@ def analyze_from_feed(
         )
     finally:
         empirical.iter_bid_ask_batches = original_iter  # type: ignore[attr-defined]
+    report["data_quality"] = quality
     return report, returns
 
 
