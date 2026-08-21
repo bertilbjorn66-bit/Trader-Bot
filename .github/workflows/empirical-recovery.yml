@@ -1,4 +1,4 @@
-name: "🚑 RUN THIS — EMPIRICAL RECOVERY — LATEST"
+name: "01 — 🚑 RUN THIS — EMPIRICAL RECOVERY — LATEST"
 
 on:
   workflow_dispatch:
@@ -71,7 +71,6 @@ jobs:
           repo="$GITHUB_REPOSITORY"
           api="https://api.github.com/repos/$repo"
           mkdir -p /tmp/recovery
-
           declare -A expected=(
             [empirical-feed-audusd]=audusd
             [empirical-feed-usdcad]=usdcad
@@ -80,12 +79,7 @@ jobs:
             [empirical-feed-eurjpy]=eurjpy
             [empirical-feed-gbpjpy]=gbpjpy
           )
-
-          artifacts_json="$(curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "$api/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100")"
-
+          artifacts_json="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100")"
           for artifact_name in "${!expected[@]}"; do
             slug="${expected[$artifact_name]}"
             artifact_id="$(python - <<'PY' "$artifact_name" "$artifacts_json"
@@ -99,22 +93,14 @@ for item in data.get('artifacts', []):
 raise SystemExit(f"Missing non-expired artifact: {name}")
 PY
 )"
-
             archive="/tmp/recovery/$artifact_name.zip"
-            curl -fsSL \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "$api/actions/artifacts/$artifact_id/zip" \
-              -o "$archive"
-
+            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/artifacts/$artifact_id/zip" -o "$archive"
             unzip -q -o "$archive" -d "/tmp/recovery/$artifact_name"
             source_file="/tmp/recovery/$artifact_name/$slug.jsonl"
             test -s "$source_file"
             cp "$source_file" ".data/empirical_feed/$slug.jsonl"
             echo "Reused verified artifact: $artifact_name"
           done
-
-          echo "Reused files:"
           ls -lh .data/empirical_feed
       - name: Upload reused verified artifacts
         uses: actions/upload-artifact@v7
@@ -160,11 +146,7 @@ PY
           INPUT_END: ${{ inputs.end }}
         run: |
           set -euo pipefail
-          if [ -n "$INPUT_END" ]; then
-            end="$INPUT_END"
-          else
-            end="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-          fi
+          if [ -n "$INPUT_END" ]; then end="$INPUT_END"; else end="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
           echo "value=$end" >> "$GITHUB_OUTPUT"
           echo "Using end=$end"
       - name: Download corrected real Dukascopy BID/ASK through JETTA
@@ -224,13 +206,11 @@ PY
           RESEARCH_END: ${{ inputs.end }}
         run: |
           set -euo pipefail
-          END_ARG=""
-          if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; fi
-          if [ -z "$RESEARCH_END" ]; then END_ARG="--end $(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
+          if [ -n "$RESEARCH_END" ]; then END_ARG="--end $RESEARCH_END"; else END_ARG="--end $(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
           python -m research.datafeed_empirical \
             --start "${{ inputs.start }}" \
             $END_ARG \
-            --pairs "EUR/USD,GBP/USD,USD/JPY, AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY" \
+            --pairs "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY" \
             --sample-stride "${{ inputs.sample_stride }}" \
             --history-states "${{ inputs.history_states }}" \
             --max-days-per-batch 7 \
