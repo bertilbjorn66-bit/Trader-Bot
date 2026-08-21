@@ -70,10 +70,18 @@ jobs:
           set -euo pipefail
           api="https://api.github.com/repos/$GITHUB_REPOSITORY"
           mkdir -p /tmp/recovery
-          for spec in "empirical-feed-audusd audusd" "empirical-feed-usdcad usdcad" "empirical-feed-usdchf usdchf" "empirical-feed-nzdusd nzdusd" "empirical-feed-eurjpy eurjpy" "empirical-feed-gbpjpy gbpjpy"; do
-            artifact_name="${spec%% *}"
-            slug="${spec##* }"
-            artifact_id="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" | jq -r --arg n "$artifact_name" '.artifacts[] | select(.name == $n and .expired == false) | .id' | head -n1)"
+          artifacts_json="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100")"
+          for artifact_name in empirical-feed-audusd empirical-feed-usdcad empirical-feed-usdchf empirical-feed-nzdusd empirical-feed-eurjpy empirical-feed-gbpjpy; do
+            case "$artifact_name" in
+              empirical-feed-audusd) slug=audusd ;;
+              empirical-feed-usdcad) slug=usdcad ;;
+              empirical-feed-usdchf) slug=usdchf ;;
+              empirical-feed-nzdusd) slug=nzdusd ;;
+              empirical-feed-eurjpy) slug=eurjpy ;;
+              empirical-feed-gbpjpy) slug=gbpjpy ;;
+              *) echo "Unexpected artifact" >&2; exit 1 ;;
+            esac
+            artifact_id="$(printf '%s' "$artifacts_json" | jq -r --arg n "$artifact_name" '.artifacts[] | select(.name == $n and .expired == false) | .id' | head -n1)"
             test -n "$artifact_id" -a "$artifact_id" != "null"
             archive="/tmp/recovery/$artifact_name.zip"
             curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/artifacts/$artifact_id/zip" -o "$archive"
@@ -97,7 +105,13 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        pair: ["EUR/USD", "GBP/USD", "USD/JPY"]
+        include:
+          - pair: "EUR/USD"
+            slug: eurusd
+          - pair: "GBP/USD"
+            slug: gbpusd
+          - pair: "USD/JPY"
+            slug: usdjpy
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -135,11 +149,13 @@ jobs:
             --start "${{ inputs.start }}" \
             --end "${{ steps.end.outputs.value }}" \
             --out-dir .data/empirical_feed
+      - name: Verify repaired pair output
+        run: test -s ".data/empirical_feed/${{ matrix.slug }}.jsonl"
       - name: Upload repaired pair artifact
         uses: actions/upload-artifact@v7
         with:
-          name: empirical-recovery-${{ matrix.pair }}
-          path: .data/empirical_feed/*.jsonl
+          name: empirical-recovery-${{ matrix.slug }}
+          path: .data/empirical_feed/${{ matrix.slug }}.jsonl
           if-no-files-found: error
           retention-days: 3
 
