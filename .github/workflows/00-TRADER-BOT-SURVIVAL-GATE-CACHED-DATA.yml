@@ -137,7 +137,7 @@ jobs:
           name: survival-gate-feed-${{ matrix.slug }}
           path: .data/empirical_feed/${{ matrix.slug }}.jsonl
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
 
   experiment:
     name: "3️⃣ Run enriched conditional experiment"
