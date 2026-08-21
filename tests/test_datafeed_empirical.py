@@ -39,10 +39,13 @@ def test_load_feed_bars_accepts_canonical_bar_per_line_jsonl(tmp_path: Path) -> 
 
 
 def test_execution_valid_rows_excludes_crossed_quote_bars() -> None:
-    valid = _bar(1000)
+    # The production policy rejects the feed when crossed bars exceed 0.10%.
+    # Keep this test below that safety threshold while verifying that a crossed
+    # bar is excluded rather than repaired or clipped.
+    valid_rows = [_bar(timestamp) for timestamp in range(1000, 2000)]
     crossed = _bar(2000)
     crossed["ask_close"] = 1.0999
-    rows, quality = _execution_valid_rows([valid, crossed], "EUR/USD")
-    assert [row["timestamp"] for row in rows] == [1000]
+    rows, quality = _execution_valid_rows(valid_rows + [crossed], "EUR/USD")
+    assert [row["timestamp"] for row in rows] == list(range(1000, 2000))
     assert quality["crossed_execution_bars_excluded"] == 1
-    assert quality["input_bars"] == 2
+    assert quality["input_bars"] == 1001
