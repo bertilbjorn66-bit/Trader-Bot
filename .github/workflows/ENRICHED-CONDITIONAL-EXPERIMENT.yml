@@ -65,7 +65,16 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        pair: [EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD, EUR/JPY, GBP/JPY]
+        include:
+          - { pair: "EUR/USD", slug: "eurusd" }
+          - { pair: "GBP/USD", slug: "gbpusd" }
+          - { pair: "USD/JPY", slug: "usdjpy" }
+          - { pair: "AUD/USD", slug: "audusd" }
+          - { pair: "USD/CAD", slug: "usdcad" }
+          - { pair: "USD/CHF", slug: "usdchf" }
+          - { pair: "NZD/USD", slug: "nzdusd" }
+          - { pair: "EUR/JPY", slug: "eurjpy" }
+          - { pair: "GBP/JPY", slug: "gbpjpy" }
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -93,11 +102,11 @@ jobs:
           if [ -n "$END" ]; then END_ARG="--end $END"; fi
           python -m research.jetta_datafeed_download --pair "${{ matrix.pair }}" --start "$START" $END_ARG --out-dir .data/empirical_feed
       - name: Verify feed file
-        run: test -s ".data/empirical_feed/$(echo '${{ matrix.pair }}' | tr -d '/-' | tr '[:upper:]' '[:lower:]').jsonl"
+        run: test -s ".data/empirical_feed/${{ matrix.slug }}.jsonl"
       - uses: actions/upload-artifact@v7
         with:
-          name: enriched-feed-${{ matrix.pair }}
-          path: .data/empirical_feed/*.jsonl
+          name: enriched-feed-${{ matrix.slug }}
+          path: .data/empirical_feed/${{ matrix.slug }}.jsonl
           if-no-files-found: error
           retention-days: 3
 
@@ -127,8 +136,7 @@ jobs:
           from pathlib import Path
           expected = ['eurusd','gbpusd','usdjpy','audusd','usdcad','usdchf','nzdusd','eurjpy','gbpjpy']
           root = Path('.data/empirical_feed')
-          missing = [name for name in expected if not (root / f'{name}.jsonl').is_file()
-          ]
+          missing = [name for name in expected if not (root / f'{name}.jsonl').is_file()]
           if missing:
               raise SystemExit('Missing feeds: ' + ', '.join(missing))
           print('All nine verified feed artifacts present.')
