@@ -169,8 +169,20 @@ def main() -> None:
         all_records.extend(records)
         quality[pair] = pair_quality
 
+    # Match the exact labels emitted by classify_regime(); do not silently omit
+    # regimes from discovery because of naming drift.
+    regimes = (
+        "regime:breakout_up",
+        "regime:breakout_down",
+        "regime:high_vol_trend_up",
+        "regime:high_vol_trend_down",
+        "regime:high_volatility_range",
+        "regime:trend_up",
+        "regime:trend_down",
+        "regime:range_low_vol",
+        "regime:range_normal",
+    )
     candidates: list[dict[str, object]] = []
-    regimes = ("regime:high_volatility_range", "regime:low_volatility_range", "regime:trend", "regime:high_volatility_trend")
     pairsets = ("all", "JPY")
     for horizon in empirical.DEFAULT_HORIZONS:
         for agreement_min in (0.50, 0.55, 0.60, 0.65, 0.70, 0.75):
@@ -205,6 +217,7 @@ def main() -> None:
             "candidate_search": "finite threshold grid selected only on discovery data, then frozen",
             "analogue_k": 100,
             "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp",
+            "regime_search_space": list(regimes),
             "outcome": "directional executable movement using BID/ASK, converted to pair-specific pips",
             "cost_model": "BID/ASK embedded; additional slippage and commission fixed at zero in this research artifact",
             "interpretation": "confirmation is the only segment eligible for strategy candidacy; discovery results are not deployment evidence",
