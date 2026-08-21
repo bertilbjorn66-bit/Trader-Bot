@@ -7,6 +7,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 from statistics import mean, median
+from typing import TypedDict
 
 from . import sequential_empirical as empirical
 from .cross_section import session_label
@@ -16,12 +17,65 @@ from .outcomes import future_outcome
 from .pipeline import state_from_bar_window
 from .regimes import classify_regime
 from .similarity import DEFAULT_FEATURES, fit_scaler, nearest_states
+from .types import State
 
 PAIR_PIP = {
     "EUR/USD": 0.0001, "GBP/USD": 0.0001, "USD/JPY": 0.01,
     "AUD/USD": 0.0001, "USD/CAD": 0.0001, "USD/CHF": 0.0001,
     "NZD/USD": 0.0001, "EUR/JPY": 0.01, "GBP/JPY": 0.01,
 }
+
+
+class EvalResult(TypedDict):
+    n: int
+    expectancy_pips: float
+    profit_factor: float | None
+    win_rate: float
+    win_rate_ci: list[float | None]
+    bootstrap_expectancy_ci_pips: list[float | None]
+    median_outcome_pips: float
+
+
+class TargetRecord(TypedDict):
+    pair: str
+    timestamp: str
+    year: int
+    session: str
+    regime: str
+    direction: str
+    horizon: int
+    k: int
+    agreement: float
+    median_distance: float
+    distance_p10: float | None
+    distance_p90: float | None
+    outcome_pips: float
+    split: str
+
+
+class Candidate(TypedDict, total=False):
+    horizon: int
+    agreement_min: float
+    distance_max: float | None
+    regime: str
+    pairset: str
+    discovery: EvalResult
+    discovery_bootstrap: EvalResult | None
+    confirmation: EvalResult | None
+
+
+def numeric_feature(state: State, name: str) -> float:
+    value = state.features.get(name)
+    if not isinstance(value, (float, int)):
+        raise ValueError(f"state feature {name!r} must be numeric")
+    return float(value)
+
+
+def integer_feature(state: State, name: str) -> int:
+    value = state.features.get(name)
+    if not isinstance(value, int):
+        raise ValueError(f"state feature {name!r} must be an integer")
+    return value
 
 
 def percentile(values: list[float], probability: float) -> float | None:
@@ -53,13 +107,19 @@ def wilson_interval(win_rate: float, n: int, z: float = 1.959963984540054) -> tu
     return centre - half, centre + half
 
 
-def evaluate(records: list[dict[str, object]], distance_max: float | None = None, agreement_min: float = 0.0, split: str = "all", with_bootstrap: bool = False) -> dict[str, object] | None:
+def evaluate(
+    records: list[TargetRecord],
+    distance_max: float | None = None,
+    agreement_min: float = 0.0,
+    split: str = "all",
+    with_bootstrap: bool = False,
+) -> EvalResult | None:
     values = [
-        float(record["outcome_pips"])
+        record["outcome_pips"]
         for record in records
         if (split == "all" or record["split"] == split)
-        and (distance_max is None or float(record["median_distance"]) <= distance_max)
-        and float(record["agreement"]) >= agreement_min
+        and (distance_max is None or record["median_distance"] <= distance_max)
+        and record["agreement"] >= agreement_min
     ]
     if not values:
         return None
@@ -80,7 +140,13 @@ def evaluate(records: list[dict[str, object]], distance_max: float | None = None
     }
 
 
-def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, history_states: int, costs: ExecutionAssumptions) -> tuple[list[dict[str, object]], dict[str, object]]:
+def analyze_pair(
+    pair: str,
+    rows: list[dict[str, object]],
+    sample_stride: int,
+    history_states: int,
+    costs: ExecutionAssumptions,
+) -> tuple[list[TargetRecord], dict[str, object]]:
     rows, quality = _execution_valid_rows(rows, pair)
     bid, ask = _market_bars(rows)
     bars = empirical._merge(bid, ask)
@@ -90,7 +156,7 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
         raise ValueError(f"insufficient bars for {pair}: {len(bars)} < {minimum}")
     states = [state_from_bar_window(bars, index, empirical.STATE_LOOKBACK) for index in range(empirical.STATE_LOOKBACK, len(bars))]
     state_index = {state.timestamp: index + empirical.STATE_LOOKBACK for index, state in enumerate(states)}
-    targets: list[dict[str, object]] = []
+    targets: list[TargetRecord] = []
 
     for position in range(history_states, len(states), sample_stride):
         target = states[position]
@@ -100,7 +166,7 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
         history = states[position - history_states:position]
         scaler = fit_scaler(history, DEFAULT_FEATURES)
         nearest = nearest_states(target, history, scaler, k=min(100, len(history)))
-        neighbors = []
+        neighbors: list[tuple[State, float]] = []
         for state, distance in nearest:
             state_index_value = state_index[state.timestamp]
             # Require the entire analogue outcome window to finish strictly before
@@ -111,17 +177,17 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
         if not neighbors:
             continue
 
-        direction = "long" if float(target.features.get("momentum") or 0.0) >= 0.0 else "short"
+        direction = "long" if numeric_feature(target, "momentum") >= 0.0 else "short"
         regime = classify_regime(
-            float(target.features.get("trend") or 0.0),
-            float(target.features.get("trend_strength") or 0.0),
+            numeric_feature(target, "trend"),
+            numeric_feature(target, "trend_strength"),
             empirical._volatility_z(target, history),
-            int(target.features.get("breakout") or 0),
+            integer_feature(target, "breakout"),
         )
         distances = [distance for _, distance in neighbors]
         for horizon in horizons:
             evidence = [
-                net_move(future_outcome(bars, state_index[neighbor.timestamp], horizon, direction).movement, costs)
+                net_move(future_outcome(bars, state_index[neighbor.timestamp], horizon, direction).return_abs, costs)
                 for neighbor, _ in neighbors
             ]
             if not evidence:
@@ -140,13 +206,14 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
                 "median_distance": median(distances),
                 "distance_p10": percentile(distances, 0.10),
                 "distance_p90": percentile(distances, 0.90),
-                "outcome_pips": net_move(target_outcome.movement, costs) / PAIR_PIP[pair],
+                "outcome_pips": net_move(target_outcome.return_abs, costs) / PAIR_PIP[pair],
+                "split": "",
             })
 
-    timestamps = sorted({datetime.fromisoformat(str(record["timestamp"])) for record in targets})
+    timestamps = sorted({datetime.fromisoformat(record["timestamp"]) for record in targets})
     cutoff = timestamps[int(len(timestamps) * 0.70)] if timestamps else None
     for record in targets:
-        record["split"] = "discovery" if cutoff and datetime.fromisoformat(str(record["timestamp"])) < cutoff else "confirmation"
+        record["split"] = "discovery" if cutoff and datetime.fromisoformat(record["timestamp"]) < cutoff else "confirmation"
     return targets, quality
 
 
@@ -161,11 +228,17 @@ def main() -> None:
         raise SystemExit("sample-stride and history-states must be positive")
 
     costs = ExecutionAssumptions()
-    all_records: list[dict[str, object]] = []
+    all_records: list[TargetRecord] = []
     quality: dict[str, object] = {}
     input_dir = Path(args.input_dir)
     for pair in PAIR_TO_SYMBOL:
-        records, pair_quality = analyze_pair(pair, load_feed_bars(input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"), args.sample_stride, args.history_states, costs)
+        records, pair_quality = analyze_pair(
+            pair,
+            load_feed_bars(input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"),
+            args.sample_stride,
+            args.history_states,
+            costs,
+        )
         all_records.extend(records)
         quality[pair] = pair_quality
 
@@ -182,24 +255,61 @@ def main() -> None:
         "regime:range_low_vol",
         "regime:range_normal",
     )
-    candidates: list[dict[str, object]] = []
+    candidates: list[Candidate] = []
     pairsets = ("all", "JPY")
     for horizon in empirical.DEFAULT_HORIZONS:
         for agreement_min in (0.50, 0.55, 0.60, 0.65, 0.70, 0.75):
             for distance_max in (None, 0.5, 1.0, 1.5, 2.0):
                 for regime in regimes:
                     for pairset in pairsets:
-                        subset = [record for record in all_records if record["horizon"] == horizon and record["split"] == "discovery" and record["regime"] == regime and (pairset == "all" or str(record["pair"]).endswith("/JPY"))]
+                        subset = [
+                            record
+                            for record in all_records
+                            if record["horizon"] == horizon
+                            and record["split"] == "discovery"
+                            and record["regime"] == regime
+                            and (pairset == "all" or record["pair"].endswith("/JPY"))
+                        ]
                         result = evaluate(subset, distance_max, agreement_min, "discovery")
-                        if result is not None and int(result["n"]) >= 100:
-                            candidates.append({"horizon": horizon, "agreement_min": agreement_min, "distance_max": distance_max, "regime": regime, "pairset": pairset, "discovery": result})
+                        if result is not None and result["n"] >= 100:
+                            candidates.append({
+                                "horizon": horizon,
+                                "agreement_min": agreement_min,
+                                "distance_max": distance_max,
+                                "regime": regime,
+                                "pairset": pairset,
+                                "discovery": result,
+                            })
 
-    candidates.sort(key=lambda candidate: (float(candidate["discovery"]["expectancy_pips"]), float(candidate["discovery"]["profit_factor"] or -math.inf)), reverse=True)
+    candidates.sort(
+        key=lambda candidate: (
+            candidate["discovery"]["expectancy_pips"],
+            candidate["discovery"]["profit_factor"] or -math.inf,
+        ),
+        reverse=True,
+    )
     finalists = candidates[:10]
     for finalist in finalists:
-        subset = [record for record in all_records if record["horizon"] == finalist["horizon"] and record["regime"] == finalist["regime"] and (finalist["pairset"] == "all" or str(record["pair"]).endswith("/JPY"))]
-        finalist["discovery_bootstrap"] = evaluate(subset, finalist["distance_max"], finalist["agreement_min"], "discovery", with_bootstrap=True)
-        finalist["confirmation"] = evaluate(subset, finalist["distance_max"], finalist["agreement_min"], "confirmation")
+        subset = [
+            record
+            for record in all_records
+            if record["horizon"] == finalist["horizon"]
+            and record["regime"] == finalist["regime"]
+            and (finalist["pairset"] == "all" or record["pair"].endswith("/JPY"))
+        ]
+        finalist["discovery_bootstrap"] = evaluate(
+            subset,
+            finalist["distance_max"],
+            finalist["agreement_min"],
+            "discovery",
+            with_bootstrap=True,
+        )
+        finalist["confirmation"] = evaluate(
+            subset,
+            finalist["distance_max"],
+            finalist["agreement_min"],
+            "confirmation",
+        )
 
     output = {
         "status": "ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED",
