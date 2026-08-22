@@ -1,0 +1,102 @@
+name: "🚦 Survival Gate Auto-Retry"
+
+on:
+  schedule:
+    # GitHub's included Actions allowance resets monthly. During the first
+    # 48 hours of the new billing period, automatically retry the real gate
+    # without requiring the owner to touch a machine.
+    - cron: "10 */6 1-2 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: trader-bot-survival-gate-auto-retry
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    name: "Trigger real Survival Gate when compute is available"
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Inspect current Survival Gate state
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          success=''
+          in_progress=''
+
+          runs=$(gh run list \
+            --repo "$REPO" \
+            --workflow 00-TRADER-BOT-SURVIVAL-GATE-CACHED-DATA.yml \
+            --limit 20 \
+            --json databaseId,status,conclusion,createdAt)
+
+          # A successful Survival Gate in the current calendar month means
+          # there is nothing left for the retry mechanism to trigger.
+          success=$(python - <<'PY' "$runs"
+          import json, sys
+          from datetime import datetime, timezone
+
+          rows = json.loads(sys.argv[1])
+          now = datetime.now(timezone.utc)
+          for row in rows:
+              created = datetime.fromisoformat(row["createdAt"].replace("Z", "+00:00"))
+              if created.year == now.year and created.month == now.month and row["conclusion"] == "success":
+                  print("true")
+                  break
+          else:
+              print("false")
+          PY
+          )
+
+          # Never launch a second long experiment while an existing one is
+          # queued or running; that protects the included-minute allowance.
+          in_progress=$(python - <<'PY' "$runs"
+          import json, sys
+          rows = json.loads(sys.argv[1])
+          print("true" if any(r["status"] in {"queued", "in_progress", "requested", "waiting", "pending"} for r in rows) else "false")
+          PY
+          )
+
+          echo "success=$success" >> "$GITHUB_OUTPUT"
+          echo "in_progress=$in_progress" >> "$GITHUB_OUTPUT"
+          echo "Current-month success: $success"
+          echo "Existing active/queued run: $in_progress"
+
+      - name: Trigger the real Survival Gate
+        if: steps.state.outputs.success != 'true' && steps.state.outputs.in_progress != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run 00-TRADER-BOT-SURVIVAL-GATE-CACHED-DATA.yml \
+            --repo "$REPO" \
+            --ref main \
+            -f research_ref=research/enriched-conditional-experiment-v1 \
+            -f source_run_id=32489667825 \
+            -f start=2020-01-01T00:00:00+00:00 \
+            -f end= \
+            -f sample_stride=120 \
+            -f history_states=10000 \
+            -f pr_number=26
+          echo "Survival Gate dispatch accepted."
+
+      - name: Explain why no dispatch was needed
+        if: steps.state.outputs.success == 'true' || steps.state.outputs.in_progress == 'true'
+        run: |
+          if [ "${{ steps.state.outputs.success }}" = "true" ]; then
+            echo "A successful Survival Gate already exists in the current billing month."
+          else
+            echo "A Survival Gate run is already queued or running; no duplicate was launched."
+          fi
