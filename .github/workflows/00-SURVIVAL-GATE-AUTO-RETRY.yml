@@ -1,10 +1,10 @@
 name: "🚦 Survival Gate Auto-Retry"
 
 on:
+  # Retry every six hours while there is no successful Survival Gate in the
+  # current month. Once a run succeeds, this workflow becomes a no-op.
   schedule:
-    # Retry during the first 48 hours of each new billing period, without
-    # requiring the owner to touch a machine.
-    - cron: "10 */6 1-2 * *"
+    - cron: "10 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -33,7 +33,7 @@ jobs:
           runs=$(gh run list \
             --repo "$REPO" \
             --workflow 00-TRADER-BOT-SURVIVAL-GATE-CACHED-DATA.yml \
-            --limit 20 \
+            --limit 50 \
             --json databaseId,status,conclusion,createdAt)
 
           success=$(python - <<'PY' "$runs"
@@ -59,16 +59,32 @@ jobs:
           PY
           )
 
+          source_run=$(python - <<'PY' "$runs"
+          import json, sys
+          rows = json.loads(sys.argv[1])
+          successful = [r for r in rows if r["conclusion"] == "success"]
+          print(successful[0]["databaseId"] if successful else "")
+          PY
+          )
+
           echo "success=$success" >> "$GITHUB_OUTPUT"
           echo "in_progress=$in_progress" >> "$GITHUB_OUTPUT"
+          echo "source_run=$source_run" >> "$GITHUB_OUTPUT"
           echo "Current-month success: $success"
           echo "Existing active/queued run: $in_progress"
+          echo "Latest successful Survival Gate source run: ${source_run:-none}"
+
+      - name: Stop when no verified source artifact exists
+        if: steps.state.outputs.success != 'true' && steps.state.outputs.in_progress != 'true' && steps.state.outputs.source_run == ''
+        run: |
+          echo "No previous successful Survival Gate exists yet. A fresh bootstrap run must be launched manually because no verified feed artifact is available to reuse."
 
       - name: Trigger the real Survival Gate
-        if: steps.state.outputs.success != 'true' && steps.state.outputs.in_progress != 'true'
+        if: steps.state.outputs.success != 'true' && steps.state.outputs.in_progress != 'true' && steps.state.outputs.source_run != ''
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          SOURCE_RUN: ${{ steps.state.outputs.source_run }}
         shell: bash
         run: |
           set -euo pipefail
@@ -76,12 +92,12 @@ jobs:
             --repo "$REPO" \
             --ref main \
             -f research_ref=research/enriched-conditional-experiment-v1 \
-            -f source_run_id=32489667825 \
+            -f source_run_id="$SOURCE_RUN" \
             -f start=2020-01-01T00:00:00+00:00 \
             -f sample_stride=120 \
             -f history_states=10000 \
             -f pr_number=26
-          echo "Survival Gate dispatch accepted."
+          echo "Survival Gate dispatch accepted using verified source run $SOURCE_RUN."
 
       - name: Explain why no dispatch was needed
         if: steps.state.outputs.success == 'true' || steps.state.outputs.in_progress == 'true'
