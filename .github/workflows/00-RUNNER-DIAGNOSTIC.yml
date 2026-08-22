@@ -1,0 +1,23 @@
+name: "00 — Runner Diagnostic"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-runner:
+    name: "Verify GitHub-hosted compute is available"
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Confirm runner allocation
+        run: |
+          set -euo pipefail
+          echo "HOSTED_RUNNER_OK"
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $RUNNER_OS"
+          python --version
