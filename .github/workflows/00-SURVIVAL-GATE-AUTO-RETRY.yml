@@ -1,6 +1,9 @@
 name: "🚦 Survival Gate Auto-Retry"
 
 on:
+  push:
+    branches:
+      - main
   # Retry every six hours while there is no successful Survival Gate in the
   # current month. Once a run succeeds, this workflow becomes a no-op.
   schedule:
