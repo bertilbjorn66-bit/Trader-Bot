@@ -2,9 +2,8 @@ name: "🚦 Survival Gate Auto-Retry"
 
 on:
   schedule:
-    # GitHub's included Actions allowance resets monthly. During the first
-    # 48 hours of the new billing period, automatically retry the real gate
-    # without requiring the owner to touch a machine.
+    # Retry during the first 48 hours of each new billing period, without
+    # requiring the owner to touch a machine.
     - cron: "10 */6 1-2 * *"
   workflow_dispatch:
 
@@ -31,39 +30,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          success=''
-          in_progress=''
-
           runs=$(gh run list \
             --repo "$REPO" \
             --workflow 00-TRADER-BOT-SURVIVAL-GATE-CACHED-DATA.yml \
             --limit 20 \
             --json databaseId,status,conclusion,createdAt)
 
-          # A successful Survival Gate in the current calendar month means
-          # there is nothing left for the retry mechanism to trigger.
           success=$(python - <<'PY' "$runs"
           import json, sys
           from datetime import datetime, timezone
 
           rows = json.loads(sys.argv[1])
           now = datetime.now(timezone.utc)
-          for row in rows:
-              created = datetime.fromisoformat(row["createdAt"].replace("Z", "+00:00"))
-              if created.year == now.year and created.month == now.month and row["conclusion"] == "success":
-                  print("true")
-                  break
-          else:
-              print("false")
+          print("true" if any(
+              (created := datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))).year == now.year
+              and created.month == now.month
+              and r["conclusion"] == "success"
+              for r in rows
+          ) else "false")
           PY
           )
 
-          # Never launch a second long experiment while an existing one is
-          # queued or running; that protects the included-minute allowance.
           in_progress=$(python - <<'PY' "$runs"
           import json, sys
           rows = json.loads(sys.argv[1])
-          print("true" if any(r["status"] in {"queued", "in_progress", "requested", "waiting", "pending"} for r in rows) else "false")
+          active = {"queued", "in_progress", "requested", "waiting", "pending"}
+          print("true" if any(r["status"] in active for r in rows) else "false")
           PY
           )
 
@@ -86,7 +78,6 @@ jobs:
             -f research_ref=research/enriched-conditional-experiment-v1 \
             -f source_run_id=32489667825 \
             -f start=2020-01-01T00:00:00+00:00 \
-            -f end= \
             -f sample_stride=120 \
             -f history_states=10000 \
             -f pr_number=26
