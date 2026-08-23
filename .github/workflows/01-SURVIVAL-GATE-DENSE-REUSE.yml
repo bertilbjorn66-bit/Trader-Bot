@@ -1,0 +1,108 @@
+name: "🔎 Survival Gate — Dense Sampling Reuse"
+
+on:
+  push:
+    branches:
+      - research/enriched-conditional-experiment-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  validate:
+    name: "1️⃣ Validate research engine"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - run: |
+          ruff check research trader_bot tests
+          mypy research trader_bot
+          pytest
+
+  dense:
+    name: "2️⃣ Reuse verified nine feeds — stride ${{ matrix.stride }}"
+    needs: validate
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        stride: [60, 30]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install runtime
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Create feed directory
+        run: mkdir -p .data/empirical_feed
+      - name: Restore verified nine-pair feeds from completed run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: enriched-feed-*
+          path: .data/empirical_feed
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: 32595660595
+      - name: Verify exactly the nine expected feeds
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          expected = ['eurusd','gbpusd','usdjpy','audusd','usdcad','usdchf','nzdusd','eurjpy','gbpjpy']
+          root = Path('.data/empirical_feed')
+          missing = [name for name in expected if not (root / f'{name}.jsonl').is_file()
+                     or (root / f'{name}.jsonl').stat().st_size == 0]
+          if missing:
+              raise SystemExit('Missing/empty verified feeds: ' + ', '.join(missing))
+          print('All nine pre-existing verified feed artifacts restored; no market-data download performed.')
+          PY
+      - name: Run dense enriched experiment
+        env:
+          STRIDE: ${{ matrix.stride }}
+          HISTORY: "10000"
+        run: |
+          mkdir -p artifacts
+          python -m research.enriched_conditional_experiment \
+            --input-dir .data/empirical_feed \
+            --sample-stride "$STRIDE" \
+            --history-states "$HISTORY" \
+            --output "artifacts/enriched_conditional_experiment_stride_${STRIDE}.json"
+      - name: Run robustness audit
+        env:
+          STRIDE: ${{ matrix.stride }}
+        run: |
+          python -m research.conditional_robustness \
+            --input "artifacts/enriched_conditional_experiment_stride_${STRIDE}.json" \
+            --output "artifacts/conditional_robustness_stride_${STRIDE}.json"
+      - name: Cross-check outputs
+        env:
+          STRIDE: ${{ matrix.stride }}
+        run: |
+          python - <<'PY'
+          import json, os
+          stride = os.environ['STRIDE']
+          exp = json.load(open(f'artifacts/enriched_conditional_experiment_stride_{stride}.json', encoding='utf-8'))
+          rob = json.load(open(f'artifacts/conditional_robustness_stride_{stride}.json', encoding='utf-8'))
+          assert exp['status'] == 'ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED'
+          assert rob['status'] == 'CONDITIONAL_ROBUSTNESS_AUDIT_COMPLETED'
+          assert len(rob['results']) > 0
+          eligible = sum(bool(x.get('promotion_eligible')) for x in rob['results'])
+          print(f'stride={stride} records={exp["record_count"]} finalists={len(rob["results"])} promotion_eligible={eligible}')
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DENSE-SURVIVAL-GATE-STRIDE-${{ matrix.stride }}
+          path: artifacts/*_stride_${{ matrix.stride }}.json
+          if-no-files-found: error
+          retention-days: 30
