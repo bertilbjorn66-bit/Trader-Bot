@@ -19,6 +19,7 @@ permissions:
   pull-requests: write
 
 # Reuses the already-verified nine feed artifacts. No market-data redownload.
+# Continuation trigger: the strict typing fix on the research branch is now validated.
 
 jobs:
   validate:
