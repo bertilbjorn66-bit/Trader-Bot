@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from statistics import mean
@@ -16,7 +17,7 @@ Record = dict[str, Any]
 Candidate = dict[str, Any]
 
 
-def stats(values: list[float]) -> dict[str, float | int | None]:
+def stats(values: list[float]) -> dict[str, Any]:
     wins = sum(value > 0.0 for value in values)
     gross_wins = sum(value for value in values if value > 0.0)
     gross_losses = -sum(value for value in values if value < 0.0)
@@ -41,10 +42,10 @@ def matches(record: Record, candidate: Candidate, split: str) -> bool:
         and record["regime"] == candidate["regime"]
         and record["session"] == candidate["session"]
         and record["pair"] == candidate["pair"]
-        and record["agreement"] >= candidate["agreement_min"]
+        and float(record["agreement"]) >= float(candidate["agreement_min"])
         and (
             candidate["distance_max"] is None
-            or record["median_distance"] <= candidate["distance_max"]
+            or float(record["median_distance"]) <= float(candidate["distance_max"])
         )
     )
 
@@ -55,11 +56,11 @@ def evaluate(records: list[Record], candidate: Candidate, split: str) -> dict[st
         return None
     values = [float(r["outcome_pips"]) for r in chosen]
     result = stats(values)
-    years: dict[str, list[float]] = {}
-    directions: dict[str, list[float]] = {}
+    years: dict[str, list[float]] = defaultdict(list)
+    directions: dict[str, list[float]] = defaultdict(list)
     for record in chosen:
-        years.setdefault(str(record["year"]), []).append(float(record["outcome_pips"]))
-        directions.setdefault(str(record["direction"]), []).append(float(record["outcome_pips"]))
+        years[str(record["year"])].append(float(record["outcome_pips"]))
+        directions[str(record["direction"])].append(float(record["outcome_pips"]))
     result["year_breakdown"] = {year: stats(vals) for year, vals in years.items()}
     result["direction_breakdown"] = {direction: stats(vals) for direction, vals in directions.items()}
     return result
@@ -67,21 +68,16 @@ def evaluate(records: list[Record], candidate: Candidate, split: str) -> dict[st
 
 def discovery_stable(result: dict[str, Any]) -> bool:
     years = result["year_breakdown"]
-    if len(years) < 2:
-        return False
-    chronological = sorted(years, key=int)
-    first_half = [x for y in chronological[: max(1, len(chronological) // 2)] for x in []]
-    _ = first_half
     positive_years = [
         value
         for value in years.values()
-        if value["n"] >= MIN_HALF_SAMPLES and value["expectancy_pips"] > 0.0
+        if int(value["n"]) >= MIN_HALF_SAMPLES and float(value["expectancy_pips"]) > 0.0
     ]
     return (
-        result["n"] >= MIN_DISCOVERY_SAMPLES
-        and result["expectancy_pips"] > 0.0
+        int(result["n"]) >= MIN_DISCOVERY_SAMPLES
+        and float(result["expectancy_pips"]) > 0.0
         and result["profit_factor"] is not None
-        and result["profit_factor"] > 1.0
+        and float(result["profit_factor"]) > 1.0
         and len(positive_years) >= 2
     )
 
@@ -103,18 +99,18 @@ def promotion_gate(confirmation: dict[str, Any] | None) -> dict[str, bool]:
     stable_years = sum(
         1
         for value in years.values()
-        if value["n"] >= 25 and value["expectancy_pips"] > 0.0
+        if int(value["n"]) >= 25 and float(value["expectancy_pips"]) > 0.0
     )
     values = confirmation["_values"]
     stress_02 = stressed_stats(values, 0.2)
     stress_05 = stressed_stats(values, 0.5)
     return {
         "confirmation_exists": True,
-        "confirmation_sample_min_100": confirmation["n"] >= MIN_CONFIRMATION_SAMPLES,
-        "confirmation_expectancy_positive": confirmation["expectancy_pips"] > 0.0,
-        "confirmation_pf_gt_1": confirmation["profit_factor"] is not None and confirmation["profit_factor"] > 1.0,
-        "stress_0_2_positive": stress_02["expectancy_pips"] > 0.0 and stress_02["profit_factor"] is not None and stress_02["profit_factor"] > 1.0,
-        "stress_0_5_positive": stress_05["expectancy_pips"] > 0.0 and stress_05["profit_factor"] is not None and stress_05["profit_factor"] > 1.0,
+        "confirmation_sample_min_100": int(confirmation["n"]) >= MIN_CONFIRMATION_SAMPLES,
+        "confirmation_expectancy_positive": float(confirmation["expectancy_pips"]) > 0.0,
+        "confirmation_pf_gt_1": confirmation["profit_factor"] is not None and float(confirmation["profit_factor"]) > 1.0,
+        "stress_0_2_positive": float(stress_02["expectancy_pips"]) > 0.0 and stress_02["profit_factor"] is not None and float(stress_02["profit_factor"]) > 1.0,
+        "stress_0_5_positive": float(stress_05["expectancy_pips"]) > 0.0 and stress_05["profit_factor"] is not None and float(stress_05["profit_factor"]) > 1.0,
         "confirmation_temporally_stable": stable_years >= 2,
     }
 
@@ -127,18 +123,34 @@ def main() -> None:
 
     data = json.loads(Path(args.input).read_text(encoding="utf-8"))
     records: list[Record] = data["target_records"]
-    horizons = sorted({int(r["horizon"]) for r in records})
-    regimes = sorted({str(r["regime"]) for r in records})
-    sessions = sorted({str(r["session"]) for r in records})
-    pairs = sorted({str(r["pair"]) for r in records})
+
+    grouped: dict[tuple[str, int, str, str, str], list[Record]] = defaultdict(list)
+    for record in records:
+        key = (
+            str(record["pair"]),
+            int(record["horizon"]),
+            str(record["regime"]),
+            str(record["session"]),
+            str(record["split"]),
+        )
+        grouped[key].append(record)
 
     candidates: list[Candidate] = []
+    pairs = sorted({key[0] for key in grouped})
+    horizons = sorted({key[1] for key in grouped})
+    regimes = sorted({key[2] for key in grouped})
+    sessions = sorted({key[3] for key in grouped})
+
     for pair in pairs:
         for horizon in horizons:
             for agreement_min in (0.50, 0.60, 0.70):
                 for distance_max in (None, 0.5, 1.0, 1.5, 2.0):
                     for regime in regimes:
                         for session in sessions:
+                            discovery_records = grouped.get((pair, horizon, regime, session, "discovery"), [])
+                            confirmation_records = grouped.get((pair, horizon, regime, session, "confirmation"), [])
+                            if not discovery_records or len(confirmation_records) < MIN_CONFIRMATION_SAMPLES:
+                                continue
                             candidate = {
                                 "pair": pair,
                                 "horizon": horizon,
@@ -147,22 +159,22 @@ def main() -> None:
                                 "regime": regime,
                                 "session": session,
                             }
-                            discovery = evaluate(records, candidate, "discovery")
+                            discovery = evaluate(discovery_records, candidate, "discovery")
                             if discovery is None or not discovery_stable(discovery):
                                 continue
-                            chosen = [r for r in records if matches(r, candidate, "discovery")]
+                            chosen = [r for r in discovery_records if matches(r, candidate, "discovery")]
                             first, second = split_discovery_half(chosen)
                             first_result = stats([float(r["outcome_pips"]) for r in first]) if len(first) >= MIN_HALF_SAMPLES else None
                             second_result = stats([float(r["outcome_pips"]) for r in second]) if len(second) >= MIN_HALF_SAMPLES else None
                             if not first_result or not second_result:
                                 continue
-                            if first_result["expectancy_pips"] <= 0.0 or second_result["expectancy_pips"] <= 0.0:
+                            if float(first_result["expectancy_pips"]) <= 0.0 or float(second_result["expectancy_pips"]) <= 0.0:
                                 continue
-                            if first_result["profit_factor"] is None or first_result["profit_factor"] <= 1.0:
+                            if first_result["profit_factor"] is None or float(first_result["profit_factor"]) <= 1.0:
                                 continue
-                            if second_result["profit_factor"] is None or second_result["profit_factor"] <= 1.0:
+                            if second_result["profit_factor"] is None or float(second_result["profit_factor"]) <= 1.0:
                                 continue
-                            confirmation_capacity = sum(1 for r in records if matches(r, candidate, "confirmation"))
+                            confirmation_capacity = sum(1 for record in confirmation_records if matches(record, candidate, "confirmation"))
                             if confirmation_capacity < MIN_CONFIRMATION_SAMPLES:
                                 continue
                             candidate = dict(candidate)
@@ -184,10 +196,19 @@ def main() -> None:
 
     results: list[dict[str, Any]] = []
     for candidate in finalists:
-        confirmation = evaluate(records, candidate, "confirmation")
+        confirmation_records = grouped.get(
+            (
+                str(candidate["pair"]),
+                int(candidate["horizon"]),
+                str(candidate["regime"]),
+                str(candidate["session"]),
+                "confirmation",
+            ),
+        )
+        confirmation = evaluate(confirmation_records, candidate, "confirmation")
         if confirmation is None:
             continue
-        chosen = [r for r in records if matches(r, candidate, "confirmation")]
+        chosen = [r for r in confirmation_records if matches(r, candidate, "confirmation")]
         values = [float(r["outcome_pips"]) for r in chosen]
         confirmation["stress_0_2"] = stressed_stats(values, 0.2)
         confirmation["stress_0_5"] = stressed_stats(values, 0.5)
