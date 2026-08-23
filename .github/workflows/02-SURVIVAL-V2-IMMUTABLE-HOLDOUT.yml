@@ -1,0 +1,100 @@
+name: "🧪 SURVIVAL V2 — IMMUTABLE HOLDOUT"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/02-SURVIVAL-V2-IMMUTABLE-HOLDOUT.yml"
+      - "research/survival_v2.py"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  survival-v2:
+    name: "2️⃣ SURVIVAL V2 — PAIR/TIME/COST ROBUSTNESS"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout research implementation
+        uses: actions/checkout@v7
+        with:
+          ref: research/enriched-conditional-experiment-v1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install research runtime
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Static checks and tests
+        run: |
+          ruff check research trader_bot tests
+          mypy research trader_bot
+          pytest
+
+      - name: Create immutable artifact workspace
+        run: mkdir -p .research_input artifacts
+
+      - name: Restore VERIFIED FINAL HOLDOUT — NO MARKET-DATA DOWNLOAD
+        uses: actions/download-artifact@v8
+        with:
+          name: VERIFIED-FINAL-HOLDOUT-RESEARCH
+          path: .research_input
+          github-token: ${{ github.token }}
+          run-id: 32658698680
+
+      - name: Verify immutable input artifacts
+        run: |
+          test -s .research_input/enriched_stride60_holdout_ready.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('.research_input/enriched_stride60_holdout_ready.json')
+          data = json.loads(p.read_text())
+          assert data['status'] == 'ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED'
+          assert data['methodology']['split'].startswith('chronological 60/40')
+          assert data['methodology']['holdout_min_samples'] == 100
+          assert data['record_count'] > 0
+          assert 'holdout_selection' in data
+          print('IMMUTABLE_HOLDOUT_INPUT_VERIFIED')
+          print('record_count=', data['record_count'])
+
+      - name: Run survival V2
+        run: |
+          python -m research.survival_v2 \
+            --input .research_input/enriched_stride60_holdout_ready.json \
+            --output artifacts/survival_v2.json
+
+      - name: Cross-check V2 promotion invariants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('artifacts/survival_v2.json').read_text())
+          assert data['status'] == 'SURVIVAL_V2_COMPLETED'
+          assert data['methodology']['selection_data'].startswith('discovery only')
+          assert data['methodology']['live_authorization'] == 'never granted by this research job'
+          for result in data['results']:
+              assert result['confirmation']['n'] >= 100
+              assert result['candidate']['holdout_structural_n'] >= 100
+              if result['promotion_eligible']:
+                  assert all(result['promotion_gate'].values())
+          print('survival_v2_candidate_pool=', data['candidate_pool'])
+          print('survival_v2_finalists=', data['finalists'])
+          print('survival_v2_promotion_eligible=', sum(1 for r in data['results'] if r['promotion_eligible']))
+          print('LIVE_EXECUTION_AUTHORIZATION=false')
+          PY
+
+      - name: Upload survival V2 research artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-SURVIVAL-V2-RESEARCH
+          path: artifacts/survival_v2.json
+          if-no-files-found: error
+          retention-days: 30
