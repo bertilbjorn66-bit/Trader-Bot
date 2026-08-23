@@ -1,0 +1,108 @@
+name: "🔎 Survival Gate — Dense Reuse Holdout"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/01-SURVIVAL-GATE-DENSE-REUSE.yml"
+      - "research/enriched_conditional_experiment.py"
+      - "research/conditional_robustness.py"
+      - "research/outcomes.py"
+      - "research/execution.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  validate:
+    name: "1️⃣ Validate research engine"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: research/enriched-conditional-experiment-v1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks and tests
+        run: |
+          ruff check research trader_bot tests
+          mypy research trader_bot
+          pytest
+
+  dense:
+    name: "2️⃣ Dense empirical run using existing nine feeds"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: research/enriched-conditional-experiment-v1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install runtime
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Create feed directory
+        run: mkdir -p .data/empirical_feed
+      - name: Restore existing verified nine-pair feeds
+        uses: actions/download-artifact@v8
+        with:
+          pattern: enriched-feed-*
+          path: .data/empirical_feed
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: 32595660595
+      - name: Verify nine reused feeds
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          expected = ['eurusd','gbpusd','usdjpy','audusd','usdcad','usdchf','nzdusd','eurjpy','gbpjpy']
+          root = Path('.data/empirical_feed')
+          missing = [name for name in expected if not (root / f'{name}.jsonl').is_file() or (root / f'{name}.jsonl').stat().st_size == 0]
+          if missing:
+              raise SystemExit('Missing/empty reused feeds: ' + ', '.join(missing))
+          print('All nine existing verified feeds restored. NO MARKET-DATA DOWNLOAD.')
+          PY
+      - name: Run dense enriched experiment
+        run: |
+          mkdir -p artifacts
+          python -m research.enriched_conditional_experiment --input-dir .data/empirical_feed --sample-stride 60 --history-states 10000 --output artifacts/enriched_stride60.json
+      - name: Run robustness and promotion audit
+        run: |
+          python -m research.conditional_robustness --input artifacts/enriched_stride60.json --output artifacts/robustness_stride60.json
+      - name: Cross-check artifacts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          exp=json.loads(Path('artifacts/enriched_stride60.json').read_text())
+          rob=json.loads(Path('artifacts/robustness_stride60.json').read_text())
+          assert exp['status']=='ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED'
+          assert rob['status']=='CONDITIONAL_ROBUSTNESS_AUDIT_COMPLETED'
+          assert exp['record_count'] > 0
+          assert len(rob['results']) > 0
+          eligible=[r for r in rob['results'] if r.get('promotion_eligible')]
+          print('record_count=', exp['record_count'])
+          print('finalists=', len(rob['results']))
+          print('promotion_eligible=', len(eligible))
+          for r in eligible:
+              print('ELIGIBLE=', r['candidate'])
+          PY
+      - name: Upload dense verified research result
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-DENSE-STRIDE60-RESEARCH
+          path: |
+            artifacts/enriched_stride60.json
+            artifacts/robustness_stride60.json
+          if-no-files-found: error
+          retention-days: 30
