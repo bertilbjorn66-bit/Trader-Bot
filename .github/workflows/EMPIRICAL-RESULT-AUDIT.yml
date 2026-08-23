@@ -1,0 +1,68 @@
+name: "📊 EMPIRICAL RESULT AUDIT + CONDITIONAL EDGE DISCOVERY — NO REDOWNLOAD"
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Completed empirical run containing VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL"
+        required: true
+        default: "32481090602"
+      min_group_sample:
+        description: "Minimum observations for conditional cells"
+        required: true
+        default: "150"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    name: "1️⃣ AUDIT completed empirical report — REPORT ONLY"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@v7
+        with:
+          ref: research/conditional-edge-audit-v1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Restore ONLY the completed empirical report artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          artifacts_json="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts?per_page=100")"
+          artifact_id="$(printf '%s' "$artifacts_json" | jq -r '[.artifacts[] | select(.name=="VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL" and .expired==false)] | last | .id // empty')"
+          if [ -z "$artifact_id" ]; then
+            echo "ERROR: VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL was not found on run ${SOURCE_RUN_ID}." >&2
+            exit 1
+          fi
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -o /tmp/report.zip \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip"
+          unzip -oq /tmp/report.zip -d artifacts
+          test -f artifacts/empirical_report.json
+          echo "Restored report only: no market-data dataset was downloaded or accessed."
+
+      - name: Run empirical result audit
+        run: |
+          python research/empirical_result_audit.py \
+            --input artifacts/empirical_report.json \
+            --output artifacts/empirical_result_audit.json \
+            --min-group-sample "${{ inputs.min_group_sample }}"
+
+      - name: Upload conditional edge audit
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-EMPIRICAL-RESULT-AUDIT-CONDITIONAL-EDGE
+          path: artifacts/empirical_result_audit.json
+          if-no-files-found: error
+          retention-days: 30
