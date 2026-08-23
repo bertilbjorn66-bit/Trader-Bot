@@ -58,6 +58,7 @@ class Candidate(TypedDict, total=False):
     agreement_min: float
     distance_max: float | None
     regime: str
+    session: str
     pairset: str
     discovery: EvalResult
     discovery_bootstrap: EvalResult | None
@@ -255,31 +256,35 @@ def main() -> None:
         "regime:range_low_vol",
         "regime:range_normal",
     )
+    sessions = ("asia", "london", "new_york", "overlap")
     candidates: list[Candidate] = []
     pairsets = ("all", "JPY")
     for horizon in empirical.DEFAULT_HORIZONS:
         for agreement_min in (0.50, 0.55, 0.60, 0.65, 0.70, 0.75):
             for distance_max in (None, 0.5, 1.0, 1.5, 2.0):
                 for regime in regimes:
-                    for pairset in pairsets:
-                        subset = [
-                            record
-                            for record in all_records
-                            if record["horizon"] == horizon
-                            and record["split"] == "discovery"
-                            and record["regime"] == regime
-                            and (pairset == "all" or record["pair"].endswith("/JPY"))
-                        ]
-                        result = evaluate(subset, distance_max, agreement_min, "discovery")
-                        if result is not None and result["n"] >= 100:
-                            candidates.append({
-                                "horizon": horizon,
-                                "agreement_min": agreement_min,
-                                "distance_max": distance_max,
-                                "regime": regime,
-                                "pairset": pairset,
-                                "discovery": result,
-                            })
+                    for session in sessions:
+                        for pairset in pairsets:
+                            subset = [
+                                record
+                                for record in all_records
+                                if record["horizon"] == horizon
+                                and record["split"] == "discovery"
+                                and record["regime"] == regime
+                                and record["session"] == session
+                                and (pairset == "all" or record["pair"].endswith("/JPY"))
+                            ]
+                            result = evaluate(subset, distance_max, agreement_min, "discovery")
+                            if result is not None and result["n"] >= 100:
+                                candidates.append({
+                                    "horizon": horizon,
+                                    "agreement_min": agreement_min,
+                                    "distance_max": distance_max,
+                                    "regime": regime,
+                                    "session": session,
+                                    "pairset": pairset,
+                                    "discovery": result,
+                                })
 
     candidates.sort(
         key=lambda candidate: (
@@ -295,6 +300,7 @@ def main() -> None:
             for record in all_records
             if record["horizon"] == finalist["horizon"]
             and record["regime"] == finalist["regime"]
+            and record["session"] == finalist["session"]
             and (finalist["pairset"] == "all" or record["pair"].endswith("/JPY"))
         ]
         finalist["discovery_bootstrap"] = evaluate(
@@ -324,10 +330,11 @@ def main() -> None:
         "confirmation_finalists": finalists,
         "methodology": {
             "split": "chronological 70/30 discovery/confirmation within each pair",
-            "candidate_search": "finite threshold grid selected only on discovery data, then frozen",
+            "candidate_search": "finite threshold grid, regime and session selected only on discovery data, then frozen",
             "analogue_k": 100,
             "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp",
             "regime_search_space": list(regimes),
+            "session_search_space": list(sessions),
             "outcome": "directional executable movement using BID/ASK, converted to pair-specific pips",
             "cost_model": "BID/ASK embedded; additional slippage and commission fixed at zero in this research artifact",
             "interpretation": "confirmation is the only segment eligible for strategy candidacy; discovery results are not deployment evidence",
