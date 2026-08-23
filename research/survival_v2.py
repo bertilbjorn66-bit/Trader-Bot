@@ -151,7 +151,7 @@ def main() -> None:
                             confirmation_records = grouped.get((pair, horizon, regime, session, "confirmation"), [])
                             if not discovery_records or len(confirmation_records) < MIN_CONFIRMATION_SAMPLES:
                                 continue
-                            candidate = {
+                            candidate: Candidate = {
                                 "pair": pair,
                                 "horizon": horizon,
                                 "agreement_min": agreement_min,
@@ -177,7 +177,6 @@ def main() -> None:
                             confirmation_capacity = sum(1 for record in confirmation_records if matches(record, candidate, "confirmation"))
                             if confirmation_capacity < MIN_CONFIRMATION_SAMPLES:
                                 continue
-                            candidate = dict(candidate)
                             candidate["discovery"] = discovery
                             candidate["discovery_first_half"] = first_result
                             candidate["discovery_second_half"] = second_result
@@ -196,7 +195,7 @@ def main() -> None:
 
     results: list[dict[str, Any]] = []
     for candidate in finalists:
-        confirmation_records = grouped.get(
+        final_confirmation_records: list[Record] = grouped.get(
             (
                 str(candidate["pair"]),
                 int(candidate["horizon"]),
@@ -204,11 +203,12 @@ def main() -> None:
                 str(candidate["session"]),
                 "confirmation",
             ),
+            [],
         )
-        confirmation = evaluate(confirmation_records, candidate, "confirmation")
+        confirmation = evaluate(final_confirmation_records, candidate, "confirmation")
         if confirmation is None:
             continue
-        chosen = [r for r in confirmation_records if matches(r, candidate, "confirmation")]
+        chosen = [r for r in final_confirmation_records if matches(r, candidate, "confirmation")]
         values = [float(r["outcome_pips"]) for r in chosen]
         confirmation["stress_0_2"] = stressed_stats(values, 0.2)
         confirmation["stress_0_5"] = stressed_stats(values, 0.5)
