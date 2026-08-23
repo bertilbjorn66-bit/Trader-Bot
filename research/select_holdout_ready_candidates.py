@@ -3,11 +3,21 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 MIN_HOLDOUT_SAMPLES = 100
 
+Record = dict[str, Any]
+Candidate = dict[str, Any]
 
-def matches(record: dict[str, object], candidate: dict[str, object], split: str) -> bool:
+
+def matches(record: Record, candidate: Candidate, split: str) -> bool:
+    """Match a target record using structural fields only.
+
+    This function deliberately does not inspect holdout outcomes, expectancy,
+    win/loss, or profit-factor values. It is therefore safe for discovery-only
+    holdout-capacity selection.
+    """
     return (
         record["split"] == split
         and record["horizon"] == candidate["horizon"]
@@ -30,12 +40,12 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
-    data = json.loads(Path(args.input).read_text(encoding="utf-8"))
-    records = data["target_records"]
-    candidates = data["discovery_candidates"]
+    data: dict[str, Any] = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    records: list[Record] = data["target_records"]
+    candidates: list[Candidate] = data["discovery_candidates"]
 
-    eligible: list[dict[str, object]] = []
-    rejected: list[dict[str, object]] = []
+    eligible: list[Candidate] = []
+    rejected: list[Candidate] = []
 
     for candidate in candidates:
         # This count uses only structural target metadata. No holdout outcome,
