@@ -17,6 +17,9 @@ permissions:
   issues: write
   pull-requests: write
 
+# This workflow deliberately checks the research branch at its latest commit;
+# the feeds are reused from the completed nine-feed run and are never redownloaded.
+
 jobs:
   validate:
     name: "1️⃣ Validate research engine"
