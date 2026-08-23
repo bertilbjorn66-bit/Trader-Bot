@@ -98,3 +98,5 @@ jobs:
           path: artifacts/survival_v2.json
           if-no-files-found: error
           retention-days: 30
+
+# Re-run trigger after hardening survival_v2.py on the research branch.
