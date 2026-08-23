@@ -25,6 +25,9 @@ PAIR_PIP = {
     "NZD/USD": 0.0001, "EUR/JPY": 0.01, "GBP/JPY": 0.01,
 }
 
+MIN_HOLDOUT_SAMPLES = 100
+DISCOVERY_FRACTION = 0.60
+
 
 class EvalResult(TypedDict):
     n: int
@@ -108,16 +111,9 @@ def wilson_interval(win_rate: float, n: int, z: float = 1.959963984540054) -> tu
     return centre - half, centre + half
 
 
-def evaluate(
-    records: list[TargetRecord],
-    distance_max: float | None = None,
-    agreement_min: float = 0.0,
-    split: str = "all",
-    with_bootstrap: bool = False,
-) -> EvalResult | None:
+def evaluate(records: list[TargetRecord], distance_max: float | None = None, agreement_min: float = 0.0, split: str = "all", with_bootstrap: bool = False) -> EvalResult | None:
     values = [
-        record["outcome_pips"]
-        for record in records
+        record["outcome_pips"] for record in records
         if (split == "all" or record["split"] == split)
         and (distance_max is None or record["median_distance"] <= distance_max)
         and record["agreement"] >= agreement_min
@@ -141,13 +137,7 @@ def evaluate(
     }
 
 
-def analyze_pair(
-    pair: str,
-    rows: list[dict[str, object]],
-    sample_stride: int,
-    history_states: int,
-    costs: ExecutionAssumptions,
-) -> tuple[list[TargetRecord], dict[str, object]]:
+def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, history_states: int, costs: ExecutionAssumptions) -> tuple[list[TargetRecord], dict[str, object]]:
     rows, quality = _execution_valid_rows(rows, pair)
     bid, ask = _market_bars(rows)
     bars = empirical._merge(bid, ask)
@@ -170,8 +160,6 @@ def analyze_pair(
         neighbors: list[tuple[State, float]] = []
         for state, distance in nearest:
             state_index_value = state_index[state.timestamp]
-            # Require the entire analogue outcome window to finish strictly before
-            # the target bar. Allowing equality would leak target-bar market data.
             if any(state_index_value + horizon >= target_index for horizon in horizons):
                 continue
             neighbors.append((state, distance))
@@ -179,12 +167,7 @@ def analyze_pair(
             continue
 
         direction = "long" if numeric_feature(target, "momentum") >= 0.0 else "short"
-        regime = classify_regime(
-            numeric_feature(target, "trend"),
-            numeric_feature(target, "trend_strength"),
-            empirical._volatility_z(target, history),
-            integer_feature(target, "breakout"),
-        )
+        regime = classify_regime(numeric_feature(target, "trend"), numeric_feature(target, "trend_strength"), empirical._volatility_z(target, history), integer_feature(target, "breakout"))
         distances = [distance for _, distance in neighbors]
         for horizon in horizons:
             evidence = [
@@ -212,7 +195,7 @@ def analyze_pair(
             })
 
     timestamps = sorted({datetime.fromisoformat(record["timestamp"]) for record in targets})
-    cutoff = timestamps[int(len(timestamps) * 0.70)] if timestamps else None
+    cutoff = timestamps[int(len(timestamps) * DISCOVERY_FRACTION)] if timestamps else None
     for record in targets:
         record["split"] = "discovery" if cutoff and datetime.fromisoformat(record["timestamp"]) < cutoff else "confirmation"
     return targets, quality
@@ -222,7 +205,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Enriched leakage-safe conditional-edge experiment from verified empirical feed files.")
     parser.add_argument("--input-dir", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--sample-stride", type=int, default=120)
+    parser.add_argument("--sample-stride", type=int, default=60)
     parser.add_argument("--history-states", type=int, default=10000)
     args = parser.parse_args()
     if args.sample_stride <= 0 or args.history_states <= 0:
@@ -233,32 +216,19 @@ def main() -> None:
     quality: dict[str, object] = {}
     input_dir = Path(args.input_dir)
     for pair in PAIR_TO_SYMBOL:
-        records, pair_quality = analyze_pair(
-            pair,
-            load_feed_bars(input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"),
-            args.sample_stride,
-            args.history_states,
-            costs,
-        )
+        records, pair_quality = analyze_pair(pair, load_feed_bars(input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"), args.sample_stride, args.history_states, costs)
         all_records.extend(records)
         quality[pair] = pair_quality
 
-    # Match the exact labels emitted by classify_regime(); do not silently omit
-    # regimes from discovery because of naming drift.
     regimes = (
-        "regime:breakout_up",
-        "regime:breakout_down",
-        "regime:high_vol_trend_up",
-        "regime:high_vol_trend_down",
-        "regime:high_volatility_range",
-        "regime:trend_up",
-        "regime:trend_down",
-        "regime:range_low_vol",
-        "regime:range_normal",
+        "regime:breakout_up", "regime:breakout_down", "regime:high_vol_trend_up", "regime:high_vol_trend_down",
+        "regime:high_volatility_range", "regime:trend_up", "regime:trend_down", "regime:range_low_vol", "regime:range_normal",
     )
     sessions = ("asia", "london", "new_york", "overlap")
     candidates: list[Candidate] = []
     pairsets = ("all", "JPY")
+    min_discovery_for_holdout = math.ceil(MIN_HOLDOUT_SAMPLES * DISCOVERY_FRACTION / (1.0 - DISCOVERY_FRACTION))
+
     for horizon in empirical.DEFAULT_HORIZONS:
         for agreement_min in (0.50, 0.55, 0.60, 0.65, 0.70, 0.75):
             for distance_max in (None, 0.5, 1.0, 1.5, 2.0):
@@ -266,8 +236,7 @@ def main() -> None:
                     for session in sessions:
                         for pairset in pairsets:
                             subset = [
-                                record
-                                for record in all_records
+                                record for record in all_records
                                 if record["horizon"] == horizon
                                 and record["split"] == "discovery"
                                 and record["regime"] == regime
@@ -275,7 +244,7 @@ def main() -> None:
                                 and (pairset == "all" or record["pair"].endswith("/JPY"))
                             ]
                             result = evaluate(subset, distance_max, agreement_min, "discovery")
-                            if result is not None and result["n"] >= 100:
+                            if result is not None and result["n"] >= min_discovery_for_holdout:
                                 candidates.append({
                                     "horizon": horizon,
                                     "agreement_min": agreement_min,
@@ -286,36 +255,18 @@ def main() -> None:
                                     "discovery": result,
                                 })
 
-    candidates.sort(
-        key=lambda candidate: (
-            candidate["discovery"]["expectancy_pips"],
-            candidate["discovery"]["profit_factor"] or -math.inf,
-        ),
-        reverse=True,
-    )
+    candidates.sort(key=lambda candidate: (candidate["discovery"]["expectancy_pips"], candidate["discovery"]["profit_factor"] or -math.inf), reverse=True)
     finalists = candidates[:10]
     for finalist in finalists:
         subset = [
-            record
-            for record in all_records
+            record for record in all_records
             if record["horizon"] == finalist["horizon"]
             and record["regime"] == finalist["regime"]
             and record["session"] == finalist["session"]
             and (finalist["pairset"] == "all" or record["pair"].endswith("/JPY"))
         ]
-        finalist["discovery_bootstrap"] = evaluate(
-            subset,
-            finalist["distance_max"],
-            finalist["agreement_min"],
-            "discovery",
-            with_bootstrap=True,
-        )
-        finalist["confirmation"] = evaluate(
-            subset,
-            finalist["distance_max"],
-            finalist["agreement_min"],
-            "confirmation",
-        )
+        finalist["discovery_bootstrap"] = evaluate(subset, finalist["distance_max"], finalist["agreement_min"], "discovery", with_bootstrap=True)
+        finalist["confirmation"] = evaluate(subset, finalist["distance_max"], finalist["agreement_min"], "confirmation")
 
     output = {
         "status": "ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED",
@@ -329,15 +280,14 @@ def main() -> None:
         "discovery_candidates": candidates[:100],
         "confirmation_finalists": finalists,
         "methodology": {
-            "split": "chronological 70/30 discovery/confirmation within each pair",
-            "candidate_search": "finite threshold grid, regime and session selected only on discovery data, then frozen",
+            "split": "chronological 60/40 discovery/confirmation within each pair",
+            "candidate_search": "finite threshold grid selected only on discovery data, with session included and a structural minimum discovery sample for the 100-observation holdout gate",
+            "holdout_min_samples": MIN_HOLDOUT_SAMPLES,
             "analogue_k": 100,
             "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp",
-            "regime_search_space": list(regimes),
-            "session_search_space": list(sessions),
             "outcome": "directional executable movement using BID/ASK, converted to pair-specific pips",
             "cost_model": "BID/ASK embedded; additional slippage and commission fixed at zero in this research artifact",
-            "interpretation": "confirmation is the only segment eligible for strategy candidacy; discovery results are not deployment evidence",
+            "interpretation": "confirmation is the only segment eligible for strategy candidacy; it is not used for candidate selection",
         },
     }
     output_path = Path(args.output)
