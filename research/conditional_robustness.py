@@ -61,6 +61,7 @@ def main() -> None:
             for record in records
             if record["horizon"] == finalist["horizon"]
             and record["regime"] == finalist["regime"]
+            and record["session"] == finalist["session"]
             and (finalist["pairset"] == "all" or str(record["pair"]).endswith("/JPY"))
             and record["split"] == "confirmation"
             and (finalist["distance_max"] is None or record["median_distance"] <= finalist["distance_max"])
