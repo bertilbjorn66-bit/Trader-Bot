@@ -17,9 +17,6 @@ permissions:
   issues: write
   pull-requests: write
 
-# IMPORTANT: this workflow reuses the already-verified nine feed artifacts.
-# It does NOT download market data again.
-
 jobs:
   validate:
     name: "1️⃣ Validate research engine"
@@ -41,7 +38,7 @@ jobs:
           pytest
 
   dense:
-    name: "2️⃣ Dense empirical run — REUSE EXISTING NINE FEEDS"
+    name: "2️⃣ FINAL HOLDOUT — REUSE EXISTING NINE FEEDS"
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -75,35 +72,42 @@ jobs:
               raise SystemExit('Missing/empty reused feeds: ' + ', '.join(missing))
           print('All nine existing verified feeds restored. NO MARKET-DATA DOWNLOAD.')
           PY
-      - name: Run dense enriched experiment
+      - name: Run final 60/40 holdout experiment
         run: |
           mkdir -p artifacts
           python -m research.enriched_conditional_experiment --input-dir .data/empirical_feed --sample-stride 60 --history-states 10000 --output artifacts/enriched_stride60.json
       - name: Run robustness and promotion audit
         run: |
           python -m research.conditional_robustness --input artifacts/enriched_stride60.json --output artifacts/robustness_stride60.json
-      - name: Cross-check artifacts
+      - name: Cross-check final holdout invariants
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          exp=json.loads(Path('artifacts/enriched_stride60.json').read_text())
-          rob=json.loads(Path('artifacts/robustness_stride60.json').read_text())
-          assert exp['status']=='ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED'
-          assert rob['status']=='CONDITIONAL_ROBUSTNESS_AUDIT_COMPLETED'
+          exp = json.loads(Path('artifacts/enriched_stride60.json').read_text())
+          rob = json.loads(Path('artifacts/robustness_stride60.json').read_text())
+          assert exp['status'] == 'ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED'
+          assert rob['status'] == 'CONDITIONAL_ROBUSTNESS_AUDIT_COMPLETED'
+          assert exp['methodology']['split'].startswith('chronological 60/40')
+          assert exp['methodology']['holdout_min_samples'] == 100
           assert exp['record_count'] > 0
           assert len(rob['results']) > 0
-          eligible=[r for r in rob['results'] if r.get('promotion_eligible')]
+          finalists = rob['results']
+          undersized = [r for r in finalists if not r['confirmation'] or r['confirmation']['n'] < 100]
+          if undersized:
+              raise SystemExit(f'Finalist holdout sample invariant violated: {len(undersized)} finalists below 100 observations')
+          eligible = [r for r in finalists if r.get('promotion_eligible')]
           print('record_count=', exp['record_count'])
-          print('finalists=', len(rob['results']))
+          print('finalists=', len(finalists))
+          print('all_finalists_holdout_n>=100=true')
           print('promotion_eligible=', len(eligible))
           for r in eligible:
               print('ELIGIBLE=', r['candidate'])
           PY
-      - name: Upload dense verified research result
+      - name: Upload final verified holdout result
         uses: actions/upload-artifact@v7
         with:
-          name: VERIFIED-DENSE-STRIDE60-RESEARCH
+          name: VERIFIED-FINAL-HOLDOUT-60-40-RESEARCH
           path: |
             artifacts/enriched_stride60.json
             artifacts/robustness_stride60.json
