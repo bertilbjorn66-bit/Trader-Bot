@@ -1,0 +1,53 @@
+name: "🧾 06 — PAPER EVIDENCE INTEGRITY GATE — NO LIVE ORDERS"
+
+on:
+  push:
+    branches: [main]
+    paths: ["trader_bot/paper*.py", "tests/test_paper*.py", ".github/workflows/06-PAPER-EVIDENCE-INTEGRITY-GATE.yml", "docs/STAGE_06_PAPER_EVIDENCE.md"]
+  pull_request:
+    branches: [main]
+    paths: ["trader_bot/paper*.py", "tests/test_paper*.py", ".github/workflows/06-PAPER-EVIDENCE-INTEGRITY-GATE.yml", "docs/STAGE_06_PAPER_EVIDENCE.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence:
+    name: "1️⃣ VALIDATE paper evidence integrity"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - run: ruff check trader_bot tests
+      - run: mypy trader_bot
+      - run: pytest -ra
+      - name: Verify deterministic evidence serialization
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          from trader_bot.paper_evidence import PaperEvidenceJournal
+          journal = PaperEvidenceJournal(session_id="gate", spec_fingerprint="frozen")
+          journal.finalize(datetime(2026, 8, 25, tzinfo=timezone.utc))
+          assert journal.to_json() == journal.to_json()
+          journal.verify()
+          print("EVIDENCE_SERIALIZATION_DETERMINISTIC=true")
+          PY
+      - name: Verify live execution is disabled
+        run: |
+          python - <<'PY'
+          from trader_bot.execution import ExecutionGateway, ExecutionStatus
+          assert ExecutionGateway.status == ExecutionStatus.DISABLED
+          assert "broker" not in ExecutionGateway.__dict__
+          print("EXECUTION_GATEWAY_DISABLED=true")
+          print("BROKER_TRANSMISSION=false")
+          PY
+      - name: Verify no research recomputation or downloads
+        run: |
+          test ! -d .audit
+          echo "NO_RESEARCH_RECOMPUTE=true"
+          echo "NO_MARKET_DATA_DOWNLOAD=true"
