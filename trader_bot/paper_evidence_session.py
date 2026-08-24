@@ -9,7 +9,7 @@ from .models import Quote
 from .paper import PaperOrder
 from .paper_eval import PaperEvaluationResult, PaperEvaluationSpec
 from .paper_evidence import PaperEvidenceJournal
-from .paper_session import PaperSession, PaperSessionReport
+from .paper_session import PaperSession, PaperSessionReport, PaperSessionState
 from .safety import SafetyState
 
 
@@ -21,7 +21,7 @@ class EvidenceBackedPaperSession:
         self.evidence = PaperEvidenceJournal(session_id=session_id, spec_fingerprint=spec.fingerprint())
 
     @property
-    def state(self):
+    def state(self) -> PaperSessionState:
         return self.session.state
 
     @property
