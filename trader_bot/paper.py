@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 from time import monotonic
 
 from .decision import Action, Decision
+from .execution import ExecutionGateway, ExecutionStatus
 from .models import Quote
-from .risk import RiskLimits
 from .safety import SafetyState, authorize_live_action
 
 
 class PaperEvent(StrEnum):
-    SIGNAL = "SIGNAL"
     REJECTED = "REJECTED"
     FILLED = "FILLED"
     CLOSED = "CLOSED"
@@ -42,7 +41,7 @@ class PaperOrder:
 
 @dataclass
 class PaperLedger:
-    """In-memory paper/shadow ledger with no broker or live-order path."""
+    """Non-transmitting paper ledger that cannot become a broker adapter."""
 
     orders: list[PaperOrder] = field(default_factory=list)
     _next_id: int = 1
@@ -56,16 +55,19 @@ class PaperLedger:
         stop_distance: Decimal,
         target_distance: Decimal,
         safety: SafetyState | None = None,
-        risk_limits: RiskLimits | None = None,
+        slippage: Decimal = Decimal("0"),
     ) -> PaperOrder:
+        if ExecutionGateway.status != ExecutionStatus.DISABLED:
+            raise RuntimeError("Paper ledger refuses to operate unless live execution is disabled")
         if quantity <= 0:
             raise ValueError("quantity must be positive")
         if stop_distance <= 0 or target_distance <= 0:
             raise ValueError("stop_distance and target_distance must be positive")
+        if slippage < 0:
+            raise ValueError("slippage must be non-negative")
 
         started = monotonic()
         state = safety or SafetyState()
-        _ = risk_limits
         authorized_action = authorize_live_action(decision, state)
         latency_ms = (monotonic() - started) * 1000
         spread = quote.ask - quote.bid
@@ -83,13 +85,15 @@ class PaperLedger:
                 confidence=decision.confidence,
                 evidence_samples=decision.evidence_samples,
                 event=PaperEvent.REJECTED,
-                reason="Signal was not live-authorized; paper/shadow recording remains non-transmitting.",
+                reason="Safety gate rejected the intended action; no broker transmission occurred.",
                 spread=spread,
                 latency_ms=latency_ms,
-                slippage=Decimal("0"),
+                slippage=slippage,
             )
         else:
-            entry_price = quote.ask if authorized_action == Action.BUY else quote.bid
+            entry_price = (
+                quote.ask + slippage if authorized_action == Action.BUY else quote.bid - slippage
+            )
             order = PaperOrder(
                 order_id=self._allocate_id(),
                 timestamp=quote.timestamp,
@@ -105,24 +109,41 @@ class PaperLedger:
                 reason="Hypothetical paper fill; no broker transmission occurred.",
                 spread=spread,
                 latency_ms=latency_ms,
-                slippage=Decimal("0"),
+                slippage=slippage,
             )
 
         self.orders.append(order)
         return order
 
-    def close(self, order_id: int, quote: Quote) -> PaperOrder:
+    def close(
+        self,
+        order_id: int,
+        quote: Quote,
+        *,
+        slippage: Decimal = Decimal("0"),
+    ) -> PaperOrder:
+        if ExecutionGateway.status != ExecutionStatus.DISABLED:
+            raise RuntimeError("Paper ledger refuses to operate unless live execution is disabled")
+        if slippage < 0:
+            raise ValueError("slippage must be non-negative")
+
         current = self._find(order_id)
         if current.event != PaperEvent.FILLED or current.entry_price is None:
             raise ValueError("only an open hypothetical fill can be closed")
         if current.instrument != quote.instrument:
             raise ValueError("quote instrument does not match the paper order")
 
-        exit_price = quote.bid if current.action == Action.BUY else quote.ask
+        exit_price = (
+            quote.bid - slippage if current.action == Action.BUY else quote.ask + slippage
+        )
         direction = Decimal("1") if current.action == Action.BUY else Decimal("-1")
         pnl = (exit_price - current.entry_price) * current.quantity * direction
-        closed = PaperOrder(
-            **{**current.__dict__, "event": PaperEvent.CLOSED, "exit_price": exit_price, "pnl": pnl}
+        closed = replace(
+            current,
+            event=PaperEvent.CLOSED,
+            exit_price=exit_price,
+            pnl=pnl,
+            slippage=current.slippage + slippage,
         )
         self.orders = [closed if item.order_id == order_id else item for item in self.orders]
         return closed
