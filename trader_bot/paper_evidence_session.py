@@ -7,8 +7,8 @@ from typing import Sequence
 from .decision import Decision
 from .models import Quote
 from .paper import PaperOrder
-from .paper_evidence import PaperEvidenceJournal
 from .paper_eval import PaperEvaluationResult, PaperEvaluationSpec
+from .paper_evidence import PaperEvidenceJournal
 from .paper_session import PaperSession, PaperSessionReport
 from .safety import SafetyState
 
