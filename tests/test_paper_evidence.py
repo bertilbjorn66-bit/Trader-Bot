@@ -6,8 +6,8 @@ import pytest
 from trader_bot.decision import Action, Decision
 from trader_bot.models import Quote
 from trader_bot.paper import PaperLedger
-from trader_bot.paper_evidence import EvidenceKind, PaperEvidenceJournal
 from trader_bot.paper_eval import PaperEvaluationSpec
+from trader_bot.paper_evidence import EvidenceKind, PaperEvidenceJournal
 from trader_bot.safety import SafetyState
 
 
