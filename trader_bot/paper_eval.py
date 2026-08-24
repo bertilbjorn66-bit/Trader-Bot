@@ -17,7 +17,7 @@ class PaperEvaluationSpec:
     strategy_version: str
     research_reference: str
     minimum_closed_trades: int = 100
-    maximum_daily_loss: Decimal = Decimal("0")
+    maximum_session_loss: Decimal = Decimal("-1")
 
     def __post_init__(self) -> None:
         if not self.strategy_id.strip():
@@ -28,8 +28,8 @@ class PaperEvaluationSpec:
             raise ValueError("research_reference must be non-empty")
         if self.minimum_closed_trades <= 0:
             raise ValueError("minimum_closed_trades must be positive")
-        if self.maximum_daily_loss >= 0:
-            raise ValueError("maximum_daily_loss must be negative")
+        if self.maximum_session_loss >= 0:
+            raise ValueError("maximum_session_loss must be negative")
 
     def fingerprint(self) -> str:
         payload = {
@@ -37,7 +37,7 @@ class PaperEvaluationSpec:
             "strategy_version": self.strategy_version,
             "research_reference": self.research_reference,
             "minimum_closed_trades": self.minimum_closed_trades,
-            "maximum_daily_loss": str(self.maximum_daily_loss),
+            "maximum_session_loss": str(self.maximum_session_loss),
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
@@ -69,7 +69,15 @@ class PaperEvaluator:
             raise RuntimeError("Paper evaluation specification changed after session start")
 
         closed = [order for order in orders if order.event == PaperEvent.CLOSED]
+        seen_ids: set[int] = set()
+        previous_timestamp = None
         for order in closed:
+            if order.order_id in seen_ids:
+                raise ValueError("duplicate closed paper order id")
+            seen_ids.add(order.order_id)
+            if previous_timestamp is not None and order.timestamp < previous_timestamp:
+                raise ValueError("closed paper orders must be chronological")
+            previous_timestamp = order.timestamp
             if order.pnl is None:
                 raise ValueError("closed paper order is missing P&L")
 
@@ -79,9 +87,7 @@ class PaperEvaluator:
         losing_trades = sum(value < 0 for value in pnl)
         gross_profit = sum((value for value in pnl if value > 0), Decimal("0"))
         gross_loss = -sum((value for value in pnl if value < 0), Decimal("0"))
-        profit_factor = (
-            gross_profit / gross_loss if gross_loss > 0 else None
-        )
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else None
         expectancy = total_pnl / len(pnl) if pnl else Decimal("0")
 
         equity = Decimal("0")
@@ -95,8 +101,8 @@ class PaperEvaluator:
         failures: list[str] = []
         if len(pnl) < self.spec.minimum_closed_trades:
             failures.append("minimum_closed_trades_not_met")
-        if total_pnl <= self.spec.maximum_daily_loss:
-            failures.append("maximum_loss_limit_breached")
+        if total_pnl <= self.spec.maximum_session_loss:
+            failures.append("maximum_session_loss_breached")
         if not pnl:
             failures.append("no_closed_trades")
 
