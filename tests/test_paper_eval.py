@@ -1,17 +1,17 @@
+from dataclasses import replace
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
 
-from trader_bot.decision import Action
-from trader_bot.paper import PaperLedger
-from trader_bot.paper_eval import PaperEvaluationSpec, PaperEvaluator
+from trader_bot.decision import Action, Decision
 from trader_bot.models import Quote
+from trader_bot.paper import PaperLedger, PaperOrder
+from trader_bot.paper_eval import PaperEvaluationSpec, PaperEvaluator
 from trader_bot.safety import SafetyState
 
 
 def quote(bid: str, ask: str, instrument: int = 1) -> Quote:
-    from datetime import datetime, timezone
-
     return Quote(
         timestamp=datetime(2026, 8, 25, 10, 0, tzinfo=timezone.utc),
         instrument=instrument,
@@ -20,9 +20,7 @@ def quote(bid: str, ask: str, instrument: int = 1) -> Quote:
     )
 
 
-def decision() -> object:
-    from trader_bot.decision import Decision
-
+def decision() -> Decision:
     return Decision(
         action=Action.BUY,
         confidence=0.75,
@@ -41,7 +39,7 @@ def safe_state() -> SafetyState:
     )
 
 
-def build_closed_orders() -> list[object]:
+def build_closed_orders() -> list[PaperOrder]:
     ledger = PaperLedger()
     opened = ledger.record_signal(
         decision=decision(),
@@ -88,8 +86,6 @@ def test_evaluator_requires_minimum_sample_and_reports_metrics() -> None:
 
 def test_evaluator_rejects_missing_pnl() -> None:
     orders = build_closed_orders()
-    from dataclasses import replace
-
     broken = replace(orders[0], pnl=None)
     spec = PaperEvaluationSpec(
         strategy_id="candidate-a",
@@ -134,4 +130,5 @@ def test_negative_loss_limit_is_enforced() -> None:
     closed = ledger.close(opened.order_id, quote("1.0990", "1.0992"))
 
     result = PaperEvaluator(spec).evaluate([closed])
-    assert result.passed is True
+    assert result.passed is False
+    assert "maximum_loss_limit_breached" in result.failure_reasons
