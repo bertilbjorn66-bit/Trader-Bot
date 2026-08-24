@@ -91,6 +91,14 @@ def test_session_records_and_finalizes_once() -> None:
     assert report.evaluation == result
 
 
+def test_report_retains_original_fingerprint_after_spec_mutation() -> None:
+    paper = session()
+    original = paper.report().spec_fingerprint
+    object.__setattr__(paper.spec, "strategy_version", "2")
+
+    assert paper.report().spec_fingerprint == original
+
+
 def test_finalization_cannot_precede_session_start() -> None:
     paper = session()
     with pytest.raises(ValueError, match="cannot precede"):
