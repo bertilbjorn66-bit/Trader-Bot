@@ -8,6 +8,12 @@ A paper session must start from one immutable `PaperEvaluationSpec`. Its fingerp
 
 Changing the specification creates a new session and a new evaluation fingerprint. It is not a continuation of the previous session.
 
+## Session lifecycle
+
+Each paper run is one explicit `PaperSession` with a stable session ID and start timestamp. A session begins `OPEN`, accepts hypothetical signal/close events, and is finalized exactly once. Finalization evaluates the complete recorded ledger against the frozen specification and transitions the session to `FINALIZED`.
+
+After finalization, new signals, closes, or a second finalization are rejected. The session report exposes the lifecycle state, timestamps, event count, specification fingerprint, and final evaluation result.
+
 ## Paper execution
 
 Paper orders are hypothetical only. They use the existing decision and safety path and record entry/exit prices, spread, slippage, latency, evidence samples, and P&L. The execution gateway must remain `DISABLED`.
