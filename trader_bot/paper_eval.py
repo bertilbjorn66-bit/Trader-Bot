@@ -16,8 +16,8 @@ class PaperEvaluationSpec:
     strategy_id: str
     strategy_version: str
     research_reference: str
+    maximum_session_loss: Decimal
     minimum_closed_trades: int = 100
-    maximum_session_loss: Decimal = Decimal("-1")
 
     def __post_init__(self) -> None:
         if not self.strategy_id.strip():
@@ -26,18 +26,18 @@ class PaperEvaluationSpec:
             raise ValueError("strategy_version must be non-empty")
         if not self.research_reference.strip():
             raise ValueError("research_reference must be non-empty")
-        if self.minimum_closed_trades <= 0:
-            raise ValueError("minimum_closed_trades must be positive")
         if self.maximum_session_loss >= 0:
             raise ValueError("maximum_session_loss must be negative")
+        if self.minimum_closed_trades <= 0:
+            raise ValueError("minimum_closed_trades must be positive")
 
     def fingerprint(self) -> str:
         payload = {
             "strategy_id": self.strategy_id,
             "strategy_version": self.strategy_version,
             "research_reference": self.research_reference,
-            "minimum_closed_trades": self.minimum_closed_trades,
             "maximum_session_loss": str(self.maximum_session_loss),
+            "minimum_closed_trades": self.minimum_closed_trades,
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
