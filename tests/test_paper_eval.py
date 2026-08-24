@@ -53,25 +53,40 @@ def build_closed_orders() -> list[PaperOrder]:
     return [closed]
 
 
-def test_spec_fingerprint_is_stable() -> None:
-    spec = PaperEvaluationSpec(
+def spec() -> PaperEvaluationSpec:
+    return PaperEvaluationSpec(
         strategy_id="candidate-a",
         strategy_version="1",
         research_reference="frozen-confirmation-1",
+        maximum_session_loss=Decimal("-1"),
     )
-    assert spec.fingerprint() == spec.fingerprint()
-    assert len(spec.fingerprint()) == 64
+
+
+def test_spec_fingerprint_is_stable() -> None:
+    contract = spec()
+    assert contract.fingerprint() == contract.fingerprint()
+    assert len(contract.fingerprint()) == 64
+
+
+def test_positive_session_loss_threshold_is_rejected() -> None:
+    with pytest.raises(ValueError, match="maximum_session_loss must be negative"):
+        PaperEvaluationSpec(
+            strategy_id="candidate-a",
+            strategy_version="1",
+            research_reference="frozen-confirmation-1",
+            maximum_session_loss=Decimal("0"),
+        )
 
 
 def test_evaluator_requires_minimum_sample_and_reports_metrics() -> None:
-    spec = PaperEvaluationSpec(
+    contract = PaperEvaluationSpec(
         strategy_id="candidate-a",
         strategy_version="1",
         research_reference="frozen-confirmation-1",
         minimum_closed_trades=2,
         maximum_session_loss=Decimal("-1"),
     )
-    result = PaperEvaluator(spec).evaluate(build_closed_orders())
+    result = PaperEvaluator(contract).evaluate(build_closed_orders())
 
     assert result.closed_trades == 1
     assert result.winning_trades == 1
@@ -92,7 +107,7 @@ def test_evaluator_reports_profit_factor_and_drawdown_deterministically() -> Non
         timestamp=base.timestamp + timedelta(minutes=1),
         pnl=Decimal("-0.0004"),
     )
-    spec = PaperEvaluationSpec(
+    contract = PaperEvaluationSpec(
         strategy_id="candidate-a",
         strategy_version="1",
         research_reference="frozen-confirmation-1",
@@ -100,7 +115,7 @@ def test_evaluator_reports_profit_factor_and_drawdown_deterministically() -> Non
         maximum_session_loss=Decimal("-1"),
     )
 
-    result = PaperEvaluator(spec).evaluate([base, second])
+    result = PaperEvaluator(contract).evaluate([base, second])
 
     assert result.closed_trades == 2
     assert result.winning_trades == 1
@@ -115,31 +130,22 @@ def test_evaluator_reports_profit_factor_and_drawdown_deterministically() -> Non
 def test_evaluator_rejects_missing_pnl() -> None:
     orders = build_closed_orders()
     broken = replace(orders[0], pnl=None)
-    spec = PaperEvaluationSpec(
-        strategy_id="candidate-a",
-        strategy_version="1",
-        research_reference="frozen-confirmation-1",
-    )
 
     with pytest.raises(ValueError, match="missing P&L"):
-        PaperEvaluator(spec).evaluate([broken])
+        PaperEvaluator(spec()).evaluate([broken])
 
 
 def test_evaluator_detects_spec_mutation() -> None:
-    spec = PaperEvaluationSpec(
-        strategy_id="candidate-a",
-        strategy_version="1",
-        research_reference="frozen-confirmation-1",
-    )
-    evaluator = PaperEvaluator(spec)
-    object.__setattr__(spec, "strategy_version", "2")
+    contract = spec()
+    evaluator = PaperEvaluator(contract)
+    object.__setattr__(contract, "strategy_version", "2")
 
     with pytest.raises(RuntimeError, match="specification changed"):
         evaluator.evaluate([])
 
 
 def test_session_loss_limit_is_enforced() -> None:
-    spec = PaperEvaluationSpec(
+    contract = PaperEvaluationSpec(
         strategy_id="candidate-a",
         strategy_version="1",
         research_reference="frozen-confirmation-1",
@@ -157,31 +163,21 @@ def test_session_loss_limit_is_enforced() -> None:
     )
     closed = ledger.close(opened.order_id, quote("1.0990", "1.0992", minute=1))
 
-    result = PaperEvaluator(spec).evaluate([closed])
+    result = PaperEvaluator(contract).evaluate([closed])
     assert result.passed is False
     assert "maximum_session_loss_breached" in result.failure_reasons
 
 
 def test_duplicate_closed_orders_are_rejected() -> None:
     order = build_closed_orders()[0]
-    spec = PaperEvaluationSpec(
-        strategy_id="candidate-a",
-        strategy_version="1",
-        research_reference="frozen-confirmation-1",
-    )
 
     with pytest.raises(ValueError, match="duplicate closed paper order id"):
-        PaperEvaluator(spec).evaluate([order, order])
+        PaperEvaluator(spec()).evaluate([order, order])
 
 
 def test_out_of_order_closed_orders_are_rejected() -> None:
     order = build_closed_orders()[0]
     earlier = replace(order, order_id=2, timestamp=order.timestamp - timedelta(minutes=1))
-    spec = PaperEvaluationSpec(
-        strategy_id="candidate-a",
-        strategy_version="1",
-        research_reference="frozen-confirmation-1",
-    )
 
     with pytest.raises(ValueError, match="must be chronological"):
-        PaperEvaluator(spec).evaluate([order, earlier])
+        PaperEvaluator(spec()).evaluate([order, earlier])
