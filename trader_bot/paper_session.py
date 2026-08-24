@@ -47,6 +47,7 @@ class PaperSession:
         self.started_at = started_at
         self._ledger = ledger or PaperLedger()
         self._evaluator = PaperEvaluator(spec)
+        self._spec_fingerprint = spec.fingerprint()
         self._state = PaperSessionState.OPEN
         self._finalized_at: datetime | None = None
         self._report: PaperEvaluationResult | None = None
@@ -107,7 +108,7 @@ class PaperSession:
             state=self._state,
             started_at=self.started_at,
             finalized_at=self._finalized_at,
-            spec_fingerprint=self._evaluator.spec.fingerprint(),
+            spec_fingerprint=self._spec_fingerprint,
             recorded_events=len(self._ledger.orders),
             evaluation=self._report,
         )
