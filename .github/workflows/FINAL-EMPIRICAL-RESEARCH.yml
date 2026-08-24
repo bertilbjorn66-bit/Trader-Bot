@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 env:
-  ARTIFACT_API: "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?per_page=100"
+  VERIFIED_ARTIFACT_ID: "9447143642"
   VERIFIED_RUN_ID: "32481090602"
 
 jobs:
@@ -50,14 +50,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          artifacts_json="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$ARTIFACT_API")"
-          artifact_id="$(printf '%s' "$artifacts_json" | jq -r --arg n "VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL" --argjson rid "$VERIFIED_RUN_ID" '[.artifacts[] | select(.name==$n and .expired==false and .workflow_run.id==$rid)] | sort_by(.created_at) | last | .id // empty')"
-          if [ -z "$artifact_id" ]; then
-            echo "ERROR: previously completed VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL artifact is unavailable." >&2
-            exit 1
-          fi
-          echo "Reusing verified artifact $artifact_id from completed run $VERIFIED_RUN_ID."
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -o /tmp/verified-final.zip "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip"
+          echo "Reusing verified artifact $VERIFIED_ARTIFACT_ID from completed run $VERIFIED_RUN_ID."
+          curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -o /tmp/verified-final.zip \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${VERIFIED_ARTIFACT_ID}/zip"
           unzip -oq /tmp/verified-final.zip -d artifacts
       - name: Verify reused final research result
         run: |
