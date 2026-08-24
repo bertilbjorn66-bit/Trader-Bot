@@ -12,7 +12,12 @@ from trader_bot.safety import SafetyState
 
 
 def quote(bid: str, ask: str, minute: int = 0) -> Quote:
-    return Quote(datetime(2026, 8, 25, 10, minute, tzinfo=timezone.utc), 1, Decimal(bid), Decimal(ask))
+    return Quote(
+        timestamp=datetime(2026, 8, 25, 10, minute, tzinfo=timezone.utc),
+        instrument=1,
+        bid=Decimal(bid),
+        ask=Decimal(ask),
+    )
 
 
 def make_session() -> EvidenceBackedPaperSession:
