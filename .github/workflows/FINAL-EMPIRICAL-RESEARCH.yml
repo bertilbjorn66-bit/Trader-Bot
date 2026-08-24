@@ -46,17 +46,12 @@ jobs:
       - name: Create artifact workspace
         run: mkdir -p artifacts
       - name: Restore previously completed verified final report
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          echo "Reusing verified artifact $VERIFIED_ARTIFACT_ID from completed run $VERIFIED_RUN_ID."
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -o /tmp/verified-final.zip \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${VERIFIED_ARTIFACT_ID}/zip"
-          unzip -oq /tmp/verified-final.zip -d artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL
+          path: artifacts
+          github-token: ${{ github.token }}
+          run-id: 32481090602
       - name: Verify reused final research result
         run: |
           python - <<'PY'
