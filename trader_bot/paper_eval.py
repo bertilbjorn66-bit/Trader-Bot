@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from decimal import Decimal
 import hashlib
 import json
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import Sequence
 
 from .paper import PaperEvent, PaperOrder
