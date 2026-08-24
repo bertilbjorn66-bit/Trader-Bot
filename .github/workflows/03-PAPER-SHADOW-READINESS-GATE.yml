@@ -1,0 +1,160 @@
+name: "🛡️ 03 — PAPER/SHADOW READINESS GATE — NO LIVE ORDERS"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "trader_bot/**"
+      - "research/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/03-PAPER-SHADOW-READINESS-GATE.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate:
+    name: "1️⃣ VALIDATE integrated engineering core"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Mypy
+        run: mypy trader_bot research
+
+      - name: Complete test suite
+        run: pytest -ra
+
+      - name: Verify live-execution default deny
+        run: |
+          python - <<'PY'
+          from trader_bot.decision import Action, decide
+          from trader_bot.execution import ExecutionGateway, ExecutionStatus
+          from trader_bot.risk import OutcomeSummary, RiskLimits
+          from trader_bot.safety import SafetyState, authorize_live_action
+
+          summary = OutcomeSummary(
+              samples=1000,
+              win_probability=0.75,
+              loss_probability=0.25,
+              expected_return=1.0,
+              average_win=2.0,
+              average_loss=-2.0,
+              max_adverse=0.5,
+              max_favorable=2.5,
+          )
+          decision = decide(summary, Action.BUY, RiskLimits())
+          state = SafetyState()
+
+          assert ExecutionGateway.status == ExecutionStatus.DISABLED
+          assert state.live_trading_enabled is False
+          assert state.emergency_stop is True
+          assert state.stale_data is True
+          assert state.spread_ok is False
+          assert state.daily_loss_limit_hit is False
+          assert authorize_live_action(decision, state) == Action.NO_TRADE
+
+          print("LIVE_EXECUTION_AUTHORIZATION=false")
+          print("DEFAULT_DENY_SAFETY=true")
+          print("EXECUTION_GATEWAY_DISABLED=true")
+          PY
+
+  research-preservation:
+    name: "2️⃣ VERIFY PRESERVED RESEARCH GATES — NO RECOMPUTE"
+    needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Create audit directories
+        run: mkdir -p .audit/empirical .audit/holdout .audit/v2 .audit/reuse
+
+      - name: Restore verified final empirical report
+        uses: actions/download-artifact@v8
+        with:
+          name: VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL
+          path: .audit/empirical
+          github-token: ${{ github.token }}
+          run-id: 32481090602
+
+      - name: Restore verified final holdout
+        uses: actions/download-artifact@v8
+        with:
+          name: VERIFIED-FINAL-HOLDOUT-RESEARCH
+          path: .audit/holdout
+          github-token: ${{ github.token }}
+          run-id: 32658698680
+
+      - name: Restore verified Survival V2 research
+        uses: actions/download-artifact@v8
+        with:
+          name: VERIFIED-SURVIVAL-V2-RESEARCH
+          path: .audit/v2
+          github-token: ${{ github.token }}
+          run-id: 32672310535
+
+      - name: Restore final empirical reuse verification
+        uses: actions/download-artifact@v8
+        with:
+          name: VERIFIED-EMPIRICAL-RESEARCH-REUSED
+          path: .audit/reuse
+          github-token: ${{ github.token }}
+          run-id: 32788187821
+
+      - name: Cross-check preserved artifacts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          empirical = json.loads(Path('.audit/empirical/empirical_report.json').read_text(encoding='utf-8'))
+          assert empirical['research_status'] == 'EMPIRICAL_DATAFEED_RUN_COMPLETED'
+          assert empirical['empirical'] is True
+          assert empirical['synthetic'] is False
+          assert len(empirical['pairs']) == 9
+
+          holdout = Path('.audit/holdout/enriched_stride60_holdout_ready.json')
+          robustness = Path('.audit/holdout/robustness_stride60.json')
+          assert holdout.is_file() and holdout.stat().st_size > 0
+          assert robustness.is_file() and robustness.stat().st_size > 0
+          holdout_data = json.loads(holdout.read_text(encoding='utf-8'))
+          robustness_data = json.loads(robustness.read_text(encoding='utf-8'))
+          assert holdout_data['status'] == 'ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED'
+          assert holdout_data['methodology']['holdout_min_samples'] == 100
+          assert robustness_data['status'] == 'CONDITIONAL_ROBUSTNESS_AUDIT_COMPLETED'
+
+          v2 = json.loads(Path('.audit/v2/survival_v2.json').read_text(encoding='utf-8'))
+          assert v2['status'] == 'SURVIVAL_V2_COMPLETED'
+          assert v2['methodology']['live_authorization'] == 'never granted by this research job'
+
+          reused = json.loads(Path('.audit/reuse/empirical_report.json').read_text(encoding='utf-8'))
+          assert reused['research_status'] == 'EMPIRICAL_DATAFEED_RUN_COMPLETED'
+          assert reused['generated_at'].startswith('2026-08-21T')
+          assert len(reused['pairs']) == 9
+
+          print('FINAL_EMPIRICAL_RESEARCH_PRESERVED=true')
+          print('FINAL_HOLDOUT_PRESERVED=true')
+          print('SURVIVAL_V2_PRESERVED=true')
+          print('FINAL_REUSE_VERIFICATION_PRESERVED=true')
+          print('NO_MARKET_DATA_DOWNLOAD=true')
+          print('NO_EMPIRICAL_RECOMPUTE=true')
+
+      - name: Declare paper/shadow boundary
+        run: |
+          echo "PAPER_SHADOW_READINESS=ENGINEERING_READY"
+          echo "BROKER_ORDER_TRANSMISSION=false"
+          echo "LIVE_EXECUTION_AUTHORIZATION=false"
