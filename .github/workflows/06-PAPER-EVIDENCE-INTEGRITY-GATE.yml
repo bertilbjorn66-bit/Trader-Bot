@@ -1,0 +1,92 @@
+name: "🧾 06 — PAPER EVIDENCE INTEGRITY GATE — NO LIVE ORDERS"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "trader_bot/paper.py"
+      - "trader_bot/paper_eval.py"
+      - "trader_bot/paper_session.py"
+      - "trader_bot/paper_evidence.py"
+      - "trader_bot/paper_evidence_session.py"
+      - "tests/test_paper.py"
+      - "tests/test_paper_eval.py"
+      - "tests/test_paper_session.py"
+      - "tests/test_paper_evidence.py"
+      - "tests/test_paper_evidence_session.py"
+      - ".github/workflows/06-PAPER-EVIDENCE-INTEGRITY-GATE.yml"
+      - "docs/STAGE_06_PAPER_EVIDENCE.md"
+  pull_request:
+    branches: [main]
+    paths:
+      - "trader_bot/paper.py"
+      - "trader_bot/paper_eval.py"
+      - "trader_bot/paper_session.py"
+      - "trader_bot/paper_evidence.py"
+      - "trader_bot/paper_evidence_session.py"
+      - "tests/test_paper.py"
+      - "tests/test_paper_eval.py"
+      - "tests/test_paper_session.py"
+      - "tests/test_paper_evidence.py"
+      - "tests/test_paper_evidence_session.py"
+      - ".github/workflows/06-PAPER-EVIDENCE-INTEGRITY-GATE.yml"
+      - "docs/STAGE_06_PAPER_EVIDENCE.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  paper-evidence:
+    name: "1️⃣ VALIDATE paper evidence integrity"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check trader_bot/paper.py trader_bot/paper_eval.py trader_bot/paper_session.py trader_bot/paper_evidence.py trader_bot/paper_evidence_session.py tests/test_paper.py tests/test_paper_eval.py tests/test_paper_session.py tests/test_paper_evidence.py tests/test_paper_evidence_session.py
+
+      - name: Mypy
+        run: mypy trader_bot/paper.py trader_bot/paper_eval.py trader_bot/paper_session.py trader_bot/paper_evidence.py trader_bot/paper_evidence_session.py
+
+      - name: Complete test suite
+        run: pytest -ra
+
+      - name: Verify evidence output is deterministic
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from trader_bot.paper_evidence import PaperEvidenceJournal
+          journal = PaperEvidenceJournal(session_id="gate", spec_fingerprint="frozen")
+          journal.finalize(datetime(2026, 8, 25, tzinfo=timezone.utc))
+          assert journal.to_json() == journal.to_json()
+          print("EVIDENCE_SERIALIZATION_DETERMINISTIC=true")
+          PY
+
+      - name: Verify execution remains disabled
+        run: |
+          python - <<'PY'
+          from trader_bot.execution import ExecutionGateway, ExecutionStatus
+          assert ExecutionGateway.status == ExecutionStatus.DISABLED
+          assert "broker" not in ExecutionGateway.__dict__
+          print("EXECUTION_GATEWAY_DISABLED=true")
+          print("BROKER_TRANSMISSION=false")
+          PY
+
+      - name: Verify evidence layer does not recompute research
+        run: |
+          test ! -d .audit
+          echo "NO_RESEARCH_RECOMPUTE=true"
+          echo "NO_MARKET_DATA_DOWNLOAD=true"
+          echo "EVIDENCE_ONLY=true"
