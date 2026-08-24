@@ -1,0 +1,72 @@
+name: "🧪 05 — PAPER SESSION LIFECYCLE GATE — FROZEN CONTRACT"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "trader_bot/paper.py"
+      - "trader_bot/paper_eval.py"
+      - "trader_bot/paper_session.py"
+      - "tests/test_paper.py"
+      - "tests/test_paper_eval.py"
+      - "tests/test_paper_session.py"
+      - ".github/workflows/05-PAPER-SESSION-LIFECYCLE-GATE.yml"
+      - "docs/PAPER_SHADOW_PROTOCOL.md"
+  pull_request:
+    branches: [main]
+    paths:
+      - "trader_bot/paper.py"
+      - "trader_bot/paper_eval.py"
+      - "trader_bot/paper_session.py"
+      - "tests/test_paper.py"
+      - "tests/test_paper_eval.py"
+      - "tests/test_paper_session.py"
+      - ".github/workflows/05-PAPER-SESSION-LIFECYCLE-GATE.yml"
+      - "docs/PAPER_SHADOW_PROTOCOL.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  session-lifecycle:
+    name: "1️⃣ VALIDATE paper session lifecycle"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check trader_bot/paper.py trader_bot/paper_eval.py trader_bot/paper_session.py tests/test_paper.py tests/test_paper_eval.py tests/test_paper_session.py
+
+      - name: Mypy
+        run: mypy trader_bot/paper.py trader_bot/paper_eval.py trader_bot/paper_session.py
+
+      - name: Paper lifecycle tests
+        run: pytest -ra tests/test_paper.py tests/test_paper_eval.py tests/test_paper_session.py
+
+      - name: Verify execution remains disabled
+        run: |
+          python - <<'PY'
+          from trader_bot.execution import ExecutionGateway, ExecutionStatus
+          assert ExecutionGateway.status == ExecutionStatus.DISABLED
+          assert "broker" not in ExecutionGateway.__dict__
+          print("EXECUTION_GATEWAY_DISABLED=true")
+          print("BROKER_TRANSMISSION=false")
+          PY
+
+      - name: Verify session layer does not recompute research
+        run: |
+          test ! -d .audit
+          echo "NO_RESEARCH_RECOMPUTE=true"
+          echo "NO_MARKET_DATA_DOWNLOAD=true"
+          echo "SESSION_ONLY_ORCHESTRATION=true"
