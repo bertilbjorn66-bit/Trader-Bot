@@ -2,6 +2,10 @@ name: "🏁 FINAL EMPIRICAL RESEARCH — REUSE VERIFIED RESULT — NO REDOWNLOAD
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/FINAL-EMPIRICAL-RESEARCH.yml"
 
 permissions:
   contents: read
