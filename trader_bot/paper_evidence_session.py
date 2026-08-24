@@ -28,14 +28,25 @@ class EvidenceBackedPaperSession:
     def orders(self) -> Sequence[PaperOrder]:
         return self.session.orders
 
-    def record_signal(self, *, decision: Decision, quote: Quote, quantity: Decimal,
-                      stop_distance: Decimal, target_distance: Decimal,
-                      safety: SafetyState | None = None,
-                      slippage: Decimal = Decimal("0")) -> PaperOrder:
+    def record_signal(
+        self,
+        *,
+        decision: Decision,
+        quote: Quote,
+        quantity: Decimal,
+        stop_distance: Decimal,
+        target_distance: Decimal,
+        safety: SafetyState | None = None,
+        slippage: Decimal = Decimal("0"),
+    ) -> PaperOrder:
         order = self.session.record_signal(
-            decision=decision, quote=quote, quantity=quantity,
-            stop_distance=stop_distance, target_distance=target_distance,
-            safety=safety, slippage=slippage,
+            decision=decision,
+            quote=quote,
+            quantity=quantity,
+            stop_distance=stop_distance,
+            target_distance=target_distance,
+            safety=safety,
+            slippage=slippage,
         )
         self.evidence.append_signal(order)
         self.evidence.append_order(order)
