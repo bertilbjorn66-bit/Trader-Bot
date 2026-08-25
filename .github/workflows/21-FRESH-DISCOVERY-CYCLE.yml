@@ -2,7 +2,11 @@ name: "21 — FRESH DISCOVERY CYCLE — DISCOVERY ONLY"
 
 on:
   push:
-    branches: [stage21-fresh-discovery]
+    branches: [stage21-fresh-discovery, main]
+    paths:
+      - ".github/workflows/21-FRESH-DISCOVERY-CYCLE.yml"
+      - "research/fresh_discovery_cycle.py"
+      - "tests/test_fresh_discovery_cycle.py"
   workflow_dispatch:
     inputs:
       source_run_id:
