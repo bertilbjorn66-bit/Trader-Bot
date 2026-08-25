@@ -8,7 +8,6 @@ from trader_bot.strategy_binding import (
     StrategyBindingState,
 )
 
-
 BASE = dict(
     snapshot_id="runtime-contract-v1",
     strategy_id="candidate-runtime-v1",
