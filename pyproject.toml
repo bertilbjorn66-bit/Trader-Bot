@@ -36,6 +36,9 @@ target-version = "py311"
 select = ["E", "F", "I", "B"]
 ignore = ["E501", "B905"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["research", "trader_bot"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
