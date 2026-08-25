@@ -13,7 +13,6 @@ from trader_bot.operational_safety import (
     SafetyState,
 )
 
-
 NOW = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
 
 
