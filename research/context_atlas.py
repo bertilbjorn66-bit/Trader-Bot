@@ -114,7 +114,7 @@ def enrich_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _bootstrap_mean(values: list[float], repetitions: int = 500, seed: int = 20260825) -> tuple[float | None, float | None]:
-    if len(values) < MIN_KNOWLEDGE_SAMPLES:
+    if len(values) < MIN_STRONG_SAMPLES:
         return None, None
     state = seed & 0xFFFFFFFF
     means: list[float] = []
@@ -128,7 +128,7 @@ def _bootstrap_mean(values: list[float], repetitions: int = 500, seed: int = 202
     return means[int(0.025 * repetitions)], means[int(0.975 * repetitions) - 1]
 
 
-def _stats(records: Iterable[dict[str, Any]]) -> CellStats:
+def _stats(records: Iterable[dict[str, Any]], *, compute_bootstrap: bool = False) -> CellStats:
     rows = list(records)
     values = [float(row["outcome_pips"]) for row in rows]
     wins = [value for value in values if value > 0.0]
@@ -144,7 +144,7 @@ def _stats(records: Iterable[dict[str, Any]]) -> CellStats:
     for row in rows:
         years[int(row["year"])].append(float(row["outcome_pips"]))
     positive_years = sum(mean(year_values) > 0.0 for year_values in years.values())
-    low, high = _bootstrap_mean(values)
+    low, high = _bootstrap_mean(values) if compute_bootstrap else (None, None)
     return CellStats(
         n=len(values),
         expectancy_pips=expectancy,
@@ -197,7 +197,7 @@ def build_atlas(records: list[dict[str, Any]]) -> dict[str, Any]:
 
     cells: list[dict[str, Any]] = []
     for key, rows in sorted(groups.items()):
-        stats = _stats(rows)
+        stats = _stats(rows, compute_bootstrap=key[8] == "confirmation")
         cells.append(
             {
                 "pair": key[0],
