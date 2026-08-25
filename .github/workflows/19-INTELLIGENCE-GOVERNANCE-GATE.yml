@@ -1,0 +1,60 @@
+name: 19 — INTELLIGENCE GOVERNANCE GATE — NO EXECUTION
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/event_calibration_audit.py"
+      - "tests/test_event_calibration_audit.py"
+      - "docs/STAGE_19_INTELLIGENCE_GOVERNANCE.md"
+      - ".github/workflows/19-INTELLIGENCE-GOVERNANCE-GATE.yml"
+  push:
+    branches: [main]
+    paths:
+      - "research/event_calibration_audit.py"
+      - "tests/test_event_calibration_audit.py"
+      - "docs/STAGE_19_INTELLIGENCE_GOVERNANCE.md"
+      - ".github/workflows/19-INTELLIGENCE-GOVERNANCE-GATE.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate-intelligence-governance:
+    name: 1️⃣ VALIDATE INTELLIGENCE GOVERNANCE — NON-EXECUTING
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check research trader_bot tests
+
+      - name: Mypy
+        run: mypy research trader_bot
+
+      - name: Full tests
+        run: pytest
+
+      - name: Verify no execution path
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          execution = Path('trader_bot/execution.py').read_text(encoding='utf-8')
+          assert 'DISABLED' in execution
+          print('LIVE_EXECUTION=false')
+          print('INTELLIGENCE_GOVERNANCE_READY=true')
+          PY
