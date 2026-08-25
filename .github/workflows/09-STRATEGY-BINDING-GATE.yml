@@ -1,0 +1,84 @@
+name: "🔒 09 — FROZEN STRATEGY BINDING GATE"
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-strategy-binding:
+    name: "1️⃣ VALIDATE frozen runtime strategy binding"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check trader_bot tests
+
+      - name: Mypy
+        run: mypy trader_bot
+
+      - name: Full test suite
+        run: pytest -ra
+
+      - name: Verify exact frozen source hashes
+        run: |
+          test "$(git rev-parse HEAD:trader_bot/decision.py)" = "515f71b3551502bf052dba8c8895bf8dff98c366"
+          test "$(git rev-parse HEAD:trader_bot/risk.py)" = "4bfeeaa8a2dbe0bbdbab3fe3beb379e34cc49614"
+          test "$(git rev-parse HEAD:trader_bot/paper_eval.py)" = "bf5a4776b7b0ab2282b58aba757ab41e0eb76490"
+          test "$(git rev-parse HEAD:trader_bot/paper_observation.py)" = "094bef5ac47e959367a81ab7c8c8d36c15afa790"
+          test "$(git rev-parse HEAD:trader_bot/context.py)" = "96677fa6d68ffda79acdde97cddd03ecf3d6b777"
+
+      - name: Verify research artifact binding
+        run: |
+          python - <<'PY'
+          from trader_bot.strategy_binding import FrozenRuntimeContract
+          contract = FrozenRuntimeContract(
+              snapshot_id="runtime-contract-v1",
+              strategy_id="candidate-runtime-v1",
+              strategy_version="1",
+              research_artifact_name="VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL",
+              research_artifact_digest="sha256:a0f61aeabc371cf3aa3ae38f55ecbf1f869b8f5399b0c3e789482bb6cb10e89c",
+              research_source_commit="94eb3343c097eddd1159e4aac1c5a75f6569afad",
+              decision_source_sha="515f71b3551502bf052dba8c8895bf8dff98c366",
+              risk_source_sha="4bfeeaa8a2dbe0bbdbab3fe3beb379e34cc49614",
+              evaluation_source_sha="bf5a4776b7b0ab2282b58aba757ab41e0eb76490",
+              observation_source_sha="094bef5ac47e959367a81ab7c8c8d36c15afa790",
+              context_source_sha="96677fa6d68ffda79acdde97cddd03ecf3d6b777",
+          )
+          assert contract.fingerprint()
+          result = __import__("trader_bot.strategy_binding", fromlist=["StrategyBindingGate"]).StrategyBindingGate(contract).evaluate()
+          assert result.state.value == "BLOCKED"
+          assert result.failure_reasons == ("decision_factory_not_bound",)
+          PY
+
+      - name: Verify no live execution is enabled
+        run: |
+          python - <<'PY'
+          from trader_bot.execution import ExecutionGateway, ExecutionStatus
+          assert ExecutionGateway.status is ExecutionStatus.DISABLED
+          PY
+
+      - name: Verify this stage does not create a paper campaign
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("trader_bot/strategy_binding.py").read_text(encoding="utf-8")
+          assert "PaperObservationRunner" not in source
+          assert "historical_bars" not in source
+          assert "submit(" not in source
+          PY
