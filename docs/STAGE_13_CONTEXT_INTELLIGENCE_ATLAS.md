@@ -31,6 +31,8 @@ The atlas is a **descriptive intelligence layer**, not a promotion engine. No ca
 
 The workflow restores `VERIFIED-FINAL-HOLDOUT-RESEARCH` from the previously completed run. The holdout file is treated as immutable input. This stage performs a new contextual analysis over those records; it does not redownload market data and does not overwrite the original research result.
 
+The generated artifact is fingerprinted, and the workflow hashes the immutable input before and after analysis. This provides an explicit integrity check that the preserved holdout remains byte-for-byte unchanged after the contextual analysis.
+
 ## Future extensions
 
 The next intelligence layers should add cross-pair lead/lag relationships, macro/news-event regimes, liquidity proxies, structural support/resistance state, volatility-shock transitions, and online regime-change detection. These must remain causally ordered and independently validated before they can influence the decision factory.
