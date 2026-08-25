@@ -6,7 +6,6 @@ import pytest
 from trader_bot.paper_campaign import PaperCampaignSpec, PaperCampaignState, PaperPerformanceGate
 from trader_bot.paper_eval import PaperEvaluationResult, PaperEvaluationSpec
 
-
 START = datetime(2026, 8, 1, tzinfo=timezone.utc)
 END = START + timedelta(days=7)
 
