@@ -11,7 +11,6 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Iterable
 
-
 MIN_KNOWLEDGE_SAMPLES = 30
 MIN_STRONG_SAMPLES = 100
 
@@ -117,7 +116,6 @@ def enrich_record(record: dict[str, Any]) -> dict[str, Any]:
 def _bootstrap_mean(values: list[float], repetitions: int = 500, seed: int = 20260825) -> tuple[float | None, float | None]:
     if len(values) < 2:
         return None, None
-    # Deterministic linear-congruential resampling keeps this dependency-light and reproducible.
     state = seed & 0xFFFFFFFF
     means: list[float] = []
     for _ in range(repetitions):
