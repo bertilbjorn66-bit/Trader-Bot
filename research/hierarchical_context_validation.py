@@ -116,18 +116,18 @@ def main() -> None:
     ap.add_argument('--input', required=True)
     ap.add_argument('--output', required=True)
     args = ap.parse_args()
-    source, records = load(Path(args.input))
+    _, records = load(Path(args.input))
     source_digest = hashlib.sha256(Path(args.input).read_bytes()).hexdigest()
     groups = build_groups(records)
 
     discovery_candidates: list[dict[str, Any]] = []
-    for g in groups:
-        if g.split != 'discovery' or len(g.outcomes) < MIN_DISCOVERY_N:
+    for discovery_group in groups:
+        if discovery_group.split != 'discovery' or len(discovery_group.outcomes) < MIN_DISCOVERY_N:
             continue
-        m = metrics(g.outcomes, g.years, bootstrap=False)
+        m = metrics(discovery_group.outcomes, discovery_group.years, bootstrap=False)
         if (m['expectancy_pips'] is not None and m['expectancy_pips'] > 0 and
                 m['profit_factor'] is not None and m['profit_factor'] > 1):
-            discovery_candidates.append({'spec': g.spec, 'key': list(g.key), 'discovery': m})
+            discovery_candidates.append({'spec': discovery_group.spec, 'key': list(discovery_group.key), 'discovery': m})
 
     discovery_candidates.sort(
         key=lambda x: (
@@ -145,17 +145,17 @@ def main() -> None:
         selected.append(c)
         per_spec[spec] += 1
 
-    index = {(g.spec, g.key, g.split): g for g in groups}
+    index = {(group.spec, group.key, group.split): group for group in groups}
     confirmation_results: list[dict[str, Any]] = []
     for c in selected:
         spec = str(c['spec'])
         key = tuple(c['key'])
-        g = index.get((spec, key, 'confirmation'))
-        if g is None or len(g.outcomes) < MIN_CONFIRMATION_N:
+        confirmation_group = index.get((spec, key, 'confirmation'))
+        if confirmation_group is None or len(confirmation_group.outcomes) < MIN_CONFIRMATION_N:
             continue
         seed_material = f'{spec}|{key}|confirmation'.encode('utf-8')
         seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], 'big')
-        m = metrics(g.outcomes, g.years, bootstrap=True, seed=seed)
+        m = metrics(confirmation_group.outcomes, confirmation_group.years, bootstrap=True, seed=seed)
         confirmation_results.append({
             'spec': spec,
             'key': list(key),
