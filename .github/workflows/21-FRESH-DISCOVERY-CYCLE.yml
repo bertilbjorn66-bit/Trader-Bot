@@ -1,6 +1,8 @@
 name: "21 — FRESH DISCOVERY CYCLE — DISCOVERY ONLY"
 
 on:
+  push:
+    branches: [stage21-fresh-discovery]
   workflow_dispatch:
     inputs:
       source_run_id:
@@ -19,6 +21,11 @@ on:
 permissions:
   contents: read
   actions: read
+
+env:
+  SOURCE_RUN_ID: ${{ inputs.source_run_id || '32470594197' }}
+  SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
+  HISTORY_STATES: ${{ inputs.history_states || '10000' }}
 
 jobs:
   validate:
@@ -69,7 +76,7 @@ jobs:
         with:
           name: empirical-recovery-reused-artifacts
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.source_run_id }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
           github-token: ${{ github.token }}
           path: .data/empirical_feed
       - name: Download EUR/USD repaired artifact
@@ -77,7 +84,7 @@ jobs:
         with:
           name: empirical-recovery-eurusd
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.source_run_id }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
           github-token: ${{ github.token }}
           path: /tmp/repaired/eurusd
       - name: Download GBP/USD repaired artifact
@@ -85,7 +92,7 @@ jobs:
         with:
           name: empirical-recovery-gbpusd
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.source_run_id }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
           github-token: ${{ github.token }}
           path: /tmp/repaired/gbpusd
       - name: Download USD/JPY repaired artifact
@@ -93,7 +100,7 @@ jobs:
         with:
           name: empirical-recovery-usdjpy
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.source_run_id }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
           github-token: ${{ github.token }}
           path: /tmp/repaired/usdjpy
       - name: Place repaired pair files
@@ -115,8 +122,8 @@ jobs:
           python -m research.fresh_discovery_cycle \
             --input-dir .data/empirical_feed \
             --output artifacts/fresh_discovery_report.json \
-            --sample-stride "${{ inputs.sample_stride }}" \
-            --history-states "${{ inputs.history_states }}"
+            --sample-stride "$SAMPLE_STRIDE" \
+            --history-states "$HISTORY_STATES"
       - name: Verify output is discovery-only
         run: |
           python - <<'PY'
