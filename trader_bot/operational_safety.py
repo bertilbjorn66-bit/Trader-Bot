@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from os import environ
 from types import MappingProxyType
-from typing import Mapping
 
 
 class SafetyState(StrEnum):
@@ -110,8 +110,7 @@ class OperationalSafety:
         return self._daily_pnl
 
     def reset_for_paper_session(self) -> None:
-        if self.spec.fingerprint() != self._spec_fingerprint:
-            raise RuntimeError("operational safety specification changed")
+        self._assert_spec_unchanged()
         self._daily_pnl = Decimal("0")
         self._emergency_stopped = False
         self._approval = None
@@ -121,22 +120,19 @@ class OperationalSafety:
         self._approval = None
 
     def record_pnl(self, delta: Decimal) -> None:
-        if self.spec.fingerprint() != self._spec_fingerprint:
-            raise RuntimeError("operational safety specification changed")
+        self._assert_spec_unchanged()
         self._daily_pnl += delta
         if self._daily_pnl <= self.spec.maximum_daily_loss:
             self.trigger_emergency_stop()
 
     def set_human_approval(self, approval: HumanApproval) -> None:
-        if self.spec.approval_required and self.spec.live_orders_allowed:
-            raise RuntimeError("live approval cannot be enabled by Stage 11")
+        self._assert_spec_unchanged()
         if approval.runtime_fingerprint != self._spec_fingerprint:
             raise ValueError("human approval fingerprint does not match safety specification")
         self._approval = approval
 
     def evaluate(self, *, now: datetime, quote_timestamp: datetime, spread: Decimal) -> SafetyEvaluation:
-        if self.spec.fingerprint() != self._spec_fingerprint:
-            raise RuntimeError("operational safety specification changed")
+        self._assert_spec_unchanged()
         if now.tzinfo is None or quote_timestamp.tzinfo is None:
             raise ValueError("timestamps must be timezone-aware")
         reasons: list[str] = []
@@ -148,12 +144,25 @@ class OperationalSafety:
             reasons.append("quote_stale")
         if spread > self.spec.maximum_spread:
             reasons.append("spread_limit_breached")
-        if self.spec.approval_required and self._approval is None:
-            reasons.append("human_approval_missing")
         if self.spec.live_orders_allowed:
             reasons.append("live_orders_not_allowed")
         return SafetyEvaluation(
             SafetyState.READY_FOR_PAPER if not reasons else SafetyState.BLOCKED,
+            tuple(reasons),
+            self._spec_fingerprint,
+        )
+
+    def evaluate_live(self) -> SafetyEvaluation:
+        self._assert_spec_unchanged()
+        reasons: list[str] = []
+        if self.spec.approval_required and self._approval is None:
+            reasons.append("human_approval_missing")
+        if self.spec.live_orders_allowed is False:
+            reasons.append("live_orders_not_allowed")
+        if self._emergency_stopped:
+            reasons.append("emergency_stop_active")
+        return SafetyEvaluation(
+            SafetyState.READY_FOR_SHADOW if not reasons else SafetyState.BLOCKED,
             tuple(reasons),
             self._spec_fingerprint,
         )
@@ -164,7 +173,10 @@ class OperationalSafety:
             raise RuntimeError("operational safety is not ready: " + "; ".join(result.reasons))
 
     def verify_live_remains_blocked(self) -> None:
-        if self.spec.live_orders_allowed:
-            raise AssertionError("Stage 11 cannot permit live orders")
-        if not self._emergency_stopped:
-            raise AssertionError("live readiness requires the emergency stop to remain active")
+        result = self.evaluate_live()
+        if result.state is not SafetyState.BLOCKED:
+            raise AssertionError("Stage 11 unexpectedly permits live authorization")
+
+    def _assert_spec_unchanged(self) -> None:
+        if self.spec.fingerprint() != self._spec_fingerprint:
+            raise RuntimeError("operational safety specification changed")
