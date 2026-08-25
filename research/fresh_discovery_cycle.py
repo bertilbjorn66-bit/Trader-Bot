@@ -8,6 +8,7 @@ from typing import Any
 
 import research.enriched_conditional_experiment as experiment
 from research.datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
+from research.enriched_conditional_experiment import TargetRecord
 from research.execution import ExecutionAssumptions
 from research.sequential_empirical import DEFAULT_HORIZONS
 
@@ -45,7 +46,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
         raise ValueError("sample_stride and history_states must be positive")
 
     costs = ExecutionAssumptions()
-    all_records: list[dict[str, Any]] = []
+    all_records: list[TargetRecord] = []
     quality: dict[str, Any] = {}
     for pair in PAIR_TO_SYMBOL:
         records, pair_quality = experiment.analyze_pair(
@@ -65,7 +66,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                 for regime in REGIMES:
                     for session in SESSIONS:
                         for pairset in PAIRSETS:
-                            subset = [
+                            subset: list[TargetRecord] = [
                                 record
                                 for record in all_records
                                 if record["horizon"] == horizon
