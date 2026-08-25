@@ -1,17 +1,21 @@
-name: 17 — NON-LIVE EVALUATION GATE — NO BROKER
+name: 17 — NON-LIVE EVALUATION GATE — FROZEN CANDIDATE
 
 on:
   pull_request:
     branches: [main]
     paths:
       - "research/non_live_evaluation.py"
+      - "research/frozen_candidate_evaluation.py"
       - "tests/test_non_live_evaluation.py"
+      - "tests/test_frozen_candidate_evaluation.py"
       - ".github/workflows/17-NON-LIVE-EVALUATION-GATE.yml"
   push:
     branches: [main]
     paths:
       - "research/non_live_evaluation.py"
+      - "research/frozen_candidate_evaluation.py"
       - "tests/test_non_live_evaluation.py"
+      - "tests/test_frozen_candidate_evaluation.py"
       - ".github/workflows/17-NON-LIVE-EVALUATION-GATE.yml"
   workflow_dispatch:
 
@@ -21,9 +25,13 @@ permissions:
 
 jobs:
   validate-non-live-evaluation:
-    name: 1️⃣ VALIDATE NON-LIVE EVALUATION — DEFAULT DENY
+    name: 1️⃣ VALIDATE FROZEN CANDIDATE — DEFAULT DENY
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      FROZEN_CONFIRMATION_ARTIFACT_ID: "9499122594"
+      FROZEN_CONFIRMATION_RUN_ID: "32658698680"
+      FROZEN_CONFIRMATION_ARTIFACT_SHA256: "deb76e586b92ef4742fc96ab3b1a4961afa754085dd281d921f7bcb6ccfc7871"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -52,10 +60,73 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           execution = Path('trader_bot/execution.py').read_text(encoding='utf-8')
-          source = Path('research/non_live_evaluation.py').read_text(encoding='utf-8')
+          source = Path('research/frozen_candidate_evaluation.py').read_text(encoding='utf-8')
           assert 'DISABLED' in execution
           assert 'broker' not in source.lower()
-          assert 'PASS' in source and 'FAIL' in source and 'INCOMPLETE' in source
+          assert 'promotion_authorized' in source
+          assert 'live_execution_authorized' in source
+          assert 'FROZEN_CANDIDATE' in source
           print('NON_LIVE_EVALUATION_READY=true')
           print('BROKER_TRANSMISSION=false')
           PY
+
+      - name: Download immutable preserved confirmation artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${FROZEN_CONFIRMATION_ARTIFACT_ID}/zip" \
+            > artifacts/frozen-confirmation.zip
+          printf '%s  %s\n' "${FROZEN_CONFIRMATION_ARTIFACT_SHA256}" artifacts/frozen-confirmation.zip | sha256sum -c -
+          unzip -q artifacts/frozen-confirmation.zip -d artifacts/confirmation
+          test -f artifacts/confirmation/enriched_stride60_holdout_ready.json
+          echo "FROZEN_CONFIRMATION_RUN_ID=${FROZEN_CONFIRMATION_RUN_ID}"
+          echo "FROZEN_CONFIRMATION_ARTIFACT_ID=${FROZEN_CONFIRMATION_ARTIFACT_ID}"
+          echo "FROZEN_CONFIRMATION_ARTIFACT_DIGEST_VERIFIED=true"
+
+      - name: Run immutable frozen-candidate confirmation experiment
+        run: |
+          python -m research.frozen_candidate_evaluation \
+            --input artifacts/confirmation/enriched_stride60_holdout_ready.json \
+            --output artifacts/frozen_candidate_evaluation.json
+
+      - name: Enforce experiment decision and promotion boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('artifacts/frozen_candidate_evaluation.json').read_text(encoding='utf-8'))
+          assert result['candidate']['horizon'] == 2
+          assert result['candidate']['regime'] == 'regime:high_volatility_range'
+          assert result['candidate']['session'] == 'new_york'
+          assert result['candidate']['agreement_min'] == 0.5
+          assert result['candidate']['distance_max'] == 1.5
+          assert result['candidate']['pairset'] == 'all'
+          assert result['holdout_used_for_freeze'] is False
+          assert result['promotion_authorized'] is False
+          assert result['live_execution_authorized'] is False
+          assert result['state'] in {'PASS', 'FAIL', 'INCOMPLETE'}
+
+          print('FROZEN_CANDIDATE_STATE=', result['state'])
+          print('FROZEN_CANDIDATE_REASON=', result['reason'])
+          print('CONFIRMATION_N=', result.get('confirmation', {}).get('n'))
+          print('CONFIRMATION_EXPECTANCY_PIPS=', result.get('confirmation', {}).get('expectancy_pips'))
+          print('CONFIRMATION_PROFIT_FACTOR=', result.get('confirmation', {}).get('profit_factor'))
+          print('PROMOTION_AUTHORIZED=false')
+          print('LIVE_EXECUTION_AUTHORIZED=false')
+          PY
+
+      - name: Upload frozen-candidate experiment evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: FROZEN-CANDIDATE-CONFIRMATION-EVIDENCE
+          path: artifacts/frozen_candidate_evaluation.json
+          if-no-files-found: error
+          retention-days: 30
