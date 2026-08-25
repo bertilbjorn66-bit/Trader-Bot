@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import research.enriched_conditional_experiment as experiment
+
 from research.datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
 from research.execution import ExecutionAssumptions
 from research.sequential_empirical import DEFAULT_HORIZONS
