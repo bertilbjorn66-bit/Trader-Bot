@@ -13,7 +13,6 @@ from trader_bot.paper_observation import (
     PaperObservationRunner,
 )
 
-
 NOW = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
 
 
