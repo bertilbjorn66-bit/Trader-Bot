@@ -1,16 +1,20 @@
 name: "01 — 🚑 RUN THIS — EMPIRICAL RECOVERY — LATEST"
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/empirical-recovery.yml"
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: "Previous run containing successful pair artifacts"
-        required: true
-        default: "32426379638"
+        description: "Retained only for backwards-compatible dispatches; fresh recovery no longer depends on old artifacts"
+        required: false
+        default: ""
       retry_pairs:
-        description: "Pairs to redownload"
-        required: true
-        default: "EUR/USD,GBP/USD,USD/JPY"
+        description: "Ignored by the self-contained recovery; all nine verified pairs are refreshed"
+        required: false
+        default: "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY"
       start:
         description: "UTC start timestamp"
         required: true
@@ -31,6 +35,12 @@ on:
 permissions:
   contents: read
   actions: read
+
+env:
+  RECOVERY_START: ${{ inputs.start || '2020-01-01T00:00:00+00:00' }}
+  RECOVERY_END: ${{ inputs.end || '' }}
+  SAMPLE_STRIDE: ${{ inputs.sample_stride || '120' }}
+  HISTORY_STATES: ${{ inputs.history_states || '10000' }}
 
 jobs:
   validate:
@@ -55,51 +65,8 @@ jobs:
       - name: Run complete test suite
         run: pytest
 
-  reuse:
-    name: "Reuse six successful artifacts"
-    needs: validate
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Create input directory
-        run: mkdir -p .data/empirical_feed
-      - name: Download six successful artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-        run: |
-          set -euo pipefail
-          api="https://api.github.com/repos/$GITHUB_REPOSITORY"
-          mkdir -p /tmp/recovery
-          artifacts_json="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100")"
-          for artifact_name in empirical-feed-audusd empirical-feed-usdcad empirical-feed-usdchf empirical-feed-nzdusd empirical-feed-eurjpy empirical-feed-gbpjpy; do
-            case "$artifact_name" in
-              empirical-feed-audusd) slug=audusd ;;
-              empirical-feed-usdcad) slug=usdcad ;;
-              empirical-feed-usdchf) slug=usdchf ;;
-              empirical-feed-nzdusd) slug=nzdusd ;;
-              empirical-feed-eurjpy) slug=eurjpy ;;
-              empirical-feed-gbpjpy) slug=gbpjpy ;;
-              *) echo "Unexpected artifact" >&2; exit 1 ;;
-            esac
-            artifact_id="$(printf '%s' "$artifacts_json" | jq -r --arg n "$artifact_name" '.artifacts[] | select(.name == $n and .expired == false) | .id' | head -n1)"
-            test -n "$artifact_id" -a "$artifact_id" != "null"
-            archive="/tmp/recovery/$artifact_name.zip"
-            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api/actions/artifacts/$artifact_id/zip" -o "$archive"
-            unzip -q -o "$archive" -d "/tmp/recovery/$artifact_name"
-            test -s "/tmp/recovery/$artifact_name/$slug.jsonl"
-            cp "/tmp/recovery/$artifact_name/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
-          done
-          ls -lh .data/empirical_feed
-      - name: Upload reused bundle
-        uses: actions/upload-artifact@v7
-        with:
-          name: empirical-recovery-reused-artifacts
-          path: .data/empirical_feed/*.jsonl
-          if-no-files-found: error
-          retention-days: 3
-
   retry:
-    name: "Retry failed pair downloads"
+    name: "Refresh and verify all nine pair feeds"
     needs: validate
     strategy:
       fail-fast: false
@@ -112,8 +79,20 @@ jobs:
             slug: gbpusd
           - pair: "USD/JPY"
             slug: usdjpy
+          - pair: "AUD/USD"
+            slug: audusd
+          - pair: "USD/CAD"
+            slug: usdcad
+          - pair: "USD/CHF"
+            slug: usdchf
+          - pair: "NZD/USD"
+            slug: nzdusd
+          - pair: "EUR/JPY"
+            slug: eurjpy
+          - pair: "GBP/JPY"
+            slug: gbpjpy
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - name: Checkout audited research branch
         uses: actions/checkout@v7
@@ -137,32 +116,80 @@ jobs:
       - name: Resolve UTC end time
         id: end
         env:
-          INPUT_END: ${{ inputs.end }}
+          INPUT_END: ${{ env.RECOVERY_END }}
         run: |
           set -euo pipefail
           if [ -n "$INPUT_END" ]; then value="$INPUT_END"; else value="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
           echo "value=$value" >> "$GITHUB_OUTPUT"
       - name: Download corrected real Dukascopy BID/ASK through JETTA
         run: |
+          mkdir -p .data/empirical_feed
           python -m research.jetta_datafeed_download \
             --pair "${{ matrix.pair }}" \
-            --start "${{ inputs.start }}" \
+            --start "${{ env.RECOVERY_START }}" \
             --end "${{ steps.end.outputs.value }}" \
             --out-dir .data/empirical_feed
       - name: Verify repaired pair output
-        run: test -s ".data/empirical_feed/${{ matrix.slug }}.jsonl"
-      - name: Upload repaired pair artifact
+        run: |
+          set -euo pipefail
+          test -s ".data/empirical_feed/${{ matrix.slug }}.jsonl"
+          python - <<'PY'
+          from pathlib import Path
+          from research.datafeed_empirical import load_feed_bars
+          path = Path('.data/empirical_feed') / '${{ matrix.slug }}.jsonl'
+          rows = load_feed_bars(path)
+          assert rows, f'No bars loaded from {path}'
+          print(f'VALID_FEED=true pair={path.stem} bars={len(rows)}')
+          PY
+      - name: Upload verified pair artifact
         uses: actions/upload-artifact@v7
         with:
           name: empirical-recovery-${{ matrix.slug }}
           path: .data/empirical_feed/${{ matrix.slug }}.jsonl
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 30
+
+  bundle:
+    name: "Assemble retained nine-pair verified bundle"
+    needs: [validate, retry]
+    if: ${{ needs.validate.result == 'success' && needs.retry.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Create input directory
+        run: mkdir -p .data/empirical_feed
+      - name: Download all verified pair artifacts from this recovery run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: empirical-recovery-*
+          path: .data/empirical_feed
+          merge-multiple: true
+      - name: Verify all nine retained pair files
+        run: |
+          set -euo pipefail
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/$slug.jsonl"
+          done
+          python - <<'PY'
+          from pathlib import Path
+          from research.datafeed_empirical import load_feed_bars
+          for slug in 'audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy'.split():
+              path = Path('.data/empirical_feed') / f'{slug}.jsonl'
+              rows = load_feed_bars(path)
+              assert rows
+              print(f'RETAINED_FEED_VERIFIED=true pair={slug} bars={len(rows)}')
+          PY
+      - name: Upload retained verified nine-pair bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: empirical-recovery-reused-artifacts
+          path: .data/empirical_feed/*.jsonl
+          if-no-files-found: error
+          retention-days: 30
 
   analyze:
     name: "Run recovery empirical analysis"
-    needs: [validate, reuse, retry]
-    if: ${{ needs.validate.result == 'success' && needs.reuse.result == 'success' && needs.retry.result == 'success' }}
+    needs: [validate, bundle]
+    if: ${{ needs.validate.result == 'success' && needs.bundle.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
@@ -178,35 +205,36 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -e .
       - name: Create input directory
         run: mkdir -p .data/empirical_feed
-      - name: Download reused bundle
+      - name: Download retained verified nine-pair bundle
         uses: actions/download-artifact@v8
         with:
           name: empirical-recovery-reused-artifacts
           path: .data/empirical_feed
-      - name: Download repaired pair artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: empirical-recovery-*
-          path: .data/empirical_feed
-          merge-multiple: true
-      - name: Verify all nine pair files
+      - name: Verify all nine pair files before analysis
         run: |
           set -euo pipefail
           for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
             test -s ".data/empirical_feed/$slug.jsonl"
           done
+          python - <<'PY'
+          from pathlib import Path
+          from research.datafeed_empirical import load_feed_bars
+          for slug in 'audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy'.split():
+              path = Path('.data/empirical_feed') / f'{slug}.jsonl'
+              rows = load_feed_bars(path)
+              assert rows
+              print(f'ANALYSIS_INPUT_VERIFIED=true pair={slug} bars={len(rows)}')
+          PY
       - name: Run recovery empirical analysis
-        env:
-          INPUT_END: ${{ inputs.end }}
         run: |
           set -euo pipefail
-          if [ -n "$INPUT_END" ]; then end="$INPUT_END"; else end="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
+          if [ -n "$RECOVERY_END" ]; then end="$RECOVERY_END"; else end="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
           python -m research.datafeed_empirical \
-            --start "${{ inputs.start }}" \
+            --start "$RECOVERY_START" \
             --end "$end" \
             --pairs "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY" \
-            --sample-stride "${{ inputs.sample_stride }}" \
-            --history-states "${{ inputs.history_states }}" \
+            --sample-stride "$SAMPLE_STRIDE" \
+            --history-states "$HISTORY_STATES" \
             --max-days-per-batch 7 \
             --input-dir .data/empirical_feed \
             --output artifacts/empirical_report.json
