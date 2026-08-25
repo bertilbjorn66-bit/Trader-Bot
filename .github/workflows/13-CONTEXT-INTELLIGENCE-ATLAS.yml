@@ -2,6 +2,12 @@ name: "🧠 13 — DEEP CONTEXT INTELLIGENCE ATLAS — REUSE VERIFIED HOLDOUT"
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/13-CONTEXT-INTELLIGENCE-ATLAS.yml"
+      - "research/context_atlas.py"
+      - "tests/test_context_atlas.py"
+      - "docs/STAGE_13_CONTEXT_INTELLIGENCE_ATLAS.md"
   push:
     branches: [main]
     paths:
