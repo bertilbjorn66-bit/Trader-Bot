@@ -1,0 +1,108 @@
+name: "🛡️ 11 — OPERATIONAL SAFETY READINESS — NO LIVE ORDERS"
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-operational-safety:
+    name: "1️⃣ VALIDATE operational safety controls"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check trader_bot tests
+
+      - name: Mypy
+        run: mypy trader_bot
+
+      - name: Full test suite
+        run: pytest -ra
+
+      - name: Verify paper safety can be satisfied only with healthy inputs
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timedelta, timezone
+          from decimal import Decimal
+          from trader_bot.operational_safety import OperationalSafety, OperationalSafetySpec, SafetyState
+
+          now = datetime.now(timezone.utc)
+          safety = OperationalSafety(
+              OperationalSafetySpec(
+                  maximum_daily_loss=Decimal("-100"),
+                  maximum_quote_age=timedelta(seconds=5),
+                  maximum_spread=Decimal("0.0005"),
+              )
+          )
+          safety.reset_for_paper_session()
+          result = safety.evaluate(
+              now=now,
+              quote_timestamp=now - timedelta(seconds=1),
+              spread=Decimal("0.0002"),
+          )
+          assert result.state is SafetyState.READY_FOR_PAPER
+          PY
+
+      - name: Verify emergency stop blocks operation
+        run: |
+          python - <<'PY'
+          from trader_bot.operational_safety import OperationalSafety, OperationalSafetySpec, SafetyState
+          from decimal import Decimal
+          from datetime import datetime, timedelta, timezone
+
+          now = datetime.now(timezone.utc)
+          safety = OperationalSafety(
+              OperationalSafetySpec(
+                  maximum_daily_loss=Decimal("-100"),
+                  maximum_quote_age=timedelta(seconds=5),
+                  maximum_spread=Decimal("0.0005"),
+              )
+          )
+          result = safety.evaluate(now=now, quote_timestamp=now, spread=Decimal("0.0001"))
+          assert result.state is SafetyState.BLOCKED
+          assert "emergency_stop_active" in result.reasons
+          PY
+
+      - name: Verify live authorization remains impossible
+        run: |
+          python - <<'PY'
+          from trader_bot.operational_safety import OperationalSafety, OperationalSafetySpec
+          from trader_bot.execution import ExecutionGateway, ExecutionStatus
+          from decimal import Decimal
+          from datetime import timedelta
+
+          safety = OperationalSafety(
+              OperationalSafetySpec(
+                  maximum_daily_loss=Decimal("-100"),
+                  maximum_quote_age=timedelta(seconds=5),
+                  maximum_spread=Decimal("0.0005"),
+              )
+          )
+          safety.verify_live_remains_blocked()
+          assert ExecutionGateway.status is ExecutionStatus.DISABLED
+          PY
+
+      - name: Verify source contains no broker credentials
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = "\n".join(path.read_text(encoding="utf-8") for path in Path("trader_bot").glob("*.py"))
+          for literal in ("-----BEGIN PRIVATE KEY-----", "AKIA", "hard-coded-secret"):
+              assert literal not in source
+          PY
