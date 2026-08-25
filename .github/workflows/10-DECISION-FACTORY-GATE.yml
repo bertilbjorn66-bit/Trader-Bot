@@ -1,0 +1,73 @@
+name: "🧠 10 — PROMOTION-AWARE DECISION FACTORY GATE"
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-decision-factory:
+    name: "1️⃣ VALIDATE promotion-aware decision factory"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check trader_bot tests
+
+      - name: Mypy
+        run: mypy trader_bot
+
+      - name: Full test suite
+        run: pytest -ra
+
+      - name: Verify current factory is fail-closed
+        run: |
+          python - <<'PY'
+          from trader_bot.current_factory import current_factory
+          from trader_bot.decision import Action
+          from trader_bot.decision_factory import FactoryState
+
+          factory = current_factory()
+          decision = factory.decide(1)
+          assert factory.state is FactoryState.BLOCKED
+          assert decision.action is Action.NO_TRADE
+          assert decision.evidence_samples == 0
+          PY
+
+      - name: Verify live execution remains disabled
+        run: |
+          python - <<'PY'
+          from trader_bot.execution import ExecutionGateway, ExecutionStatus
+
+          assert ExecutionGateway.status is ExecutionStatus.DISABLED
+          try:
+              ExecutionGateway().submit(None)  # type: ignore[arg-type]
+          except Exception as exc:
+              assert exc.__class__.__name__ == "ExecutionDisabled"
+          else:
+              raise AssertionError("live execution unexpectedly accepted a submission")
+          PY
+
+      - name: Verify factory contains no market-data download dependency
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("trader_bot/decision_factory.py").read_text(encoding="utf-8")
+          assert "historical_bars" not in source
+          assert "current_quotes" not in source
+          PY
