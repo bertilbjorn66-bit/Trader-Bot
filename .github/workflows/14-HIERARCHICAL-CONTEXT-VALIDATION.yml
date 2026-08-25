@@ -1,0 +1,121 @@
+name: 14 — HIERARCHICAL CONTEXT VALIDATION — NO REDOWNLOAD
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/hierarchical_context_validation.py"
+      - "tests/test_hierarchical_context_validation.py"
+      - ".github/workflows/14-HIERARCHICAL-CONTEXT-VALIDATION.yml"
+  push:
+    branches: [main]
+    paths:
+      - "research/hierarchical_context_validation.py"
+      - "tests/test_hierarchical_context_validation.py"
+      - ".github/workflows/14-HIERARCHICAL-CONTEXT-VALIDATION.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate-hierarchical-context:
+    name: 1️⃣ VALIDATE HIERARCHICAL CONTEXTS — IMMUTABLE HOLDOUT
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Static checks
+        run: |
+          ruff check research trader_bot tests
+          mypy research trader_bot
+
+      - name: Full test suite
+        run: pytest
+
+      - name: Prepare immutable input
+        run: mkdir -p .research_input artifacts
+
+      - name: Restore verified final holdout — no redownload
+        uses: actions/download-artifact@v8
+        with:
+          name: VERIFIED-FINAL-HOLDOUT-RESEARCH
+          path: .research_input
+          repository: ${{ github.repository }}
+          run-id: 32658698680
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+
+      - name: Verify immutable input
+        shell: bash
+        run: |
+          test -s .research_input/enriched_stride60_holdout_ready.json
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          p = Path('.research_input/enriched_stride60_holdout_ready.json')
+          data = json.loads(p.read_text(encoding='utf-8'))
+          assert data['status'] == 'ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED'
+          assert data['methodology']['split'].startswith('chronological 60/40')
+          assert data['methodology']['holdout_min_samples'] == 100
+          assert data['target_records']
+          digest = hashlib.sha256(p.read_bytes()).hexdigest()
+          Path('artifacts/input_sha256.txt').write_text(digest + '\n', encoding='utf-8')
+          print('IMMUTABLE_HOLDOUT_INPUT_VERIFIED=true')
+          print('HOLDOUT_SHA256=', digest)
+          print('TARGET_RECORDS=', len(data['target_records']))
+          PY
+
+      - name: Build hierarchical validation
+        run: |
+          python -m research.hierarchical_context_validation \
+            --input .research_input/enriched_stride60_holdout_ready.json \
+            --output artifacts/hierarchical_context_validation.json
+
+      - name: Verify output and input integrity
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          source = Path('.research_input/enriched_stride60_holdout_ready.json')
+          result = json.loads(Path('artifacts/hierarchical_context_validation.json').read_text(encoding='utf-8'))
+          digest_before = Path('artifacts/input_sha256.txt').read_text(encoding='utf-8').strip()
+          digest_after = hashlib.sha256(source.read_bytes()).hexdigest()
+          assert digest_before == digest_after
+          assert result['status'] == 'HIERARCHICAL_CONTEXT_VALIDATION_COMPLETED'
+          assert result['source'] == 'VERIFIED-FINAL-HOLDOUT-RESEARCH'
+          assert result['record_count'] == 142836
+          assert result['methodology']['selection_split'] == 'discovery_only'
+          assert result['methodology']['live_authorization'] == 'never granted by this analysis'
+          assert result['methodology']['bootstrap_reps'] == 2000
+          print('HIERARCHICAL_CONTEXT_VALIDATION_COMPLETED=true')
+          print('STRONG_CONTEXTS=', result['summary']['strong_contexts'])
+          print('WATCH_CONTEXTS=', result['summary']['watch_contexts'])
+          print('NO_TRADE_CONTEXTS=', result['summary']['no_trade_contexts'])
+          print('INPUT_IMMUTABLE=true')
+          print('LIVE_AUTHORIZATION=false')
+          PY
+
+      - name: Upload verified hierarchical context artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-HIERARCHICAL-CONTEXT-VALIDATION
+          path: |
+            artifacts/hierarchical_context_validation.json
+            artifacts/input_sha256.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6
