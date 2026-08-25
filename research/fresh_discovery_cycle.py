@@ -6,10 +6,10 @@ import math
 from pathlib import Path
 from typing import Any
 
+from . import enriched_conditional_experiment as experiment
 from .datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
 from .execution import ExecutionAssumptions
 from .sequential_empirical import DEFAULT_HORIZONS
-from . import enriched_conditional_experiment as experiment
 
 
 AGREEMENT_GRID = (0.50, 0.55, 0.60, 0.65, 0.70, 0.75)
