@@ -111,8 +111,7 @@ class PaperObservationJournal:
             separators=(",", ":"),
         )
 
-    @staticmethod
-    def _payload(record: PaperObservation) -> dict[str, object]:
+    def _payload(self, record: PaperObservation) -> dict[str, object]:
         return {
             "sequence": record.sequence,
             "timestamp": record.timestamp.isoformat(),
@@ -123,14 +122,13 @@ class PaperObservationJournal:
             "status": record.status.value,
             "reason": record.reason,
             "previous_hash": record.previous_hash,
+            "session_id": self.session_id,
+            "spec_fingerprint": self.spec_fingerprint,
         }
 
-    @classmethod
-    def _hash_record(cls, record: PaperObservation, previous_hash: str) -> str:
-        payload = cls._payload(record)
+    def _hash_record(self, record: PaperObservation, previous_hash: str) -> str:
+        payload = self._payload(record)
         payload["previous_hash"] = previous_hash
-        payload["session_id"] = record.sequence
-        payload["spec_fingerprint"] = "bound"
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
@@ -153,7 +151,7 @@ class ObservationGuard:
 
 @dataclass(frozen=True)
 class PaperObservationResult:
-    observation: PaperObservation
+    observation: PaperObservation | None
     order: PaperOrder | None
     reason: str
 
@@ -181,6 +179,10 @@ class PaperObservationRunner:
             raise ValueError("instrument must be positive")
         if quantity <= Decimal("0"):
             raise ValueError("quantity must be positive")
+        if stop_distance <= Decimal("0"):
+            raise ValueError("stop_distance must be positive")
+        if target_distance <= Decimal("0"):
+            raise ValueError("target_distance must be positive")
         self.provider = provider
         self.instrument = instrument
         self.guard = guard
@@ -203,15 +205,13 @@ class PaperObservationRunner:
         if now.tzinfo is None:
             raise ValueError("observed_at must be timezone-aware")
         if not self.provider.health_check():
-            quote = self._quote_or_fail(now)
-            observation = self.observations.append(
-                quote=quote,
-                status=ObservationStatus.REJECTED,
-                reason="Market-data provider health check failed.",
+            return PaperObservationResult(
+                None,
+                None,
+                "Market-data provider health check failed; no observation accepted.",
             )
-            return PaperObservationResult(observation, None, observation.reason)
 
-        quote = self._quote_or_fail(now)
+        quote = self._current_quote()
         age = now - quote.timestamp
         spread = quote.ask - quote.bid
         if age > self.guard.max_quote_age:
@@ -243,7 +243,11 @@ class PaperObservationRunner:
         )
         decision = self.decision_factory(quote)
         if decision.action not in (Action.BUY, Action.SELL):
-            return PaperObservationResult(observation, None, "Decision did not authorize a paper entry.")
+            return PaperObservationResult(
+                observation,
+                None,
+                "Decision did not authorize a paper entry.",
+            )
         order = self.session.record_signal(
             decision=decision,
             quote=quote,
@@ -252,7 +256,11 @@ class PaperObservationRunner:
             target_distance=self.target_distance,
         )
         self.session.evidence.verify()
-        return PaperObservationResult(observation, order, "Paper order recorded; no broker transmission occurred.")
+        return PaperObservationResult(
+            observation,
+            order,
+            "Paper order recorded; no broker transmission occurred.",
+        )
 
     def finalize(self, finalized_at: datetime | None = None) -> PaperEvaluationResult:
         timestamp = finalized_at or datetime.now(timezone.utc)
@@ -263,7 +271,7 @@ class PaperObservationRunner:
         self.observations.verify()
         return result
 
-    def _quote_or_fail(self, now: datetime) -> Quote:
+    def _current_quote(self) -> Quote:
         quotes = self.provider.current_quotes([self.instrument])
         if len(quotes) != 1:
             raise ValueError("provider must return exactly one quote for the requested instrument")
@@ -272,6 +280,4 @@ class PaperObservationRunner:
             raise ValueError("provider returned a quote for the wrong instrument")
         if quote.timestamp.tzinfo is None:
             raise ValueError("provider returned a timezone-naive quote timestamp")
-        if quote.timestamp > now + self.guard.max_future_skew:
-            return quote
         return quote
