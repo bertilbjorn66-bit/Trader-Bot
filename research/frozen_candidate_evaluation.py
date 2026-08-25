@@ -117,7 +117,8 @@ def _stress(values: Sequence[float]) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for cost in COST_STRESS_PIPS:
         stressed = [value - cost for value in values]
-        result[str(cost)] = stats(stressed).as_dict() if stressed else {}
+        stress_stats = stats(stressed)
+        result[str(cost)] = stress_stats.as_dict() if stress_stats else {}
     return result
 
 
@@ -137,7 +138,11 @@ def _pair_breakdown(records: Sequence[dict[str, Any]]) -> dict[str, dict[str, An
     values: dict[str, list[float]] = {}
     for record in records:
         values.setdefault(str(record["pair"]), []).append(float(record["outcome_pips"]))
-    return {pair: stats(pair_values).as_dict() if stats(pair_values) else None for pair, pair_values in sorted(values.items())}
+    breakdown: dict[str, dict[str, Any] | None] = {}
+    for pair, pair_values in sorted(values.items()):
+        pair_stats = stats(pair_values)
+        breakdown[pair] = pair_stats.as_dict() if pair_stats else None
+    return breakdown
 
 
 def _assert_frozen_discovery(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
@@ -162,6 +167,8 @@ def evaluate(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
             "candidate": FROZEN_CANDIDATE,
             "candidate_fingerprint": FROZEN_CANDIDATE_FINGERPRINT,
             "holdout_used_for_freeze": False,
+            "promotion_authorized": False,
+            "live_execution_authorized": False,
         }
 
     discovery_stats = _assert_frozen_discovery(records)
@@ -176,6 +183,8 @@ def evaluate(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
             "candidate_fingerprint": FROZEN_CANDIDATE_FINGERPRINT,
             "holdout_used_for_freeze": False,
             "discovery": discovery_stats,
+            "promotion_authorized": False,
+            "live_execution_authorized": False,
         }
 
     confirmation = stats(confirmation_values)
