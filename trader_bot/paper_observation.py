@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import StrEnum
-from typing import Callable, Sequence
 
 from .data_provider import MarketDataProvider
 from .decision import Action, Decision
@@ -55,13 +55,7 @@ class PaperObservationJournal:
     def head_hash(self) -> str:
         return self._records[-1].record_hash if self._records else "0" * 64
 
-    def append(
-        self,
-        *,
-        quote: Quote,
-        status: ObservationStatus,
-        reason: str,
-    ) -> PaperObservation:
+    def append(self, *, quote: Quote, status: ObservationStatus, reason: str) -> PaperObservation:
         if self._records and quote.timestamp < self._records[-1].timestamp:
             raise ValueError("observation timestamps must be chronological")
         previous_hash = self.head_hash
@@ -129,9 +123,7 @@ class PaperObservationJournal:
     def _hash_record(self, record: PaperObservation, previous_hash: str) -> str:
         payload = self._payload(record)
         payload["previous_hash"] = previous_hash
-        return hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
