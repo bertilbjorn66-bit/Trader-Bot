@@ -1,0 +1,114 @@
+name: 18 — DATA-CONNECTED INTELLIGENCE — IMMUTABLE HOLDOUT
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/data_connected_intelligence.py"
+      - "tests/test_data_connected_intelligence.py"
+      - "docs/STAGE_18_DATA_CONNECTED_INTELLIGENCE.md"
+      - ".github/workflows/18-DATA-CONNECTED-INTELLIGENCE.yml"
+  push:
+    branches: [main]
+    paths:
+      - "research/data_connected_intelligence.py"
+      - "tests/test_data_connected_intelligence.py"
+      - "docs/STAGE_18_DATA_CONNECTED_INTELLIGENCE.md"
+      - ".github/workflows/18-DATA-CONNECTED-INTELLIGENCE.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-data-connected-intelligence:
+    name: 1️⃣ BUILD DATA-CONNECTED INTELLIGENCE — NO REDOWNLOAD
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check research trader_bot tests
+
+      - name: Mypy
+        run: mypy research trader_bot
+
+      - name: Full tests
+        run: pytest
+
+      - name: Prepare immutable input
+        run: mkdir -p .research_input artifacts
+
+      - name: Restore verified holdout — no redownload
+        uses: actions/download-artifact@v8
+        with:
+          name: VERIFIED-FINAL-HOLDOUT-RESEARCH
+          path: .research_input
+          repository: ${{ github.repository }}
+          run-id: 32658698680
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+
+      - name: Verify input and build atlas
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          source = Path('.research_input/enriched_stride60_holdout_ready.json')
+          data = json.loads(source.read_text(encoding='utf-8'))
+          assert data['status'] == 'ENRICHED_CONDITIONAL_EXPERIMENT_COMPLETED'
+          before = hashlib.sha256(source.read_bytes()).hexdigest()
+          print('INPUT_SHA256_BEFORE=', before)
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          from research.data_connected_intelligence import build_data_connected_intelligence
+          build_data_connected_intelligence(
+              Path('.research_input/enriched_stride60_holdout_ready.json'),
+              Path('artifacts/data_connected_intelligence.json'),
+          )
+          print('DATA_CONNECTED_INTELLIGENCE_COMPLETED=true')
+          PY
+
+      - name: Verify immutable input and output safety
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          source = Path('.research_input/enriched_stride60_holdout_ready.json')
+          result = json.loads(Path('artifacts/data_connected_intelligence.json').read_text(encoding='utf-8'))
+          after = hashlib.sha256(source.read_bytes()).hexdigest()
+          assert result['input_sha256'] == after
+          assert after == hashlib.sha256(source.read_bytes()).hexdigest()
+          assert result['record_count'] == 142836
+          assert len(result['pairs']) == 9
+          assert result['horizons'] == [1, 2, 3, 6]
+          assert result['promotion']['live_authorization'] is False
+          assert result['promotion']['strategy_promotion'] is False
+          print('INPUT_IMMUTABLE=true')
+          print('LIVE_AUTHORIZATION=false')
+          print('STRATEGY_PROMOTION=false')
+          PY
+
+      - name: Upload verified intelligence artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: VERIFIED-DATA-CONNECTED-INTELLIGENCE
+          path: artifacts/data_connected_intelligence.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6
