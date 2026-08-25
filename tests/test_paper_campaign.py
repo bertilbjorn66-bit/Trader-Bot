@@ -3,11 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from trader_bot.paper_campaign import (
-    PaperCampaignSpec,
-    PaperCampaignState,
-    PaperPerformanceGate,
-)
+from trader_bot.paper_campaign import PaperCampaignSpec, PaperCampaignState, PaperPerformanceGate
 from trader_bot.paper_eval import PaperEvaluationResult, PaperEvaluationSpec
 
 
