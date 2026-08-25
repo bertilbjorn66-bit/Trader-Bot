@@ -39,10 +39,9 @@ def test_incomplete_when_confirmation_is_too_small() -> None:
 
 
 def test_confirmation_cannot_authorize_live_execution() -> None:
-    # This unit test uses a separately supplied discovery sample only to exercise
-    # the fail-closed result path. The real immutable experiment validates the
-    # historical discovery snapshot before touching confirmation outcomes.
+    # This unit test exercises the fail-closed result path. The real immutable
+    # experiment validates the historical discovery snapshot before confirmation.
     result = evaluate([])
     assert result["state"] == "INCOMPLETE"
-    assert result["promotion_authorized"] if "promotion_authorized" in result else True
+    assert result["promotion_authorized"] is False
     assert result["live_execution_authorized"] is False
