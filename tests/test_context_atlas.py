@@ -36,7 +36,8 @@ def test_context_atlas_builds_confirmation_cells_and_pair_coverage() -> None:
     start = datetime(2022, 1, 3, 12, tzinfo=timezone.utc)
     for index in range(120):
         timestamp = (start + timedelta(days=7 * index)).isoformat()
-        records.append(row(timestamp=timestamp, outcome=1.0, split="confirmation"))
+        outcome = 1.0 if index < 105 else -0.2
+        records.append(row(timestamp=timestamp, outcome=outcome, split="confirmation"))
     result = build_atlas(records)
     assert result["status"] == "CONTEXT_ATLAS_COMPLETED"
     assert result["record_count"] == 120
