@@ -42,8 +42,10 @@ class PaperCampaignSpec:
             raise ValueError("campaign start_at must be before end_at")
         if self.minimum_accepted_observations <= 0:
             raise ValueError("minimum_accepted_observations must be positive")
-        if self.minimum_profit_factor <= Decimal("1"):
-            raise ValueError("minimum_profit_factor must be greater than 1")
+        if self.minimum_expectancy < Decimal("0"):
+            raise ValueError("minimum_expectancy must be non-negative")
+        if self.minimum_profit_factor < Decimal("1"):
+            raise ValueError("minimum_profit_factor must be at least 1")
 
     @property
     def evaluation_fingerprint(self) -> str:
@@ -119,15 +121,25 @@ class PaperPerformanceGate:
             if evaluation.profit_factor is None or evaluation.profit_factor <= self.spec.minimum_profit_factor:
                 failures.append("paper_profit_factor_not_above_threshold")
 
-        if failures:
-            state = (
-                PaperCampaignState.INCOMPLETE
-                if any(reason.endswith("not_met") or reason.endswith("not_complete") or reason.endswith("missing") for reason in failures)
-                and not any(reason in {"paper_expectancy_not_positive", "paper_profit_factor_not_above_threshold", "maximum_session_loss_breached"} for reason in failures)
-                else PaperCampaignState.FAILED
-            )
-        else:
+        incomplete_reasons = {
+            "campaign_window_not_complete",
+            "minimum_accepted_observations_not_met",
+            "minimum_closed_trades_not_met",
+            "paper_evaluation_missing",
+        }
+        performance_failures = {
+            "paper_expectancy_not_positive",
+            "paper_profit_factor_not_above_threshold",
+            "maximum_session_loss_breached",
+        }
+        if not failures:
             state = PaperCampaignState.COMPLETE
+        elif any(reason in performance_failures for reason in failures):
+            state = PaperCampaignState.FAILED
+        elif any(reason in incomplete_reasons for reason in failures):
+            state = PaperCampaignState.INCOMPLETE
+        else:
+            state = PaperCampaignState.FAILED
 
         return PaperCampaignResult(
             state=state,
