@@ -26,6 +26,22 @@ CONTRACT = FrozenRuntimeContract(
     context_source_sha="96677fa6d68ffda79acdde97cddd03ecf3d6b777",
 )
 
+BOUND_CONTRACT = FrozenRuntimeContract(
+    snapshot_id="runtime-contract-v1-bound",
+    strategy_id="candidate-runtime-v1",
+    strategy_version="1",
+    research_artifact_name="VERIFIED-EMPIRICAL-RESEARCH-REPORT-FINAL",
+    research_artifact_digest=CONTRACT.research_artifact_digest,
+    research_source_commit=CONTRACT.research_source_commit,
+    decision_source_sha=CONTRACT.decision_source_sha,
+    risk_source_sha=CONTRACT.risk_source_sha,
+    evaluation_source_sha=CONTRACT.evaluation_source_sha,
+    observation_source_sha=CONTRACT.observation_source_sha,
+    context_source_sha=CONTRACT.context_source_sha,
+    decision_factory_id="candidate-a-quote-decision-v1",
+    decision_factory_source_sha="1234567890abcdef1234567890abcdef12345678",
+)
+
 
 def certificate(*, eligible: bool) -> PromotionCertificate:
     return PromotionCertificate(
@@ -80,7 +96,7 @@ def test_blocked_certificate_never_emits_trade() -> None:
 
 def test_eligible_factory_uses_existing_decision_kernel() -> None:
     factory = FrozenEvidenceDecisionFactory(
-        contract=CONTRACT,
+        contract=BOUND_CONTRACT,
         certificate=certificate(eligible=True),
         instruments={1: config()},
     )
@@ -92,7 +108,7 @@ def test_eligible_factory_uses_existing_decision_kernel() -> None:
 
 def test_missing_instrument_is_no_trade() -> None:
     factory = FrozenEvidenceDecisionFactory(
-        contract=CONTRACT,
+        contract=BOUND_CONTRACT,
         certificate=certificate(eligible=True),
         instruments={},
     )
