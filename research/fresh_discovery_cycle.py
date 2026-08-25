@@ -13,6 +13,7 @@ from research.execution import ExecutionAssumptions
 from research.sequential_empirical import DEFAULT_HORIZONS
 
 
+# Stage 21 is intentionally discovery-only: confirmation remains a separate frozen gate.
 AGREEMENT_GRID = (0.50, 0.55, 0.60, 0.65, 0.70, 0.75)
 DISTANCE_GRID: tuple[float | None, ...] = (None, 0.5, 1.0, 1.5, 2.0)
 REGIMES = (
