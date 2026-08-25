@@ -106,7 +106,7 @@ def enrich_record(record: dict[str, Any]) -> dict[str, Any]:
     enriched["month"] = timestamp.month
     enriched["weekday"] = timestamp.strftime("%A").lower()
     enriched["hour_utc"] = timestamp.hour
-    enriched["hour_block_utc"] = f"{timestamp.hour:02d}:00-{(timestamp.hour + 1) % 24:02d}:00"
+    enriched["hour_block_utc"] = f"{timestamp.hour:02d}:00-{(timestamp.hour + 1) % 24:02d}"
     enriched["agreement_band"] = _bucket_agreement(agreement)
     enriched["distance_band"] = _bucket_distance(distance)
     enriched["outcome_sign"] = "win" if outcome > 0.0 else "loss" if outcome < 0.0 else "flat"
@@ -114,7 +114,7 @@ def enrich_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _bootstrap_mean(values: list[float], repetitions: int = 500, seed: int = 20260825) -> tuple[float | None, float | None]:
-    if len(values) < 2:
+    if len(values) < MIN_KNOWLEDGE_SAMPLES:
         return None, None
     state = seed & 0xFFFFFFFF
     means: list[float] = []
