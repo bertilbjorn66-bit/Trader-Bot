@@ -1,0 +1,61 @@
+name: 17 — NON-LIVE EVALUATION GATE — NO BROKER
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/non_live_evaluation.py"
+      - "tests/test_non_live_evaluation.py"
+      - ".github/workflows/17-NON-LIVE-EVALUATION-GATE.yml"
+  push:
+    branches: [main]
+    paths:
+      - "research/non_live_evaluation.py"
+      - "tests/test_non_live_evaluation.py"
+      - ".github/workflows/17-NON-LIVE-EVALUATION-GATE.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate-non-live-evaluation:
+    name: 1️⃣ VALIDATE NON-LIVE EVALUATION — DEFAULT DENY
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check research trader_bot tests
+
+      - name: Mypy
+        run: mypy research trader_bot
+
+      - name: Full tests
+        run: pytest
+
+      - name: Verify non-live boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          execution = Path('trader_bot/execution.py').read_text(encoding='utf-8')
+          source = Path('research/non_live_evaluation.py').read_text(encoding='utf-8')
+          assert 'DISABLED' in execution
+          assert 'broker' not in source.lower()
+          assert 'PASS' in source and 'FAIL' in source and 'INCOMPLETE' in source
+          print('NON_LIVE_EVALUATION_READY=true')
+          print('BROKER_TRANSMISSION=false')
+          PY
