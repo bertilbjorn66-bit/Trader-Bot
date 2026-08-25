@@ -1,3 +1,5 @@
+import pytest
+
 from research.intelligence_controls import (
     EventRegime,
     ExecutionCostModel,
@@ -12,8 +14,8 @@ from research.intelligence_controls import (
 
 def test_execution_costs_reduce_gross_edge() -> None:
     model = ExecutionCostModel(0.8, 0.2, 0.1, 0.0)
-    assert model.total_cost_pips() == 1.1
-    assert model.net_expectancy(2.0) == 0.9
+    assert model.total_cost_pips() == pytest.approx(1.1)
+    assert model.net_expectancy(2.0) == pytest.approx(0.9)
 
 
 def test_pair_correlation_is_bounded() -> None:
