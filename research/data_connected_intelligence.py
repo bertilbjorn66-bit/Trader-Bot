@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass
 import hashlib
+import itertools
 import json
 from pathlib import Path
-from statistics import mean, pstdev
+from statistics import mean
 from typing import Any, Sequence
 
 from research.intelligence_audit import lagged_correlations, regime_transition_stats
@@ -26,7 +26,6 @@ class PairRelationSummary:
 @dataclass(frozen=True)
 class CalibrationSummary:
     horizon: int
-    bins: int
     observations: int
     mean_agreement: float
     positive_rate: float
@@ -42,23 +41,25 @@ class CostStressSummary:
 
 
 def _aligned_series(records: Sequence[dict[str, Any]], horizon: int, pair_a: str, pair_b: str) -> tuple[list[float], list[float]]:
-    a = {(r['timestamp']): float(r['outcome_pips']) for r in records if r['horizon'] == horizon and r['pair'] == pair_a}
-    b = {(r['timestamp']): float(r['outcome_pips']) for r in records if r['horizon'] == horizon and r['pair'] == pair_b}
+    a = {str(r['timestamp']): float(r['outcome_pips']) for r in records if int(r['horizon']) == horizon and r['pair'] == pair_a}
+    b = {str(r['timestamp']): float(r['outcome_pips']) for r in records if int(r['horizon']) == horizon and r['pair'] == pair_b}
     common = sorted(set(a) & set(b))
     return [a[t] for t in common], [b[t] for t in common]
 
 
-def _calibration(records: Sequence[dict[str, Any]], horizon: int, bins: int = 10) -> CalibrationSummary:
-    rows = [r for r in records if r['horizon'] == horizon]
+def _calibration(records: Sequence[dict[str, Any]], horizon: int) -> CalibrationSummary:
+    rows = [r for r in records if int(r['horizon']) == horizon]
     if not rows:
         raise ValueError('no records for calibration')
     agreement = [float(r['agreement']) for r in rows]
     positive = [float(r['outcome_pips']) > 0 for r in rows]
-    return CalibrationSummary(horizon, bins, len(rows), mean(agreement), mean(positive))
+    return CalibrationSummary(horizon, len(rows), mean(agreement), mean(positive))
 
 
 def _cost_stress(records: Sequence[dict[str, Any]], horizon: int) -> CostStressSummary:
-    values = [float(r['outcome_pips']) for r in records if r['horizon'] == horizon]
+    values = [float(r['outcome_pips']) for r in records if int(r['horizon']) == horizon]
+    if not values:
+        raise ValueError('no records for cost stress')
     gross = mean(values)
     return CostStressSummary(horizon, gross, gross - 0.5, gross - 1.0, gross - 2.0)
 
@@ -79,11 +80,22 @@ def build_data_connected_intelligence(input_path: Path, output_path: Path) -> di
                 continue
             lagged = lagged_correlations(a, b, max_lag=5)
             strongest = max(lagged, key=lambda item: abs(item.correlation))
-            relations.append(PairRelationSummary(horizon, pair_a, pair_b, len(a), lagged[max_lag_index := 5].correlation if lagged else 0.0, strongest.lag, strongest.correlation))
+            zero_lag = next(item for item in lagged if item.lag == 0)
+            relations.append(
+                PairRelationSummary(
+                    horizon,
+                    pair_a,
+                    pair_b,
+                    len(a),
+                    zero_lag.correlation,
+                    strongest.lag,
+                    strongest.correlation,
+                )
+            )
 
     transitions: dict[str, Any] = {}
     for pair in pairs:
-        rows = sorted((r for r in records if r['pair'] == pair), key=lambda r: r['timestamp'])
+        rows = sorted((r for r in records if r['pair'] == pair), key=lambda r: str(r['timestamp']))
         seen: set[tuple[str, int]] = set()
         states: list[str] = []
         outcomes: list[float] = []
@@ -124,6 +136,3 @@ def build_data_connected_intelligence(input_path: Path, output_path: Path) -> di
     }
     output_path.write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
     return result
-
-
-import itertools
