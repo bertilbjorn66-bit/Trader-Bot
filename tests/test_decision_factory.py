@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
 import pytest
 
 from trader_bot.decision import Action
@@ -13,7 +11,6 @@ from trader_bot.decision_factory import (
 )
 from trader_bot.risk import OutcomeSummary, RiskLimits
 from trader_bot.strategy_binding import FrozenRuntimeContract
-
 
 CONTRACT = FrozenRuntimeContract(
     snapshot_id="runtime-contract-v1",
