@@ -1,0 +1,95 @@
+name: "🏁 12 — FINAL PROMOTION READINESS GATE — DEFAULT DENY"
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-final-promotion-readiness:
+    name: "1️⃣ VALIDATE shadow ledger and final promotion state machine"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check trader_bot tests
+
+      - name: Mypy
+        run: mypy trader_bot
+
+      - name: Full test suite
+        run: pytest -ra
+
+      - name: Verify current promotion state is blocked safely
+        run: |
+          python - <<'PY'
+          from trader_bot.current_factory import current_factory
+          from trader_bot.decision_factory import FactoryState
+          from trader_bot.execution import ExecutionGateway, ExecutionStatus
+          from trader_bot.final_promotion import FinalPromotionGate, PromotionInputs, PromotionState
+
+          factory = current_factory()
+          assert factory.state is FactoryState.BLOCKED
+          result = FinalPromotionGate().evaluate(
+              PromotionInputs(
+                  empirical_confirmation_passed=False,
+                  robustness_passed=False,
+                  factory_state=factory.state,
+                  paper_passed=False,
+                  shadow_passed=False,
+                  credentials_configured=False,
+                  emergency_stop_tested=False,
+                  daily_loss_tested=False,
+                  stale_spread_tested=False,
+                  broker_limits_verified=False,
+                  human_approval_present=False,
+              )
+          )
+          assert result.state is PromotionState.BLOCKED
+          assert ExecutionGateway.status is ExecutionStatus.DISABLED
+          PY
+
+      - name: Verify shadow ledger cannot transmit
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from trader_bot.decision import Action, Decision
+          from trader_bot.models import Quote
+          from trader_bot.shadow import ShadowOnlyLedger
+
+          now = datetime.now(timezone.utc)
+          ledger = ShadowOnlyLedger(factory_fingerprint="1" * 64, safety_fingerprint="2" * 64)
+          intent = ledger.record(
+              decision=Decision(Action.BUY, 0.8, "validated", 250),
+              quote=Quote(timestamp=now, instrument=1, bid=Decimal("1.1"), ask=Decimal("1.1002")),
+              quantity=Decimal("1"),
+              timestamp=now,
+          )
+          assert intent is not None
+          ledger.verify()
+          PY
+
+      - name: Verify no live-enable path is introduced
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("trader_bot/shadow.py").read_text(encoding="utf-8")
+          assert "submit(" not in source
+          assert "enable_live" not in source
+          PY
