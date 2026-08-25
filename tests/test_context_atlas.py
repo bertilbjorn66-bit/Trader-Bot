@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from research.context_atlas import build_atlas, enrich_record
 
@@ -33,14 +33,13 @@ def test_enrich_record_derives_temporal_and_quality_bands() -> None:
 
 def test_context_atlas_builds_confirmation_cells_and_pair_coverage() -> None:
     records = []
-    for year in (2022, 2023, 2024):
-        for month in range(1, 13):
-            day = min(month, 28)
-            timestamp = datetime(year, month, day, 12, tzinfo=timezone.utc).isoformat()
-            records.append(row(timestamp=timestamp, outcome=1.0, split="confirmation"))
+    start = datetime(2022, 1, 3, 12, tzinfo=timezone.utc)
+    for index in range(120):
+        timestamp = (start + timedelta(days=7 * index)).isoformat()
+        records.append(row(timestamp=timestamp, outcome=1.0, split="confirmation"))
     result = build_atlas(records)
     assert result["status"] == "CONTEXT_ATLAS_COMPLETED"
-    assert result["record_count"] == 36
+    assert result["record_count"] == 120
     assert result["coverage"]["pairs"] == ["EUR/USD"]
     assert result["atlas_fingerprint"]
     assert result["confirmation_contexts"]["strong_contexts"]
@@ -48,16 +47,10 @@ def test_context_atlas_builds_confirmation_cells_and_pair_coverage() -> None:
 
 def test_negative_context_is_explicitly_no_trade() -> None:
     records = []
+    start = datetime(2022, 1, 3, 12, tzinfo=timezone.utc)
     for index in range(30):
-        year = 2022 + (index % 3)
-        month = (index % 12) + 1
-        records.append(
-            row(
-                timestamp=datetime(year, month, min((index % 27) + 1, 28), 12, tzinfo=timezone.utc).isoformat(),
-                outcome=-0.5,
-                split="confirmation",
-            )
-        )
+        timestamp = (start + timedelta(days=7 * index)).isoformat()
+        records.append(row(timestamp=timestamp, outcome=-0.5, split="confirmation"))
     result = build_atlas(records)
     no_trade = result["confirmation_contexts"]["no_trade_contexts"]
     assert no_trade
