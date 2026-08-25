@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-import argparse, hashlib, json, random
+import argparse
+import hashlib
+import json
+import random
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
