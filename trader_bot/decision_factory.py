@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Mapping
 
 from .decision import Action, Decision, decide
 from .risk import OutcomeSummary, RiskLimits
@@ -113,6 +113,8 @@ class FrozenEvidenceDecisionFactory:
 
     @property
     def state(self) -> FactoryState:
+        if not self.contract.factory_bound:
+            return FactoryState.BLOCKED
         return FactoryState.ELIGIBLE if self.certificate.eligible else FactoryState.BLOCKED
 
     @property
@@ -122,12 +124,24 @@ class FrozenEvidenceDecisionFactory:
     def decide(self, instrument: int) -> Decision:
         if self.fingerprint() != self._fingerprint:
             raise RuntimeError("frozen decision factory changed after construction")
-        if self.state is FactoryState.BLOCKED:
+        if not self.contract.factory_bound:
+            return Decision(
+                Action.NO_TRADE,
+                0.0,
+                "decision factory is not bound in the frozen runtime contract",
+                0,
+            )
+        if not self.certificate.eligible:
             reason = self.certificate.failure_reasons or ("promotion_certificate_not_eligible",)
             return Decision(Action.NO_TRADE, 0.0, "; ".join(reason), 0)
         config = self.instruments.get(instrument)
         if config is None:
-            return Decision(Action.NO_TRADE, 0.0, "No frozen evidence configuration exists for this instrument.", 0)
+            return Decision(
+                Action.NO_TRADE,
+                0.0,
+                "No frozen evidence configuration exists for this instrument.",
+                0,
+            )
         return decide(config.summary, config.direction, config.risk_limits)
 
     def fingerprint(self) -> str:
