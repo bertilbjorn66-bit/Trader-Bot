@@ -26,8 +26,8 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
 
-      - name: Ruff
-        run: ruff check trader_bot tests
+      - name: Ruff auto-fix diff diagnostic
+        run: ruff check --fix --diff trader_bot tests
 
       - name: Mypy
         run: mypy trader_bot
