@@ -1,0 +1,143 @@
+name: "21 — FRESH DISCOVERY CYCLE — DISCOVERY ONLY"
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Completed recovery run containing the nine verified pair artifacts"
+        required: true
+        default: "32470594197"
+      sample_stride:
+        description: "Target stride in 10m bars"
+        required: true
+        default: "60"
+      history_states:
+        description: "Historical states used per target"
+        required: true
+        default: "10000"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate:
+    name: "Validate discovery-only engine"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout mainline
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check research/fresh_discovery_cycle.py tests/test_fresh_discovery_cycle.py
+          mypy research/fresh_discovery_cycle.py
+      - name: Discovery safety tests
+        run: pytest -q tests/test_fresh_discovery_cycle.py
+      - name: Assert no prior frozen confirmation dependency
+        run: |
+          set -euo pipefail
+          ! grep -q 'FROZEN_CONFIRMATION_ARTIFACT_ID' research/fresh_discovery_cycle.py
+          ! grep -q 'frozen_candidate_evaluation' research/fresh_discovery_cycle.py
+          ! grep -q 'enriched_stride60_holdout_ready' research/fresh_discovery_cycle.py
+          echo "DISCOVERY_ONLY_DEPENDENCY_CHECK=true"
+
+  discover:
+    name: "Run fresh nine-pair discovery"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout mainline
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Create input directory
+        run: mkdir -p .data/empirical_feed artifacts
+      - name: Download reused six-pair artifact bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-reused-artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: .data/empirical_feed
+      - name: Download EUR/USD repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-eurusd
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/eurusd
+      - name: Download GBP/USD repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-gbpusd
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/gbpusd
+      - name: Download USD/JPY repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-usdjpy
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/usdjpy
+      - name: Place repaired pair files
+        run: |
+          set -euo pipefail
+          for slug in eurusd gbpusd usdjpy; do
+            test -s "/tmp/repaired/$slug/$slug.jsonl"
+            cp "/tmp/repaired/$slug/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
+          done
+      - name: Verify all nine pair files
+        run: |
+          set -euo pipefail
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/$slug.jsonl" || { echo "Missing $slug.jsonl"; exit 1; }
+          done
+          echo "All nine verified pair datasets restored; no market-data downloader is invoked."
+      - name: Run discovery-only search
+        run: |
+          python -m research.fresh_discovery_cycle \
+            --input-dir .data/empirical_feed \
+            --output artifacts/fresh_discovery_report.json \
+            --sample-stride "${{ inputs.sample_stride }}" \
+            --history-states "${{ inputs.history_states }}"
+      - name: Verify output is discovery-only
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('artifacts/fresh_discovery_report.json').read_text(encoding='utf-8'))
+          assert report['status'] == 'FRESH_DISCOVERY_COMPLETED'
+          assert report['selection_policy']['confirmation_used_for_selection'] is False
+          assert report['selection_policy']['prior_frozen_confirmation_artifact_read'] is False
+          assert report['candidate_count'] >= 0
+          for candidate in report['top_candidates']:
+              assert 'discovery' in candidate
+              assert 'confirmation' not in candidate
+          print('FRESH_DISCOVERY_VERIFIED=true')
+          print('CANDIDATE_COUNT=', report['candidate_count'])
+          print('RECORD_COUNT=', report['record_count'])
+          PY
+      - name: Upload fresh discovery evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: FRESH-DISCOVERY-CYCLE-RESULT
+          path: artifacts/fresh_discovery_report.json
+          if-no-files-found: error
+          retention-days: 30
