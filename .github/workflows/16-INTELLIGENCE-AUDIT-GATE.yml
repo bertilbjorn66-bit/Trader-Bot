@@ -1,0 +1,60 @@
+name: 16 — INTELLIGENCE AUDIT GATE — NON-LIVE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/intelligence_audit.py"
+      - "tests/test_intelligence_audit.py"
+      - ".github/workflows/16-INTELLIGENCE-AUDIT-GATE.yml"
+  push:
+    branches: [main]
+    paths:
+      - "research/intelligence_audit.py"
+      - "tests/test_intelligence_audit.py"
+      - ".github/workflows/16-INTELLIGENCE-AUDIT-GATE.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate-intelligence-audit:
+    name: 1️⃣ VALIDATE INTELLIGENCE AUDIT — NON-LIVE
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check research trader_bot tests
+
+      - name: Mypy
+        run: mypy research trader_bot
+
+      - name: Full tests
+        run: pytest
+
+      - name: Verify non-live boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          execution = Path('trader_bot/execution.py').read_text(encoding='utf-8')
+          assert 'DISABLED' in execution
+          source = Path('research/intelligence_audit.py').read_text(encoding='utf-8')
+          assert 'broker' not in source.lower()
+          print('NON_LIVE_AUDIT_READY=true')
+          print('LIVE_EXECUTION_DEPENDENCY=false')
+          PY
