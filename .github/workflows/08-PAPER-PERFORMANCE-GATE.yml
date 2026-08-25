@@ -1,0 +1,68 @@
+name: "🏁 08 — PAPER PERFORMANCE GATE — REAL OBSERVATIONS ONLY"
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-paper-performance-gate:
+    name: "1️⃣ VALIDATE independent paper-performance promotion gate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check trader_bot tests
+
+      - name: Mypy
+        run: mypy trader_bot
+
+      - name: Full test suite
+        run: pytest -ra
+
+      - name: Verify paper pass cannot be declared without a completed real period
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("trader_bot/paper_campaign.py").read_text(encoding="utf-8")
+          required = [
+              "campaign_window_not_complete",
+              "minimum_accepted_observations_not_met",
+              "evaluation_specification_mismatch",
+              "paper_expectancy_not_positive",
+              "paper_profit_factor_not_above_threshold",
+          ]
+          for marker in required:
+              assert marker in source, marker
+          PY
+
+      - name: Verify live execution remains disabled
+        run: |
+          python - <<'PY'
+          from trader_bot.execution import ExecutionGateway, ExecutionStatus
+          assert ExecutionGateway.status is ExecutionStatus.DISABLED
+          PY
+
+      - name: Verify campaign gate does not use market-data download paths
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("trader_bot/paper_campaign.py").read_text(encoding="utf-8")
+          assert "historical_bars" not in source
+          assert "current_quotes" not in source
+          PY
