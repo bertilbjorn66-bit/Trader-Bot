@@ -1,0 +1,62 @@
+name: 15 — INTELLIGENCE CONTROLS GATE — NO LIVE ORDERS
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/intelligence_controls.py"
+      - "tests/test_intelligence_controls.py"
+      - ".github/workflows/15-INTELLIGENCE-CONTROLS-GATE.yml"
+  push:
+    branches: [main]
+    paths:
+      - "research/intelligence_controls.py"
+      - "tests/test_intelligence_controls.py"
+      - ".github/workflows/15-INTELLIGENCE-CONTROLS-GATE.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate-intelligence-controls:
+    name: 1️⃣ VALIDATE INTELLIGENCE CONTROLS — DEFAULT DENY
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check research trader_bot tests
+
+      - name: Mypy
+        run: mypy research trader_bot
+
+      - name: Full tests
+        run: pytest
+
+      - name: Verify no live execution dependency
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          execution = Path('trader_bot/execution.py').read_text(encoding='utf-8')
+          safety = Path('trader_bot/safety.py').read_text(encoding='utf-8')
+          assert 'DISABLED' in execution
+          assert 'default-deny' in safety.lower() or 'deny' in safety.lower()
+          source = Path('research/intelligence_controls.py').read_text(encoding='utf-8')
+          assert 'broker' not in source.lower()
+          print('LIVE_EXECUTION_DEPENDENCY=false')
+          print('INTELLIGENCE_CONTROLS_READY=true')
+          PY
