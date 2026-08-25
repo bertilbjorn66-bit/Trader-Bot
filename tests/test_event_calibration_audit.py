@@ -1,6 +1,10 @@
 import pytest
 
-from research.event_calibration_audit import EventRelease, fit_logistic_calibrator, validate_calibration
+from research.event_calibration_audit import (
+    EventRelease,
+    fit_logistic_calibrator,
+    validate_calibration,
+)
 
 
 def test_event_release_rejects_future_knowledge() -> None:
