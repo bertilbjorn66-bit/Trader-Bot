@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research.adaptive_ensemble_v2 import Stat, conservative_edge, sign, votes_for_state
+from research.adaptive_ensemble_v2 import Stat, conservative_edge, sign
 
 
 def test_stat_edge_is_conservative() -> None:
