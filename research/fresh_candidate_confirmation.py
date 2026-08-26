@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 from research import enriched_conditional_experiment as experiment
 from research.datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
+from research.execution import ExecutionAssumptions
 from research.non_live_evaluation import (
     block_bootstrap_means,
     bootstrap_means,
@@ -17,7 +18,6 @@ from research.non_live_evaluation import (
     probability_of_ruin,
     profit_factor,
 )
-from research.execution import ExecutionAssumptions
 
 MIN_CONFIRMATION_SAMPLES = 100
 MIN_PAIR_SAMPLES = 20
@@ -47,7 +47,7 @@ def _matches(record: dict[str, Any], candidate: dict[str, Any], split: str) -> b
             candidate["distance_max"] is None
             or float(record["median_distance"]) <= float(candidate["distance_max"])
         )
-        and float(record["agreement_min"]) <= float(record["agreement"])
+        and float(record["agreement"]) >= float(candidate["agreement_min"])
     )
 
 
@@ -135,9 +135,7 @@ def evaluate_primary(report: dict[str, Any], records: Sequence[dict[str, Any]]) 
     all_folds_positive = bool(folds) and all(
         fold["stats"]["expectancy_pips"] is not None and fold["stats"]["expectancy_pips"] > 0 for fold in folds
     )
-    stress = {
-        str(cost): _stats([value - cost for value in values]) for cost in STRESS_COSTS_PIPS
-    }
+    stress = {str(cost): _stats([value - cost for value in values]) for cost in STRESS_COSTS_PIPS}
     stress_resilient = all(
         result["expectancy_pips"] is not None
         and result["expectancy_pips"] > 0
@@ -183,6 +181,7 @@ def evaluate_primary(report: dict[str, Any], records: Sequence[dict[str, Any]]) 
         "positive_pair_count_min_2_and_min_20_each": positive_pairs >= 2,
         "pair_observation_concentration_lte_80pct": largest_pair_share <= MAX_PAIR_OBSERVATION_SHARE,
     }
+    gates["pair_diversity"] = pair_diversity_ok
     passed = all(gates.values())
     return {
         "state": "PASS" if passed else "FAIL",
