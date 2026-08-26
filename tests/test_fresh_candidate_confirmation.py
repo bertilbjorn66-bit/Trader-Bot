@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from research.fresh_candidate_confirmation import (
     MAX_PAIR_OBSERVATION_SHARE,
     _matches,
@@ -59,8 +61,33 @@ def test_candidate_fingerprint_is_stable() -> None:
 
 
 def test_no_candidate_is_fail_closed() -> None:
-    report = {"status": "FRESH_DISCOVERY_COMPLETED", "selection_policy": {"confirmation_used_for_selection": False, "prior_frozen_confirmation_artifact_read": False}, "top_candidates": []}
+    report = {
+        "status": "FRESH_DISCOVERY_COMPLETED",
+        "selection_policy": {
+            "confirmation_used_for_selection": False,
+            "prior_frozen_confirmation_artifact_read": False,
+        },
+        "top_candidates": [],
+    }
     result = evaluate_primary(report, [])
+    assert result["state"] == "INCOMPLETE"
+    assert result["promotion_authorized"] is False
+    assert result["live_execution_authorized"] is False
+
+
+def test_prior_frozen_confirmation_reference_is_rejected() -> None:
+    report = _report()
+    report["selection_policy"] = {
+        "confirmation_used_for_selection": False,
+        "prior_frozen_confirmation_artifact_read": True,
+    }
+    with pytest.raises(ValueError, match="prior frozen confirmation artifact"):
+        evaluate_primary(report, [])
+
+
+def test_confirmation_sample_floor_is_fail_closed() -> None:
+    records = [_record("confirmation", "EUR/USD", 1.0, minute) for minute in range(25)]
+    result = evaluate_primary(_report(), records)
     assert result["state"] == "INCOMPLETE"
     assert result["promotion_authorized"] is False
     assert result["live_execution_authorized"] is False
