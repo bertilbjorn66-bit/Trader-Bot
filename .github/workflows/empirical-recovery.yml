@@ -147,7 +147,7 @@ jobs:
           name: empirical-recovery-${{ matrix.slug }}
           path: .data/empirical_feed/${{ matrix.slug }}.jsonl
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
   bundle:
     name: "Assemble retained nine-pair verified bundle"
@@ -194,7 +194,7 @@ jobs:
           name: empirical-recovery-reused-artifacts
           path: .data/empirical_feed/*.jsonl
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
   analyze:
     name: "Run recovery empirical analysis"
@@ -238,20 +238,15 @@ jobs:
       - name: Run recovery empirical analysis
         run: |
           set -euo pipefail
-          if [ -n "$RECOVERY_END" ]; then end="$RECOVERY_END"; else end="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"; fi
-          python -m research.datafeed_empirical \
-            --start "$RECOVERY_START" \
-            --end "$end" \
-            --pairs "EUR/USD,GBP/USD,USD/JPY,AUD/USD,USD/CAD,USD/CHF,NZD/USD,EUR/JPY,GBP/JPY" \
-            --sample-stride "$SAMPLE_STRIDE" \
-            --history-states "$HISTORY_STATES" \
-            --max-days-per-batch 7 \
+          python -m research.enriched_conditional_experiment \
             --input-dir .data/empirical_feed \
-            --output artifacts/empirical_report.json
+            --output artifacts/recovery_empirical_report.json \
+            --sample-stride "${SAMPLE_STRIDE}" \
+            --history-states "${HISTORY_STATES}"
       - name: Upload VERIFIED recovery report
         uses: actions/upload-artifact@v7
         with:
-          name: VERIFIED-EMPIRICAL-RECOVERY-REPORT
-          path: artifacts/empirical_report.json
+          name: VERIFIED-RECOVERY-EMPIRICAL-REPORT
+          path: artifacts/recovery_empirical_report.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
