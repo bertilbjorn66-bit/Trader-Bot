@@ -18,6 +18,7 @@ from research.non_live_evaluation import (
     probability_of_ruin,
     profit_factor,
 )
+from research.enriched_conditional_experiment import TargetRecord
 
 MIN_CONFIRMATION_SAMPLES = 100
 MIN_PAIR_SAMPLES = 20
@@ -205,7 +206,7 @@ def evaluate_primary(report: dict[str, Any], records: Sequence[dict[str, Any]]) 
 
 def run(input_dir: Path, discovery_report_path: Path, sample_stride: int, history_states: int) -> dict[str, Any]:
     report = json.loads(discovery_report_path.read_text(encoding="utf-8"))
-    all_records: list[dict[str, Any]] = []
+    all_records: list[TargetRecord] = []
     costs = ExecutionAssumptions()
     for pair in PAIR_TO_SYMBOL:
         records, _quality = experiment.analyze_pair(
