@@ -1,0 +1,143 @@
+name: "23 — ADAPTIVE ENSEMBLE VALIDATION — NON-LIVE"
+
+on:
+  push:
+    branches: [adaptive-ensemble-v1]
+    paths:
+      - "research/adaptive_ensemble.py"
+      - "tests/test_adaptive_ensemble.py"
+      - ".github/workflows/23-ADAPTIVE-ENSEMBLE-VALIDATION.yml"
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Completed recovery run containing the verified nine pair artifacts"
+        required: true
+        default: "32874819018"
+      sample_stride:
+        description: "Target stride"
+        required: true
+        default: "60"
+      history_states:
+        description: "Historical states per target"
+        required: true
+        default: "10000"
+      slippage_pips:
+        description: "Additional slippage stress in pips"
+        required: true
+        default: "0.2"
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
+  SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
+  HISTORY_STATES: ${{ inputs.history_states || '10000' }}
+  SLIPPAGE_PIPS: ${{ inputs.slippage_pips || '0.2' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check research/adaptive_ensemble.py tests/test_adaptive_ensemble.py
+          mypy research/adaptive_ensemble.py
+      - name: Adaptive ensemble unit tests
+        run: pytest -q tests/test_adaptive_ensemble.py
+      - name: Prepare empirical feed directory
+        run: mkdir -p .data/empirical_feed artifacts /tmp/repaired
+      - name: Download reused six-pair artifact bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-reused-artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: .data/empirical_feed
+      - name: Download repaired EUR/USD
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-eurusd
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/eurusd
+      - name: Download repaired GBP/USD
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-gbpusd
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/gbpusd
+      - name: Download repaired USD/JPY
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-usdjpy
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/usdjpy
+      - name: Assemble all nine verified pair feeds
+        run: |
+          set -euo pipefail
+          for slug in eurusd gbpusd usdjpy; do
+            test -s "/tmp/repaired/$slug/$slug.jsonl"
+            cp "/tmp/repaired/$slug/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
+          done
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/$slug.jsonl"
+          done
+      - name: Run adaptive ensemble research
+        run: |
+          python -m research.adaptive_ensemble \
+            --input-dir .data/empirical_feed \
+            --output artifacts/adaptive_ensemble_report.json \
+            --sample-stride "$SAMPLE_STRIDE" \
+            --history-states "$HISTORY_STATES" \
+            --slippage-pips "$SLIPPAGE_PIPS"
+      - name: Audit empirical verdict without authorizing live execution
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('artifacts/adaptive_ensemble_report.json').read_text(encoding='utf-8'))
+          overall = result['overall']
+          confirmation = result['chronological_confirmation_40pct']
+          stress = result['stress']
+          assert result['empirical'] is True
+          assert result['design']['live_orders'] is False
+          print('ADAPTIVE_ENSEMBLE_EMPIRICAL=true')
+          print('STRATEGIES=', ','.join(result['strategy_set']))
+          print('OVERALL=', json.dumps(overall, sort_keys=True))
+          print('CONFIRMATION=', json.dumps(confirmation, sort_keys=True))
+          print('STRESS=', json.dumps(stress, sort_keys=True))
+          print('YEAR_STABILITY=', json.dumps(result['year_stability'], sort_keys=True))
+          print('PROMOTION_RECOMMENDATION=', result['promotion_recommendation'])
+          print('LIVE_EXECUTION_AUTHORIZED=false')
+          if confirmation['expectancy_pips'] is None or (confirmation['profit_factor'] or 0) <= 1.0:
+              print('PROFITABILITY_GATE=FAIL')
+          elif stress['expectancy_pips'] <= 0 or (stress['profit_factor'] or 0) <= 1.0:
+              print('PROFITABILITY_GATE=FAIL_STRESS')
+          else:
+              print('PROFITABILITY_GATE=PASS_PRELIMINARY')
+          PY
+      - name: Upload adaptive ensemble evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: ADAPTIVE-ENSEMBLE-VALIDATION-EVIDENCE
+          path: artifacts/adaptive_ensemble_report.json
+          if-no-files-found: error
+          retention-days: 30
