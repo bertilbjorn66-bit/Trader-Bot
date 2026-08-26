@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -24,16 +25,35 @@ MAX_CROSSED_BAR_FRACTION = 0.001
 
 def _number(row: dict[str, object], key: str) -> float:
     value = row.get(key)
-    if not isinstance(value, (int, float)):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError(f"Feed field {key!r} must be numeric")
-    return float(value)
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric <= 0:
+        raise ValueError(f"Feed field {key!r} must be finite and strictly positive")
+    return numeric
 
 
 def _timestamp_ms(row: dict[str, object]) -> int:
     value = row.get("timestamp")
-    if not isinstance(value, (int, float)):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError("Feed timestamp must be numeric")
-    return int(value)
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        raise ValueError("Feed timestamp must be finite")
+    return int(numeric)
+
+
+def _validate_ohlc_geometry(item: dict[str, object], path: Path, line_number: int) -> None:
+    for side in ("bid", "ask"):
+        open_price = _number(item, f"{side}_open")
+        high_price = _number(item, f"{side}_high")
+        low_price = _number(item, f"{side}_low")
+        close_price = _number(item, f"{side}_close")
+        if low_price > min(open_price, close_price) or high_price < max(open_price, close_price) or low_price > high_price:
+            raise ValueError(
+                f"Invalid {side.upper()} OHLC geometry at {path}:{line_number} "
+                f"(low={low_price}, open={open_price}, close={close_price}, high={high_price})"
+            )
 
 
 def _validate_bar(item: object, path: Path, line_number: int) -> dict[str, object]:
@@ -45,6 +65,7 @@ def _validate_bar(item: object, path: Path, line_number: int) -> dict[str, objec
         "ask_open", "ask_high", "ask_low", "ask_close",
     ):
         _number(item, key)
+    _validate_ohlc_geometry(item, path, line_number)
     return dict(item)
 
 
