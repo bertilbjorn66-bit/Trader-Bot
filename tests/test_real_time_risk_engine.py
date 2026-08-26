@@ -1,4 +1,10 @@
-from research.real_time_risk_engine import RiskAction, RiskSnapshot, RiskState, should_exit_immediately, evaluate
+from research.real_time_risk_engine import (
+    RiskAction,
+    RiskSnapshot,
+    RiskState,
+    evaluate,
+    should_exit_immediately,
+)
 
 
 def snap(**kwargs):
