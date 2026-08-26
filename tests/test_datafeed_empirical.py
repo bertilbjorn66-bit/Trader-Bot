@@ -76,3 +76,20 @@ def test_load_feed_bars_rejects_non_positive_price(tmp_path: Path) -> None:
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="finite and strictly positive"):
         load_feed_bars(path)
+
+
+def test_load_feed_bars_rejects_fractional_timestamp(tmp_path: Path) -> None:
+    path = tmp_path / "eurusd.jsonl"
+    row = _bar(1000)
+    row["timestamp"] = 1000.5
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="finite integer number of milliseconds"):
+        load_feed_bars(path)
+
+
+def test_load_feed_bars_rejects_non_positive_timestamp(tmp_path: Path) -> None:
+    path = tmp_path / "eurusd.jsonl"
+    row = _bar(0)
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="timestamp must be strictly positive"):
+        load_feed_bars(path)
