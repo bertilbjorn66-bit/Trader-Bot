@@ -1,0 +1,189 @@
+name: "22 — FRESH CANDIDATE CONFIRMATION — HARDENED NON-LIVE"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/22-FRESH-CANDIDATE-CONFIRMATION.yml"
+      - "research/fresh_candidate_confirmation.py"
+      - "tests/test_fresh_candidate_confirmation.py"
+  workflow_dispatch:
+    inputs:
+      discovery_run_id:
+        description: "Completed fresh-discovery run containing the FRESH-DISCOVERY-CYCLE-RESULT artifact"
+        required: true
+        default: "32892555632"
+      source_run_id:
+        description: "Completed recovery run containing the nine verified pair artifacts"
+        required: true
+        default: "32874819018"
+      sample_stride:
+        description: "Target stride in 10m bars"
+        required: true
+        default: "60"
+      history_states:
+        description: "Historical states used per target"
+        required: true
+        default: "10000"
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  DISCOVERY_RUN_ID: ${{ inputs.discovery_run_id || '32892555632' }}
+  SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
+  SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
+  HISTORY_STATES: ${{ inputs.history_states || '10000' }}
+
+jobs:
+  validate:
+    name: "Validate hardened confirmation engine"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout mainline
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check research/fresh_candidate_confirmation.py tests/test_fresh_candidate_confirmation.py
+          mypy research/fresh_candidate_confirmation.py
+      - name: Hardened confirmation tests
+        run: pytest -q tests/test_fresh_candidate_confirmation.py
+      - name: Assert non-live boundary
+        run: |
+          set -euo pipefail
+          ! grep -q 'ExecutionGateway' research/fresh_candidate_confirmation.py
+          ! grep -q 'broker' research/fresh_candidate_confirmation.py
+          ! grep -q 'live_execution_enabled' research/fresh_candidate_confirmation.py
+          echo "FRESH_CONFIRMATION_NON_LIVE=true"
+
+  confirm:
+    name: "Confirm rank-1 fresh candidate only"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout mainline
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Create input directory
+        run: mkdir -p .data/empirical_feed artifacts
+      - name: Download immutable discovery report
+        uses: actions/download-artifact@v8
+        with:
+          name: FRESH-DISCOVERY-CYCLE-RESULT
+          repository: ${{ github.repository }}
+          run-id: ${{ env.DISCOVERY_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: artifacts/discovery
+      - name: Verify discovery artifact
+        run: |
+          set -euo pipefail
+          test -s artifacts/discovery/fresh_discovery_report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('artifacts/discovery/fresh_discovery_report.json').read_text(encoding='utf-8'))
+          assert report['status'] == 'FRESH_DISCOVERY_COMPLETED'
+          assert report['selection_policy']['confirmation_used_for_selection'] is False
+          assert report['selection_policy']['prior_frozen_confirmation_artifact_read'] is False
+          assert report['top_candidates']
+          assert 'confirmation' not in report['top_candidates'][0]
+          print('DISCOVERY_ARTIFACT_BOUNDARY_OK=true')
+          PY
+      - name: Download reused six-pair artifact bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-reused-artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: .data/empirical_feed
+      - name: Download EUR/USD repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-eurusd
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/eurusd
+      - name: Download GBP/USD repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-gbpusd
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/gbpusd
+      - name: Download USD/JPY repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-usdjpy
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/usdjpy
+      - name: Place repaired pair files
+        run: |
+          set -euo pipefail
+          for slug in eurusd gbpusd usdjpy; do
+            test -s "/tmp/repaired/$slug/$slug.jsonl"
+            cp "/tmp/repaired/$slug/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
+          done
+      - name: Verify all nine pair files
+        run: |
+          set -euo pipefail
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/$slug.jsonl" || { echo "Missing $slug.jsonl"; exit 1; }
+          done
+          echo "CONFIRMATION_INPUTS_REUSED=true"
+          echo "MARKET_DATA_DOWNLOADER_USED=false"
+      - name: Run hardened confirmation of rank-1 candidate only
+        run: |
+          python -m research.fresh_candidate_confirmation \
+            --input-dir .data/empirical_feed \
+            --discovery-report artifacts/discovery/fresh_discovery_report.json \
+            --output artifacts/fresh_candidate_confirmation.json \
+            --sample-stride "$SAMPLE_STRIDE" \
+            --history-states "$HISTORY_STATES"
+      - name: Verify promotion remains denied
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('artifacts/fresh_candidate_confirmation.json').read_text(encoding='utf-8'))
+          assert result['candidate']['rank'] == 1
+          assert result['candidate_selection_rule'].startswith('rank-1 discovery candidate only')
+          assert result['promotion_authorized'] is False
+          assert result['live_execution_authorized'] is False
+          assert result['state'] in {'PASS', 'FAIL', 'INCOMPLETE'}
+          assert 'stress_resilient_0_to_1_5_pips' in result.get('gates', {})
+          assert 'positive_pair_count_min_2_and_min_20_each' in result.get('gates', {})
+          assert 'pair_observation_concentration_lte_80pct' in result.get('gates', {})
+          print('FRESH_PRIMARY_CONFIRMATION_VERIFIED=true')
+          print('STATE=', result['state'])
+          print('CONFIRMATION_N=', result.get('confirmation', {}).get('n'))
+          print('CONFIRMATION_EXPECTANCY_PIPS=', result.get('confirmation', {}).get('expectancy_pips'))
+          print('CONFIRMATION_PROFIT_FACTOR=', result.get('confirmation', {}).get('profit_factor'))
+          print('PROMOTION_AUTHORIZED=false')
+          print('LIVE_EXECUTION_AUTHORIZED=false')
+          PY
+      - name: Upload hardened confirmation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: FRESH-CANDIDATE-CONFIRMATION-EVIDENCE
+          path: artifacts/fresh_candidate_confirmation.json
+          if-no-files-found: error
+          retention-days: 30
