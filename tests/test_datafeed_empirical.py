@@ -1,5 +1,8 @@
 import json
+import math
 from pathlib import Path
+
+import pytest
 
 from research.datafeed_empirical import _execution_valid_rows, load_feed_bars
 
@@ -39,9 +42,6 @@ def test_load_feed_bars_accepts_canonical_bar_per_line_jsonl(tmp_path: Path) -> 
 
 
 def test_execution_valid_rows_excludes_crossed_quote_bars() -> None:
-    # The production policy rejects the feed when crossed bars exceed 0.10%.
-    # Keep this test below that safety threshold while verifying that a crossed
-    # bar is excluded rather than repaired or clipped.
     valid_rows = [_bar(timestamp) for timestamp in range(1000, 2000)]
     crossed = _bar(2000)
     crossed["ask_close"] = 1.0999
@@ -49,3 +49,30 @@ def test_execution_valid_rows_excludes_crossed_quote_bars() -> None:
     assert [row["timestamp"] for row in rows] == list(range(1000, 2000))
     assert quality["crossed_execution_bars_excluded"] == 1
     assert quality["input_bars"] == 1001
+
+
+def test_load_feed_bars_rejects_invalid_ohlc_geometry(tmp_path: Path) -> None:
+    path = tmp_path / "eurusd.jsonl"
+    row = _bar(1000)
+    row["bid_high"] = 1.099
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid BID OHLC geometry"):
+        load_feed_bars(path)
+
+
+def test_load_feed_bars_rejects_non_finite_price(tmp_path: Path) -> None:
+    path = tmp_path / "eurusd.jsonl"
+    row = _bar(1000)
+    row["ask_close"] = math.nan
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="finite and strictly positive"):
+        load_feed_bars(path)
+
+
+def test_load_feed_bars_rejects_non_positive_price(tmp_path: Path) -> None:
+    path = tmp_path / "eurusd.jsonl"
+    row = _bar(1000)
+    row["bid_low"] = 0.0
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="finite and strictly positive"):
+        load_feed_bars(path)
