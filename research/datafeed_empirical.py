@@ -38,9 +38,12 @@ def _timestamp_ms(row: dict[str, object]) -> int:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError("Feed timestamp must be numeric")
     numeric = float(value)
-    if not math.isfinite(numeric):
-        raise ValueError("Feed timestamp must be finite")
-    return int(numeric)
+    if not math.isfinite(numeric) or not numeric.is_integer():
+        raise ValueError("Feed timestamp must be a finite integer number of milliseconds")
+    timestamp = int(numeric)
+    if timestamp <= 0:
+        raise ValueError("Feed timestamp must be strictly positive")
+    return timestamp
 
 
 def _validate_ohlc_geometry(item: dict[str, object], path: Path, line_number: int) -> None:
