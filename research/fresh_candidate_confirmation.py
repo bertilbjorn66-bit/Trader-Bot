@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 from research import enriched_conditional_experiment as experiment
 from research.datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
+from research.enriched_conditional_experiment import TargetRecord
 from research.execution import ExecutionAssumptions
 from research.non_live_evaluation import (
     block_bootstrap_means,
@@ -18,7 +19,6 @@ from research.non_live_evaluation import (
     probability_of_ruin,
     profit_factor,
 )
-from research.enriched_conditional_experiment import TargetRecord
 
 MIN_CONFIRMATION_SAMPLES = 100
 MIN_PAIR_SAMPLES = 20
