@@ -1,6 +1,12 @@
 name: "23 — ADAPTIVE ENSEMBLE VALIDATION — NON-LIVE"
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "research/adaptive_ensemble.py"
+      - "tests/test_adaptive_ensemble.py"
+      - ".github/workflows/23-ADAPTIVE-ENSEMBLE-VALIDATION.yml"
   push:
     branches: [adaptive-ensemble-v1]
     paths:
