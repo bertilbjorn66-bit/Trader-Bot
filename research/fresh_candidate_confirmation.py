@@ -37,13 +37,13 @@ def candidate_fingerprint(candidate: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_json(candidate).encode("utf-8")).hexdigest()
 
 
-def _matches(record: dict[str, Any], candidate: dict[str, Any], split: str) -> bool:
+def _matches(record: TargetRecord, candidate: dict[str, Any], split: str) -> bool:
     return (
         record["split"] == split
         and int(record["horizon"]) == int(candidate["horizon"])
         and record["regime"] == candidate["regime"]
         and record["session"] == candidate["session"]
-        and (candidate["pairset"] == "all" or str(record["pair"]).endswith("/JPY"))
+        and (candidate["pairset"] == "all" or record["pair"].endswith("/JPY"))
         and (
             candidate["distance_max"] is None
             or float(record["median_distance"]) <= float(candidate["distance_max"])
@@ -52,8 +52,8 @@ def _matches(record: dict[str, Any], candidate: dict[str, Any], split: str) -> b
     )
 
 
-def _ordered_values(records: Sequence[dict[str, Any]]) -> list[float]:
-    ordered = sorted(records, key=lambda record: datetime.fromisoformat(str(record["timestamp"])))
+def _ordered_values(records: Sequence[TargetRecord]) -> list[float]:
+    ordered = sorted(records, key=lambda record: datetime.fromisoformat(record["timestamp"]))
     return [float(record["outcome_pips"]) for record in ordered]
 
 
@@ -81,10 +81,10 @@ def _folds(values: Sequence[float]) -> list[dict[str, Any]]:
     return results
 
 
-def _pair_breakdown(records: Sequence[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def _pair_breakdown(records: Sequence[TargetRecord]) -> dict[str, dict[str, Any]]:
     grouped: dict[str, list[float]] = {}
     for record in records:
-        grouped.setdefault(str(record["pair"]), []).append(float(record["outcome_pips"]))
+        grouped.setdefault(record["pair"], []).append(float(record["outcome_pips"]))
     return {pair: _stats(values) for pair, values in sorted(grouped.items())}
 
 
@@ -100,7 +100,7 @@ def _bootstrap(values: Sequence[float]) -> dict[str, float]:
     }
 
 
-def evaluate_primary(report: dict[str, Any], records: Sequence[dict[str, Any]]) -> dict[str, Any]:
+def evaluate_primary(report: dict[str, Any], records: Sequence[TargetRecord]) -> dict[str, Any]:
     if report.get("status") != "FRESH_DISCOVERY_COMPLETED":
         raise ValueError("source discovery report is not complete")
     policy = report.get("selection_policy", {})
