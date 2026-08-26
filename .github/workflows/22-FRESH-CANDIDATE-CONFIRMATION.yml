@@ -1,6 +1,9 @@
 name: "22 — FRESH CANDIDATE CONFIRMATION — HARDENED NON-LIVE"
 
 on:
+  workflow_run:
+    workflows: ["21 — FRESH DISCOVERY CYCLE — DISCOVERY ONLY"]
+    types: [completed]
   push:
     branches: [main]
     paths:
@@ -31,18 +34,22 @@ permissions:
   actions: read
 
 env:
-  DISCOVERY_RUN_ID: ${{ inputs.discovery_run_id || '32892555632' }}
+  DISCOVERY_RUN_ID: ${{ github.event.workflow_run.id || inputs.discovery_run_id || '32892555632' }}
+  DISCOVERY_HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
   SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
   SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
   HISTORY_STATES: ${{ inputs.history_states || '10000' }}
 
 jobs:
   validate:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     name: "Validate hardened confirmation engine"
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout mainline
+      - name: Checkout discovery source revision
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DISCOVERY_HEAD_SHA }}
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
         with:
@@ -65,13 +72,16 @@ jobs:
           echo "FRESH_CONFIRMATION_NON_LIVE=true"
 
   confirm:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     name: "Confirm rank-1 fresh candidate only"
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
-      - name: Checkout mainline
+      - name: Checkout discovery source revision
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DISCOVERY_HEAD_SHA }}
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
         with:
@@ -102,6 +112,8 @@ jobs:
           assert report['top_candidates']
           assert 'confirmation' not in report['top_candidates'][0]
           print('DISCOVERY_ARTIFACT_BOUNDARY_OK=true')
+          print('DISCOVERY_RUN_ID=', '${{ env.DISCOVERY_RUN_ID }}')
+          print('DISCOVERY_HEAD_SHA=', '${{ env.DISCOVERY_HEAD_SHA }}')
           PY
       - name: Download reused six-pair artifact bundle
         uses: actions/download-artifact@v8
