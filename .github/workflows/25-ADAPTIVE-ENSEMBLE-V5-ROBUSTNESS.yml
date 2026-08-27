@@ -19,21 +19,32 @@ on:
         description: "Completed recovery run containing the verified nine-pair feed artifacts"
         required: true
         default: "32874819018"
+      sample_stride:
+        description: "Sampling stride"
+        required: true
+        default: "60"
+      history_states:
+        description: "Historical states per target"
+        required: true
+        default: "10000"
+      slippage_pips:
+        description: "Additional slippage stress in pips"
+        required: true
+        default: "0.2"
 
 permissions:
   contents: read
   actions: read
 
-concurrency:
-  group: adaptive-ensemble-v5-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
+  SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
+  HISTORY_STATES: ${{ inputs.history_states || '10000' }}
+  SLIPPAGE_PIPS: ${{ inputs.slippage_pips || '0.2' }}
 
 jobs:
   robustness:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
       - name: Checkout
@@ -100,9 +111,9 @@ jobs:
           python -m research.adaptive_ensemble_v5 \
             --input-dir .data/empirical_feed \
             --output artifacts/v5_baseline.json \
-            --sample-stride 60 \
-            --history-states 10000 \
-            --slippage-pips 0.2
+            --sample-stride "$SAMPLE_STRIDE" \
+            --history-states "$HISTORY_STATES" \
+            --slippage-pips "$SLIPPAGE_PIPS"
       - name: Run denser sampling cross-check
         run: |
           python -m research.adaptive_ensemble_v5 \
