@@ -51,11 +51,6 @@ def test_each_plan_matches_an_approved_source():
     sources = {source.source_id: source for source in default_real_data_sources()}
     for plan in default_instrument_data_plans():
         source = sources[plan.source_id]
-        assert source.supports(plan.asset_class, next(iter(plan.resolutions)))
-        assert plan.required_fields >= {
-            DataField.TIMESTAMP,
-            DataField.OPEN,
-            DataField.HIGH,
-            DataField.LOW,
-            DataField.CLOSE,
-        }
+        for resolution in plan.resolutions:
+            assert source.supports(plan.asset_class, resolution)
+        assert plan.required_fields <= source.required_fields
