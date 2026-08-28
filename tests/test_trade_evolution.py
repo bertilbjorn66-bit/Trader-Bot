@@ -12,6 +12,7 @@ from trader_bot.asset_universe import AssetClass
 def observation(**overrides):
     values = {
         "timestamp": 1,
+        "instrument": "EUR/USD",
         "asset_class": AssetClass.FOREX,
         "unrealized_return": 0.10,
         "max_favorable_excursion": 0.12,
@@ -59,7 +60,14 @@ def test_deteriorating_profitable_trade_reduces():
 
 def test_crypto_receives_domain_specific_penalty():
     state = evaluate_trade_evolution(
-        [observation(asset_class=AssetClass.CRYPTO, liquidity_score=0.40, cost_score=0.40)]
+        [
+            observation(
+                instrument="BTC/USD",
+                asset_class=AssetClass.CRYPTO,
+                liquidity_score=0.40,
+                cost_score=0.40,
+            )
+        ]
     )
     assert state.action is TradeAction.HOLD
     assert state.phase is TradePhase.EARLY
@@ -86,12 +94,21 @@ def test_out_of_order_observations_are_rejected():
 def test_mixed_asset_trajectory_is_rejected():
     try:
         evaluate_trade_evolution(
-            [observation(), observation(timestamp=2, asset_class=AssetClass.CRYPTO)]
+            [observation(), observation(timestamp=2, instrument="BTC/USD", asset_class=AssetClass.CRYPTO)]
         )
     except ValueError as exc:
-        assert "asset class" in str(exc)
+        assert "instrument or asset class" in str(exc)
     else:
-        raise AssertionError("mixed asset classes must be rejected")
+        raise AssertionError("mixed instruments must be rejected")
+
+
+def test_invalid_numeric_observation_is_rejected():
+    try:
+        evaluate_trade_evolution([observation(unrealized_return=float("nan"))])
+    except ValueError as exc:
+        assert "finite" in str(exc)
+    else:
+        raise AssertionError("non-finite observations must be rejected")
 
 
 def test_trajectory_summary_uses_policy_threshold_and_counts_paths():
@@ -105,17 +122,21 @@ def test_trajectory_summary_uses_policy_threshold_and_counts_paths():
     )
     assert len(summaries) == 1
     assert summaries[0].trajectories == 2
+    assert summaries[0].instrument == "EUR/USD"
     assert summaries[0].deterioration_rate == 0.0
 
 
-def test_trajectory_summary_isolated_by_asset_class():
+def test_trajectory_summary_isolated_by_instrument_and_asset_class():
     summaries = summarize_trade_trajectories(
         [
             [observation(timestamp=1), observation(timestamp=2)],
             [
-                observation(timestamp=3, asset_class=AssetClass.CRYPTO),
-                observation(timestamp=4, asset_class=AssetClass.CRYPTO, unrealized_return=0.20),
+                observation(timestamp=3, instrument="BTC/USD", asset_class=AssetClass.CRYPTO),
+                observation(timestamp=4, instrument="BTC/USD", asset_class=AssetClass.CRYPTO, unrealized_return=0.20),
             ],
         ]
     )
-    assert {summary.asset_class for summary in summaries} == {AssetClass.FOREX, AssetClass.CRYPTO}
+    assert {(summary.instrument, summary.asset_class) for summary in summaries} == {
+        ("EUR/USD", AssetClass.FOREX),
+        ("BTC/USD", AssetClass.CRYPTO),
+    }
