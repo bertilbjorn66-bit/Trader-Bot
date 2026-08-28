@@ -27,22 +27,18 @@ class InstrumentDataPlan:
 
 
 def default_instrument_data_plans() -> tuple[InstrumentDataPlan, ...]:
-    """Return the explicit real-data feed plan for the current research universe.
-
-    This contains metadata only. Raw market data remains outside the public
-    repository and is populated into the private research store by the refresh job.
-    """
+    """Return the explicit real-data feed plan for the current research universe."""
 
     plans: list[InstrumentDataPlan] = []
     registry = default_asset_registry()
 
-    for symbol in registry.by_asset_class(AssetClass.FOREX):
+    for profile in registry.by_asset_class(AssetClass.FOREX):
         plans.append(
             InstrumentDataPlan(
-                symbol=symbol.symbol,
+                symbol=profile.symbol,
                 asset_class=AssetClass.FOREX,
                 source_id="DUKASCOPY_HISTORICAL",
-                source_symbol=symbol.symbol.replace("/", ""),
+                source_symbol=profile.symbol.replace("/", ""),
                 resolutions=frozenset({DataResolution.TICK, DataResolution.MINUTE, DataResolution.HOUR, DataResolution.DAILY}),
                 required_fields=frozenset({DataField.TIMESTAMP, DataField.OPEN, DataField.HIGH, DataField.LOW, DataField.CLOSE, DataField.BID, DataField.ASK}),
                 coverage_tier=CoverageTier.HIGH_FREQUENCY,
@@ -112,7 +108,9 @@ def default_instrument_data_plans() -> tuple[InstrumentDataPlan, ...]:
             )
         )
 
-    tech_symbols = ("NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "GOOG", "AVGO", "AMD", "TSLA", "ORCL", "CRM", "ADBE", "INTC", "QCOM")
+    tech_symbols = (
+        "NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "GOOG", "AVGO", "AMD", "TSLA", "ORCL", "CRM", "ADBE", "INTC", "QCOM"
+    )
     for symbol in tech_symbols:
         plans.append(
             InstrumentDataPlan(
