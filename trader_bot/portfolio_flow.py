@@ -36,10 +36,21 @@ class PositionRisk:
     asset_class: AssetClass
     risk_fraction: float
 
+    def __post_init__(self) -> None:
+        if not self.symbol.strip():
+            raise ValueError("symbol must be non-empty")
+        if not isfinite(self.risk_fraction) or self.risk_fraction < 0:
+            raise ValueError("risk_fraction must be finite and non-negative")
+
 
 @dataclass(frozen=True, slots=True)
 class PortfolioSnapshot:
     open_positions: tuple[PositionRisk, ...] = ()
+
+    def __post_init__(self) -> None:
+        symbols = [position.symbol.upper() for position in self.open_positions]
+        if len(symbols) != len(set(symbols)):
+            raise ValueError("portfolio snapshot cannot contain duplicate symbols")
 
     @property
     def total_risk(self) -> float:
@@ -65,7 +76,7 @@ def allocate(
     asset_class: AssetClass,
     assessment: FlowAssessment,
     snapshot: PortfolioSnapshot,
-    limits: PortfolioLimits = PortfolioLimits(),
+    limits: PortfolioLimits | None = None,
 ) -> AllocationDecision:
     """Reserve risk only when the upstream flow is READY.
 
@@ -73,24 +84,26 @@ def allocate(
     portfolio simply returns a bounded rejection reason.
     """
 
+    active_limits = limits if limits is not None else PortfolioLimits()
+    normalized_symbol = symbol.upper()
     if assessment.state is not FlowState.READY:
         return AllocationDecision(False, 0.0, f"flow_state_{assessment.state.lower()}")
-    if any(position.symbol == symbol for position in snapshot.open_positions):
+    if any(position.symbol.upper() == normalized_symbol for position in snapshot.open_positions):
         return AllocationDecision(False, 0.0, "position_already_open")
-    if len(snapshot.open_positions) >= limits.max_open_positions:
+    if len(snapshot.open_positions) >= active_limits.max_open_positions:
         return AllocationDecision(False, 0.0, "position_count_limit_reached")
-    if snapshot.total_risk >= limits.max_total_risk_fraction:
+    if snapshot.total_risk >= active_limits.max_total_risk_fraction:
         return AllocationDecision(False, 0.0, "portfolio_risk_limit_reached")
-    if snapshot.risk_for_asset_class(asset_class) >= limits.max_asset_class_fraction:
+    if snapshot.risk_for_asset_class(asset_class) >= active_limits.max_asset_class_fraction:
         return AllocationDecision(False, 0.0, "asset_class_risk_limit_reached")
 
-    available_total = limits.max_total_risk_fraction - snapshot.total_risk
-    available_class = limits.max_asset_class_fraction - snapshot.risk_for_asset_class(asset_class)
+    available_total = active_limits.max_total_risk_fraction - snapshot.total_risk
+    available_class = active_limits.max_asset_class_fraction - snapshot.risk_for_asset_class(asset_class)
     granted = min(
-        limits.max_single_position_fraction,
+        active_limits.max_single_position_fraction,
         available_total,
         available_class,
-        assessment.risk_budget_fraction * limits.max_single_position_fraction,
+        assessment.risk_budget_fraction * active_limits.max_single_position_fraction,
     )
     if granted <= 0:
         return AllocationDecision(False, 0.0, "no_risk_budget_available")
