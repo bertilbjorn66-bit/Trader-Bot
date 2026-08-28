@@ -69,7 +69,7 @@ def default_real_data_sources() -> tuple[RealDataSource, ...]:
             public_or_authenticated="public historical access",
             primary_url="https://www.dukascopy.com/api/data/get/historical-data-export",
             notes="Preferred source for FX, metals and supported commodity CFDs. Preserve bid/ask and volume where supplied; verify instrument availability before ingestion.",
-            required_fields=frozenset({DataField.TIMESTAMP, DataField.OPEN, DataField.HIGH, DataField.LOW, DataField.CLOSE}),
+            required_fields=frozenset({DataField.TIMESTAMP, DataField.OPEN, DataField.HIGH, DataField.LOW, DataField.CLOSE, DataField.BID, DataField.ASK}),
         ),
         RealDataSource(
             source_id="BINANCE_PUBLIC_MARKET_DATA",
