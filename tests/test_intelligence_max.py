@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from research.anti_overfit import perturbation_audit, stability_ratio, summarize_trials
-from research.behavioral_memory import BehavioralObservation, conditional_memory, chronological_memory, summarize_context
+from research.behavioral_memory import (
+    BehavioralObservation,
+    chronological_memory,
+    conditional_memory,
+    summarize_context,
+)
 from research.model_health import HealthState, assess_model_health
 from research.opportunity_ranking import Opportunity, rank_opportunities
 

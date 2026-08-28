@@ -1,6 +1,5 @@
 import pytest
 
-from trader_bot.asset_universe import AssetClass, default_asset_registry
 from research.instrument_culture import (
     KnowledgeScope,
     MarketElement,
@@ -9,6 +8,7 @@ from research.instrument_culture import (
     default_instrument_cultures,
     may_influence_target,
 )
+from trader_bot.asset_universe import AssetClass, default_asset_registry
 
 
 def _knowledge(symbol: str, venue: str, scope: KnowledgeScope = KnowledgeScope.INSTRUMENT) -> ScopedKnowledge:

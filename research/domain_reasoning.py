@@ -6,6 +6,7 @@ from math import isfinite
 from typing import Mapping
 
 from trader_bot.asset_universe import AssetClass, InstrumentProfile
+
 from .domain_profiles import ContextFeature, domain_profile
 
 

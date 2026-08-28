@@ -7,9 +7,16 @@ from typing import Mapping, Protocol
 from trader_bot.asset_universe import AssetClass, InstrumentProfile
 from trader_bot.market_flow import FlowAssessment, FlowState, MarketEvidence, assess_flow
 from trader_bot.portfolio_flow import AllocationDecision, PortfolioSnapshot, allocate
+
 from .asset_research_contract import ResearchContract, ResearchMode, contract_for
 from .domain_profiles import ContextFeature, domain_profile
-from .domain_reasoning import DomainContext, DomainReasoning, ExpertObservation, combine_experts, validate_context
+from .domain_reasoning import (
+    DomainContext,
+    DomainReasoning,
+    ExpertObservation,
+    combine_experts,
+    validate_context,
+)
 
 
 class ResearchVerdict(StrEnum):

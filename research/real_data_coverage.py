@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from trader_bot.asset_universe import AssetClass, default_asset_registry
 from research.real_data_sources import DataField, DataResolution
+from trader_bot.asset_universe import AssetClass, default_asset_registry
 
 
 class CoverageTier(StrEnum):

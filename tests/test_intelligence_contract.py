@@ -1,6 +1,12 @@
-from trader_bot.asset_universe import AssetClass, default_asset_registry
 from research.domain_profiles import ContextFeature, domain_profile
-from research.intelligence_contract import ExpertFamily, ExpertObservation, IntelligenceSnapshot, consensus_quality, validate_snapshot
+from research.intelligence_contract import (
+    ExpertFamily,
+    ExpertObservation,
+    IntelligenceSnapshot,
+    consensus_quality,
+    validate_snapshot,
+)
+from trader_bot.asset_universe import default_asset_registry
 
 
 def snapshot(symbol: str) -> IntelligenceSnapshot:

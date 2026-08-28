@@ -1,6 +1,6 @@
-from trader_bot.asset_universe import AssetClass, default_asset_registry
 from research.real_data_coverage import default_instrument_data_plans
 from research.real_data_sources import DataField, DataResolution, default_real_data_sources
+from trader_bot.asset_universe import AssetClass, default_asset_registry
 
 
 def test_every_registered_instrument_has_a_real_data_plan():

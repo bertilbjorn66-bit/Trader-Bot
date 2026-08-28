@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping, Sequence
+from typing import Sequence
 
 from trader_bot.asset_universe import AssetClass, InstrumentProfile
+
 from .domain_profiles import ContextFeature, domain_profile
 from .market_comparison import ComparableState, ComparisonResult, compare_states
 

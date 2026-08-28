@@ -1,5 +1,5 @@
-from trader_bot.asset_universe import AssetClass
 from research.market_culture import EvidenceDimension, default_market_cultures
+from trader_bot.asset_universe import AssetClass
 
 
 def test_every_asset_class_has_a_distinct_native_culture() -> None:
