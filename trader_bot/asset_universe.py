@@ -30,11 +30,7 @@ class ResearchStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CostProfile:
-    """Execution-cost assumptions expressed in instrument-native units.
-
-    The cost model is deliberately not expressed in pips because that is not a
-    universal unit across FX, crypto, metals and equities.
-    """
+    """Execution-cost assumptions expressed in instrument-native units."""
 
     typical_spread: float | None
     stress_spread: float | None
@@ -79,6 +75,8 @@ class InstrumentProfile:
     def __post_init__(self) -> None:
         if not self.symbol.strip():
             raise ValueError("symbol must be non-empty")
+        if self.symbol != self.symbol.upper():
+            raise ValueError("symbol must be normalized uppercase")
         if not self.venue.strip():
             raise ValueError("venue must be non-empty")
         if not self.quote_currency.strip():
@@ -90,10 +88,7 @@ class InstrumentProfile:
 
     @property
     def is_research_ready(self) -> bool:
-        return self.research_status in {
-            ResearchStatus.EXISTING_VALIDATED_DOMAIN,
-            ResearchStatus.RESEARCH_PLANNED,
-        }
+        return self.research_status is ResearchStatus.EXISTING_VALIDATED_DOMAIN
 
 
 class AssetRegistry:
@@ -125,13 +120,8 @@ class AssetRegistry:
         return tuple(self._profiles)
 
 
-
 def default_asset_registry() -> AssetRegistry:
-    """Return the initial multi-asset universe.
-
-    Only the existing Forex domain is already validated. Every other instrument
-    remains research-only until its own empirical validation contract passes.
-    """
+    """Return the initial multi-asset universe with validation-safe defaults."""
 
     forex_cost = CostProfile(typical_spread=None, stress_spread=None)
     fx_rules = MarketRules(
