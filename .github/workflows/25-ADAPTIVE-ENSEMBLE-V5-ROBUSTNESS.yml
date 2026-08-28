@@ -41,7 +41,7 @@ permissions:
 
 concurrency:
   group: adaptive-ensemble-v5-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
@@ -131,7 +131,7 @@ jobs:
   baseline:
     needs: [static, prepare]
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 330
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -168,7 +168,7 @@ jobs:
   dense:
     needs: [static, prepare]
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 330
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -205,7 +205,7 @@ jobs:
   wide_history:
     needs: [static, prepare]
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 330
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -242,7 +242,7 @@ jobs:
   severe_cost:
     needs: [static, prepare]
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 330
     steps:
       - name: Checkout
         uses: actions/checkout@v7
