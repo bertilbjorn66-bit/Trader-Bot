@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, 'foundation/**', 'research/**', 'integration/**', 'multi-asset-*', 'multi-asset/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'adaptive-ensemble-v1']
 
 permissions:
   contents: read
