@@ -107,6 +107,8 @@ def refresh_window(
     state = assess_freshness(snapshot, contract, now=current_time)
     if state in {FreshnessState.UNKNOWN, FreshnessState.CURRENT}:
         return None
+    if snapshot is None:
+        raise ValueError("snapshot required for due or stale refresh")
     start = snapshot.as_of
     if start >= current_time:
         return None
