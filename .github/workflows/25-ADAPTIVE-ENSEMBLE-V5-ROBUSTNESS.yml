@@ -36,6 +36,10 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: adaptive-ensemble-v5-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
   SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
@@ -43,9 +47,9 @@ env:
   SLIPPAGE_PIPS: ${{ inputs.slippage_pips || '0.2' }}
 
 jobs:
-  robustness:
+  static:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -62,8 +66,13 @@ jobs:
           mypy research/adaptive_ensemble_v5.py
       - name: Unit tests
         run: pytest -q tests/test_adaptive_ensemble_v5.py
-      - name: Prepare feeds and artifacts
-        run: mkdir -p .data/empirical_feed artifacts /tmp/repaired
+
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare feed directory
+        run: mkdir -p .data/empirical_feed /tmp/repaired
       - name: Download verified six-pair artifact bundle
         uses: actions/download-artifact@v8
         with:
@@ -106,46 +115,208 @@ jobs:
           for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
             test -s ".data/empirical_feed/$slug.jsonl"
           done
+      - name: Package verified feeds
+        run: tar -czf verified-nine-pair-feeds.tar.gz .data/empirical_feed
+      - name: Upload prepared feeds
+        uses: actions/upload-artifact@v7
+        with:
+          name: v5-prepared-nine-pair-feeds
+          path: verified-nine-pair-feeds.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  baseline:
+    needs: [static, prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Download prepared feeds
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-prepared-nine-pair-feeds
+          path: /tmp/prepared
+      - name: Extract prepared feeds
+        run: tar -xzf /tmp/prepared/verified-nine-pair-feeds.tar.gz
       - name: Run baseline hardened v5
         run: |
+          mkdir -p artifacts
           python -m research.adaptive_ensemble_v5 \
             --input-dir .data/empirical_feed \
             --output artifacts/v5_baseline.json \
             --sample-stride "$SAMPLE_STRIDE" \
             --history-states "$HISTORY_STATES" \
             --slippage-pips "$SLIPPAGE_PIPS"
-      - name: Run denser sampling cross-check
+      - name: Upload baseline evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: v5-robustness-baseline
+          path: artifacts/v5_baseline.json
+          if-no-files-found: error
+          retention-days: 30
+
+  dense:
+    needs: [static, prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Download prepared feeds
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-prepared-nine-pair-feeds
+          path: /tmp/prepared
+      - name: Extract prepared feeds
+        run: tar -xzf /tmp/prepared/verified-nine-pair-feeds.tar.gz
+      - name: Run dense sampling cross-check
         run: |
+          mkdir -p artifacts
           python -m research.adaptive_ensemble_v5 \
             --input-dir .data/empirical_feed \
             --output artifacts/v5_dense.json \
             --sample-stride 30 \
             --history-states 8000 \
             --slippage-pips 0.2
+      - name: Upload dense evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: v5-robustness-dense
+          path: artifacts/v5_dense.json
+          if-no-files-found: error
+          retention-days: 30
+
+  wide_history:
+    needs: [static, prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Download prepared feeds
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-prepared-nine-pair-feeds
+          path: /tmp/prepared
+      - name: Extract prepared feeds
+        run: tar -xzf /tmp/prepared/verified-nine-pair-feeds.tar.gz
       - name: Run wider-history cross-check
         run: |
+          mkdir -p artifacts
           python -m research.adaptive_ensemble_v5 \
             --input-dir .data/empirical_feed \
             --output artifacts/v5_wide_history.json \
             --sample-stride 120 \
             --history-states 12000 \
             --slippage-pips 0.2
+      - name: Upload wider-history evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: v5-robustness-wide-history
+          path: artifacts/v5_wide_history.json
+          if-no-files-found: error
+          retention-days: 30
+
+  severe_cost:
+    needs: [static, prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Download prepared feeds
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-prepared-nine-pair-feeds
+          path: /tmp/prepared
+      - name: Extract prepared feeds
+        run: tar -xzf /tmp/prepared/verified-nine-pair-feeds.tar.gz
       - name: Run severe-cost cross-check
         run: |
+          mkdir -p artifacts
           python -m research.adaptive_ensemble_v5 \
             --input-dir .data/empirical_feed \
             --output artifacts/v5_severe_cost.json \
             --sample-stride 60 \
             --history-states 10000 \
             --slippage-pips 1.5
+      - name: Upload severe-cost evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: v5-robustness-severe-cost
+          path: artifacts/v5_severe_cost.json
+          if-no-files-found: error
+          retention-days: 30
+
+  crosscheck:
+    needs: [baseline, dense, wide_history, severe_cost]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Download baseline evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-robustness-baseline
+          path: artifacts
+      - name: Download dense evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-robustness-dense
+          path: artifacts
+      - name: Download wider-history evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-robustness-wide-history
+          path: artifacts
+      - name: Download severe-cost evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-robustness-severe-cost
+          path: artifacts
       - name: Cross-check all research outputs
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          reports = [json.loads(path.read_text()) for path in sorted(Path('artifacts').glob('v5_*.json'))]
-          assert len(reports) == 4
-          for report in reports:
+
+          expected = {
+              'v5_baseline.json',
+              'v5_dense.json',
+              'v5_wide_history.json',
+              'v5_severe_cost.json',
+          }
+          paths = set(path.name for path in Path('artifacts').glob('v5_*.json'))
+          assert paths == expected, f'Unexpected evidence set: {paths}'
+
+          for path in sorted(Path('artifacts').glob('v5_*.json')):
+              report = json.loads(path.read_text(encoding='utf-8'))
               assert report['empirical'] is True
               assert report['synthetic'] is False
               assert report['design']['maturity_delayed_learning'] is True
@@ -154,11 +325,12 @@ jobs:
               assert report['live_execution_authorized'] is False
               confirmation = report['chronological_confirmation_40pct']
               assert confirmation['n'] >= 100
-              print(report['status'], confirmation, report['stress']['1.5'], report['promotion_recommendation'])
+              print(path.name, report['status'], confirmation, report['stress']['1.5'], report['promotion_recommendation'])
+
           print('ALL_V5_CROSSCHECKS_COMPLETED=true')
           print('LIVE_EXECUTION_AUTHORIZED=false')
           PY
-      - name: Upload v5 robustness evidence
+      - name: Upload consolidated v5 robustness evidence
         uses: actions/upload-artifact@v7
         with:
           name: ADAPTIVE-ENSEMBLE-V5-ROBUSTNESS-EVIDENCE
