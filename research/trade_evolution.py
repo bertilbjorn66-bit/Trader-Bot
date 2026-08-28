@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from statistics import mean
+from typing import Iterable
 
 from trader_bot.asset_universe import AssetClass
 
@@ -88,6 +90,59 @@ class TradeEvolutionState:
     reasons: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class TradeTrajectorySummary:
+    asset_class: AssetClass
+    observations: int
+    positive_final_return_rate: float
+    mean_final_return: float
+    mean_max_favorable_excursion: float
+    mean_max_adverse_excursion: float
+    deterioration_rate: float
+
+
+def summarize_trade_trajectories(
+    trajectories: Iterable[Iterable[TradeObservation]],
+) -> tuple[TradeTrajectorySummary, ...]:
+    """Learn how completed trade paths evolve, grouped only within one asset class."""
+
+    groups: dict[AssetClass, list[list[TradeObservation]]] = {}
+    for raw_trajectory in trajectories:
+        trajectory = list(raw_trajectory)
+        if not trajectory:
+            continue
+        for observation in trajectory:
+            observation.validate()
+        asset_classes = {observation.asset_class for observation in trajectory}
+        if len(asset_classes) != 1:
+            raise ValueError("a trade trajectory cannot mix asset classes")
+        timestamps = [observation.timestamp for observation in trajectory]
+        if timestamps != sorted(timestamps) or len(set(timestamps)) != len(timestamps):
+            raise ValueError("trade observations must have unique strictly increasing timestamps")
+        groups.setdefault(trajectory[0].asset_class, []).append(trajectory)
+
+    summaries: list[TradeTrajectorySummary] = []
+    for asset_class, asset_trajectories in sorted(groups.items(), key=lambda item: item[0].value):
+        final_returns = [path[-1].unrealized_return for path in asset_trajectories]
+        favorable_excursions = [max(point.max_favorable_excursion for point in path) for path in asset_trajectories]
+        adverse_excursions = [max(point.max_adverse_excursion for point in path) for path in asset_trajectories]
+        deterioration = [
+            any(point.invalidation_score >= 0.45 for point in path[1:]) for path in asset_trajectories
+        ]
+        summaries.append(
+            TradeTrajectorySummary(
+                asset_class=asset_class,
+                observations=len(asset_trajectories),
+                positive_final_return_rate=sum(value > 0.0 for value in final_returns) / len(final_returns),
+                mean_final_return=mean(final_returns),
+                mean_max_favorable_excursion=mean(favorable_excursions),
+                mean_max_adverse_excursion=mean(adverse_excursions),
+                deterioration_rate=sum(deterioration) / len(deterioration),
+            )
+        )
+    return tuple(summaries)
+
+
 def _domain_penalty(observation: TradeObservation) -> float:
     """Return a conservative penalty for domain conditions that threaten an open thesis."""
 
@@ -125,7 +180,13 @@ def evaluate_trade_evolution(
         raise ValueError("at least one trade observation is required")
     for observation in observations:
         observation.validate()
+    asset_classes = {observation.asset_class for observation in observations}
+    if len(asset_classes) != 1:
+        raise ValueError("a trade cannot change asset class during its lifecycle")
     ordered = sorted(observations, key=lambda item: item.timestamp)
+    timestamps = [observation.timestamp for observation in ordered]
+    if len(set(timestamps)) != len(timestamps):
+        raise ValueError("trade observations must have unique timestamps")
     current = ordered[-1]
     periods = len(ordered)
 
