@@ -93,7 +93,7 @@ class TradeEvolutionState:
 @dataclass(frozen=True, slots=True)
 class TradeTrajectorySummary:
     asset_class: AssetClass
-    observations: int
+    trajectories: int
     positive_final_return_rate: float
     mean_final_return: float
     mean_max_favorable_excursion: float
@@ -103,9 +103,13 @@ class TradeTrajectorySummary:
 
 def summarize_trade_trajectories(
     trajectories: Iterable[Iterable[TradeObservation]],
+    *,
+    policy: TradeEvolutionPolicy | None = None,
 ) -> tuple[TradeTrajectorySummary, ...]:
-    """Learn how completed trade paths evolve, grouped only within one asset class."""
+    """Learn completed trade paths without crossing asset or chronological boundaries."""
 
+    active_policy = policy if policy is not None else TradeEvolutionPolicy()
+    active_policy.validate()
     groups: dict[AssetClass, list[list[TradeObservation]]] = {}
     for raw_trajectory in trajectories:
         trajectory = list(raw_trajectory)
@@ -127,12 +131,16 @@ def summarize_trade_trajectories(
         favorable_excursions = [max(point.max_favorable_excursion for point in path) for path in asset_trajectories]
         adverse_excursions = [max(point.max_adverse_excursion for point in path) for path in asset_trajectories]
         deterioration = [
-            any(point.invalidation_score >= 0.45 for point in path[1:]) for path in asset_trajectories
+            any(
+                point.invalidation_score >= active_policy.deterioration_threshold
+                for point in path[1:]
+            )
+            for path in asset_trajectories
         ]
         summaries.append(
             TradeTrajectorySummary(
                 asset_class=asset_class,
-                observations=len(asset_trajectories),
+                trajectories=len(asset_trajectories),
                 positive_final_return_rate=sum(value > 0.0 for value in final_returns) / len(final_returns),
                 mean_final_return=mean(final_returns),
                 mean_max_favorable_excursion=mean(favorable_excursions),
