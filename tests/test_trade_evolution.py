@@ -4,6 +4,7 @@ from research.trade_evolution import (
     TradeObservation,
     TradePhase,
     evaluate_trade_evolution,
+    summarize_trade_trajectories,
 )
 from trader_bot.asset_universe import AssetClass
 
@@ -91,3 +92,30 @@ def test_mixed_asset_trajectory_is_rejected():
         assert "asset class" in str(exc)
     else:
         raise AssertionError("mixed asset classes must be rejected")
+
+
+def test_trajectory_summary_uses_policy_threshold_and_counts_paths():
+    policy = TradeEvolutionPolicy(deterioration_threshold=0.60)
+    summaries = summarize_trade_trajectories(
+        [
+            [observation(timestamp=1), observation(timestamp=2, invalidation_score=0.55)],
+            [observation(timestamp=3), observation(timestamp=4, invalidation_score=0.10)],
+        ],
+        policy=policy,
+    )
+    assert len(summaries) == 1
+    assert summaries[0].trajectories == 2
+    assert summaries[0].deterioration_rate == 0.0
+
+
+def test_trajectory_summary_isolated_by_asset_class():
+    summaries = summarize_trade_trajectories(
+        [
+            [observation(timestamp=1), observation(timestamp=2)],
+            [
+                observation(timestamp=3, asset_class=AssetClass.CRYPTO),
+                observation(timestamp=4, asset_class=AssetClass.CRYPTO, unrealized_return=0.20),
+            ],
+        ]
+    )
+    assert {summary.asset_class for summary in summaries} == {AssetClass.FOREX, AssetClass.CRYPTO}
