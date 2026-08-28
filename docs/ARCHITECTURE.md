@@ -43,7 +43,7 @@ Initial domains are:
 
 Registration does not imply validation, paper eligibility or live authorization.
 
-Asset-specific research contracts determine what each domain must understand. For example, exchange-traded equities require calendar and volume awareness; crypto research must account for continuous trading and venue/liquidity effects; metals require their own session, volatility and macro-context treatment.
+Asset-specific research contracts determine what each domain must understand. Exchange-traded equities require calendar and volume awareness; crypto research must account for continuous trading and venue/liquidity effects; metals require their own session, volatility and macro-context treatment.
 
 Forex assumptions must never be silently applied to crypto, metals or equities.
 
