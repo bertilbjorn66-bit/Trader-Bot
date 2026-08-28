@@ -85,7 +85,7 @@ def assess_freshness(
     age = current_time - snapshot.as_of
     if age < timedelta(0):
         return FreshnessState.UNKNOWN
-    if age > contract.maximum_staleness:
+    if age >= contract.maximum_staleness:
         return FreshnessState.STALE
     if age >= contract.refresh_interval:
         return FreshnessState.DUE
