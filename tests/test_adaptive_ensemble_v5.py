@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from research.adaptive_ensemble_v5 import Stat, conservative_edge, route, strategy_votes
+from research.adaptive_ensemble_v5 import (
+    CANDIDATE_FINGERPRINT,
+    CANDIDATE_SPEC,
+    CONFIRMATION_FRACTION,
+    DISCOVERY_FRACTION,
+    Stat,
+    conservative_edge,
+    route,
+    strategy_votes,
+)
 from research.pipeline import state_from_bar_window
 from research.types import Bar
 
@@ -78,3 +87,21 @@ def test_route_requires_multi_expert_consensus() -> None:
     assert direction == 1
     assert confidence > 0.70
     assert reason == "multi_expert_consensus"
+
+
+def test_candidate_contract_is_immutable_and_frozen_for_holdout() -> None:
+    assert DISCOVERY_FRACTION == 0.60
+    assert CONFIRMATION_FRACTION == 0.40
+    assert CANDIDATE_SPEC["discovery_fraction"] == DISCOVERY_FRACTION
+    assert CANDIDATE_SPEC["confirmation_fraction"] == CONFIRMATION_FRACTION
+    assert len(CANDIDATE_FINGERPRINT) == 64
+    assert CANDIDATE_SPEC["strategy_set"] == (
+        "trend",
+        "momentum",
+        "breakout",
+        "mean_reversion",
+        "pullback",
+        "volatility",
+        "reversal",
+        "analogue",
+    )
