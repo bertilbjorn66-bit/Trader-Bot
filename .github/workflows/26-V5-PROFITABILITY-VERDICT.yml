@@ -63,7 +63,6 @@ jobs:
       - name: Run final non-live profitability verdict
         run: |
           python - <<'PY'
-          import hashlib
           import json
           from pathlib import Path
 
@@ -126,7 +125,7 @@ jobs:
           result = {
               "verdict": verdict,
               "candidate_fingerprint": next(iter(fingerprints)),
-              "source_run_id": github_run_id := int("${{ github.event.workflow_run.id }}"),
+              "source_run_id": int("${{ github.event.workflow_run.id }}"),
               "source_commit": "${{ github.event.workflow_run.head_sha }}",
               "reports_checked": list(reports),
               "all_four_reports_present": True,
