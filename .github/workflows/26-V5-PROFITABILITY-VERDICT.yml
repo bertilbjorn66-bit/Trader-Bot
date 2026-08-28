@@ -82,14 +82,13 @@ jobs:
           if len(fingerprints) != 1 or None in fingerprints:
               raise SystemExit(f"Candidate fingerprints are inconsistent: {fingerprints}")
 
-          common_failures = []
+          failures = []
           for name, report in reports.items():
               holdout = report.get("holdout_integrity", {})
               design = report.get("design", {})
               confirmation = report.get("chronological_confirmation_40pct", {})
               hard = report.get("stress", {}).get("1.5", {})
               years = report.get("year_stability", {})
-
               checks = {
                   "empirical": report.get("empirical") is True,
                   "synthetic_false": report.get("synthetic") is False,
@@ -111,17 +110,19 @@ jobs:
               }
               failed = [key for key, passed in checks.items() if not passed]
               if failed:
-                  common_failures.append({"report": name, "failed_checks": failed})
+                  failures.append({"report": name, "failed_checks": failed})
 
           baseline = reports["baseline"]
           positive_pairs = 0
-          for pair, report in baseline.get("pair_summaries", {}).items():
-              if "::confirmation" not in pair and (report.get("expectancy_pips") or 0.0) > 0.0 and (report.get("profit_factor") or 0.0) > 1.0:
+          for pair in baseline.get("pair_summaries", {}):
+              if "::confirmation" not in pair:
+                  continue
+              report = baseline["pair_summaries"][pair]
+              if (report.get("expectancy_pips") or 0.0) > 0.0 and (report.get("profit_factor") or 0.0) > 1.0:
                   positive_pairs += 1
 
           baseline_pair_check = positive_pairs >= 2
-          verdict = "PASS" if not common_failures and baseline_pair_check else "FAIL"
-
+          verdict = "PASS" if not failures and baseline_pair_check else "FAIL"
           result = {
               "verdict": verdict,
               "candidate_fingerprint": next(iter(fingerprints)),
@@ -129,9 +130,9 @@ jobs:
               "source_commit": "${{ github.event.workflow_run.head_sha }}",
               "reports_checked": list(reports),
               "all_four_reports_present": True,
-              "baseline_positive_pairs_ge_2": baseline_pair_check,
-              "baseline_positive_pair_count": positive_pairs,
-              "failures": common_failures,
+              "baseline_positive_confirmation_pairs_ge_2": baseline_pair_check,
+              "baseline_positive_confirmation_pair_count": positive_pairs,
+              "failures": failures,
               "live_execution_authorized": False,
               "promotion_authorized": False,
               "statement": (
