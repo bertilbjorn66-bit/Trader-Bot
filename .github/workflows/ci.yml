@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, 'foundation/**', 'research/**', 'integration/**', 'multi-asset-*', 'multi-asset/**']
+    branches: [main, 'foundation/**', 'research/**', 'integration/**', 'multi-asset-*', 'multi-asset/**', 'intelligence-*', 'intelligence/**']
   pull_request:
-    branches: [main, 'adaptive-ensemble-v1']
+    branches: [main, 'adaptive-ensemble-v1', 'multi-asset-foundation-v1', 'multi-asset-*', 'multi-asset/**', 'intelligence-*', 'intelligence/**']
 
 permissions:
   contents: read
