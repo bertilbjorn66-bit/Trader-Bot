@@ -6,12 +6,14 @@ on:
     branches: [adaptive-ensemble-v1]
     paths:
       - "research/adaptive_ensemble_v5.py"
+      - "research/real_time_risk_engine.py"
       - "tests/test_adaptive_ensemble_v5.py"
       - ".github/workflows/25-ADAPTIVE-ENSEMBLE-V5-ROBUSTNESS.yml"
   pull_request:
     branches: [main]
     paths:
       - "research/adaptive_ensemble_v5.py"
+      - "research/real_time_risk_engine.py"
       - "tests/test_adaptive_ensemble_v5.py"
       - ".github/workflows/25-ADAPTIVE-ENSEMBLE-V5-ROBUSTNESS.yml"
   workflow_dispatch:
@@ -63,7 +65,7 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
       - name: Static checks
         run: |
-          ruff check research/adaptive_ensemble_v5.py tests/test_adaptive_ensemble_v5.py
+          ruff check research/adaptive_ensemble_v5.py tests/test_adaptive_ensemble_v5.py research/real_time_risk_engine.py
           mypy research/adaptive_ensemble_v5.py
       - name: Unit tests
         run: pytest -q tests/test_adaptive_ensemble_v5.py
@@ -326,6 +328,7 @@ jobs:
               assert report['live_execution_authorized'] is False
               confirmation = report['chronological_confirmation_40pct']
               assert confirmation['n'] >= 100
+              assert report['promotion_recommendation'] in {'PRELIMINARY_PASS', 'NOT_READY'}
               print(path.name, report['status'], confirmation, report['stress']['1.5'], report['promotion_recommendation'])
 
           print('ALL_V5_CROSSCHECKS_COMPLETED=true')
