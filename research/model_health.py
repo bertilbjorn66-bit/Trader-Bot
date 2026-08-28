@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from statistics import mean, pstdev
 from typing import Sequence
 
 
-class HealthState:
+class HealthState(StrEnum):
     HEALTHY = "HEALTHY"
     CAUTIOUS = "CAUTIOUS"
     DEFENSIVE = "DEFENSIVE"
@@ -24,7 +25,7 @@ class HealthMetrics:
 
 @dataclass(frozen=True, slots=True)
 class HealthAssessment:
-    state: str
+    state: HealthState
     reasons: tuple[str, ...]
     metrics: HealthMetrics
 
@@ -83,5 +84,12 @@ def assess_model_health(
         2: HealthState.DEFENSIVE,
         3: HealthState.OBSERVATION_ONLY,
     }[severity]
-    metrics = HealthMetrics(recent_mean, reference_mean, recent_vol, reference_vol, recent_error_rate, reference_error_rate)
+    metrics = HealthMetrics(
+        recent_mean,
+        reference_mean,
+        recent_vol,
+        reference_vol,
+        recent_error_rate,
+        reference_error_rate,
+    )
     return HealthAssessment(state, tuple(reasons), metrics)
