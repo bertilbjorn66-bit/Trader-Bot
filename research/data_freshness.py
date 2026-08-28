@@ -25,8 +25,8 @@ class DataFeedContract:
     maximum_staleness: timedelta
 
     def validate(self) -> None:
-        if not self.provider.strip():
-            raise ValueError("provider must not be empty")
+        if not self.provider.strip() or self.provider == "provider_pending":
+            raise ValueError("a concrete data provider is required")
         if not self.required_timeframes:
             raise ValueError("at least one timeframe is required")
         if not self.required_fields:
@@ -105,19 +105,15 @@ def refresh_window(
     if current_time.tzinfo is None:
         raise ValueError("now must be timezone-aware")
     state = assess_freshness(snapshot, contract, now=current_time)
-    if state is FreshnessState.UNKNOWN:
+    if state in {FreshnessState.UNKNOWN, FreshnessState.CURRENT}:
         return None
-    if state is FreshnessState.CURRENT:
-        return None
-    start = snapshot.as_of if snapshot is not None else current_time - contract.maximum_staleness
+    start = snapshot.as_of
     if start >= current_time:
         return None
     return start, current_time
 
 
 def default_feed_contracts() -> dict[AssetClass, DataFeedContract]:
-    """Conservative defaults; domain adapters remain responsible for provider semantics."""
-
     return {
         AssetClass.FOREX: DataFeedContract(
             AssetClass.FOREX,
@@ -145,11 +141,11 @@ def default_feed_contracts() -> dict[AssetClass, DataFeedContract]:
         ),
         AssetClass.COMMODITY: DataFeedContract(
             AssetClass.COMMODITY,
-            "provider_pending",
-            (Timeframe.FIVE_MINUTES, Timeframe.ONE_HOUR, Timeframe.ONE_DAY),
+            "stooq_initial",
+            (Timeframe.ONE_DAY,),
             ("timestamp", "open", "high", "low", "close", "volume"),
-            timedelta(hours=1),
-            timedelta(hours=6),
+            timedelta(days=1),
+            timedelta(days=3),
         ),
         AssetClass.EQUITY: DataFeedContract(
             AssetClass.EQUITY,
