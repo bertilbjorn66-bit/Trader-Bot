@@ -28,6 +28,7 @@ class TradeAction(StrEnum):
 @dataclass(frozen=True, slots=True)
 class TradeObservation:
     timestamp: int
+    instrument: str
     asset_class: AssetClass
     unrealized_return: float
     max_favorable_excursion: float
@@ -41,6 +42,22 @@ class TradeObservation:
     def validate(self) -> None:
         if self.timestamp < 0:
             raise ValueError("timestamp must be non-negative")
+        if not self.instrument.strip():
+            raise ValueError("instrument must be non-empty")
+        if self.instrument != self.instrument.upper():
+            raise ValueError("instrument must be normalized uppercase")
+        for name, value in (
+            ("unrealized_return", self.unrealized_return),
+            ("max_favorable_excursion", self.max_favorable_excursion),
+            ("max_adverse_excursion", self.max_adverse_excursion),
+            ("thesis_strength", self.thesis_strength),
+            ("liquidity_score", self.liquidity_score),
+            ("cost_score", self.cost_score),
+            ("context_score", self.context_score),
+            ("invalidation_score", self.invalidation_score),
+        ):
+            if not isinstance(value, (int, float)) or value != value or value in {float("inf"), float("-inf")}:
+                raise ValueError(f"{name} must be finite")
         for name, value in (
             ("thesis_strength", self.thesis_strength),
             ("liquidity_score", self.liquidity_score),
@@ -92,6 +109,7 @@ class TradeEvolutionState:
 
 @dataclass(frozen=True, slots=True)
 class TradeTrajectorySummary:
+    instrument: str
     asset_class: AssetClass
     trajectories: int
     positive_final_return_rate: float
@@ -106,27 +124,27 @@ def summarize_trade_trajectories(
     *,
     policy: TradeEvolutionPolicy | None = None,
 ) -> tuple[TradeTrajectorySummary, ...]:
-    """Learn completed trade paths without crossing asset or chronological boundaries."""
+    """Learn completed trade paths without crossing instrument or chronological boundaries."""
 
     active_policy = policy if policy is not None else TradeEvolutionPolicy()
     active_policy.validate()
-    groups: dict[AssetClass, list[list[TradeObservation]]] = {}
+    groups: dict[tuple[str, AssetClass], list[list[TradeObservation]]] = {}
     for raw_trajectory in trajectories:
         trajectory = list(raw_trajectory)
         if not trajectory:
             continue
         for observation in trajectory:
             observation.validate()
-        asset_classes = {observation.asset_class for observation in trajectory}
-        if len(asset_classes) != 1:
-            raise ValueError("a trade trajectory cannot mix asset classes")
+        keys = {(observation.instrument, observation.asset_class) for observation in trajectory}
+        if len(keys) != 1:
+            raise ValueError("a trade trajectory cannot mix instruments or asset classes")
         timestamps = [observation.timestamp for observation in trajectory]
         if timestamps != sorted(timestamps) or len(set(timestamps)) != len(timestamps):
             raise ValueError("trade observations must have unique strictly increasing timestamps")
-        groups.setdefault(trajectory[0].asset_class, []).append(trajectory)
+        groups.setdefault(next(iter(keys)), []).append(trajectory)
 
     summaries: list[TradeTrajectorySummary] = []
-    for asset_class, asset_trajectories in sorted(groups.items(), key=lambda item: item[0].value):
+    for (instrument, asset_class), asset_trajectories in sorted(groups.items()):
         final_returns = [path[-1].unrealized_return for path in asset_trajectories]
         favorable_excursions = [max(point.max_favorable_excursion for point in path) for path in asset_trajectories]
         adverse_excursions = [max(point.max_adverse_excursion for point in path) for path in asset_trajectories]
@@ -139,6 +157,7 @@ def summarize_trade_trajectories(
         ]
         summaries.append(
             TradeTrajectorySummary(
+                instrument=instrument,
                 asset_class=asset_class,
                 trajectories=len(asset_trajectories),
                 positive_final_return_rate=sum(value > 0.0 for value in final_returns) / len(final_returns),
@@ -188,9 +207,9 @@ def evaluate_trade_evolution(
         raise ValueError("at least one trade observation is required")
     for observation in observations:
         observation.validate()
-    asset_classes = {observation.asset_class for observation in observations}
-    if len(asset_classes) != 1:
-        raise ValueError("a trade cannot change asset class during its lifecycle")
+    identities = {(observation.instrument, observation.asset_class) for observation in observations}
+    if len(identities) != 1:
+        raise ValueError("a trade cannot change instrument or asset class during its lifecycle")
     timestamps = [observation.timestamp for observation in observations]
     if timestamps != sorted(timestamps):
         raise ValueError("trade observations must be supplied chronologically")
