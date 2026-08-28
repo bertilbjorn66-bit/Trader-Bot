@@ -63,8 +63,10 @@ class RiskState:
         return max(0.0, (self.equity_peak - self.equity) / self.equity_peak)
 
 
-def evaluate(snapshot: RiskSnapshot, state: RiskState, policy: RiskPolicy = RiskPolicy()) -> RiskAction:
+def evaluate(snapshot: RiskSnapshot, state: RiskState, policy: RiskPolicy | None = None) -> RiskAction:
     """Fail closed: any stale/bad input can only HOLD/EXIT/HALT, never ENTER."""
+    if policy is None:
+        policy = RiskPolicy()
     age = snapshot.now_ms - snapshot.quote_ts_ms
     if state.halted or state.drawdown_pct >= policy.hard_drawdown_pct:
         return RiskAction.HALT
@@ -94,8 +96,10 @@ def evaluate(snapshot: RiskSnapshot, state: RiskState, policy: RiskPolicy = Risk
     return RiskAction.ENTER
 
 
-def should_exit_immediately(snapshot: RiskSnapshot, state: RiskState, policy: RiskPolicy = RiskPolicy()) -> bool:
+def should_exit_immediately(snapshot: RiskSnapshot, state: RiskState, policy: RiskPolicy | None = None) -> bool:
     """Minimal O(1) emergency path for a live/shadow adapter's fast loop."""
+    if policy is None:
+        policy = RiskPolicy()
     if state.halted or state.drawdown_pct >= policy.hard_drawdown_pct:
         return True
     age = snapshot.now_ms - snapshot.quote_ts_ms
