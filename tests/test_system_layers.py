@@ -4,19 +4,28 @@ from research.system_layers import LayerKind, architecture_ready, required_layer
 
 def test_architecture_catalog_contains_every_required_operating_layer() -> None:
     names = set(required_layer_names())
-    assert LayerKind.DATA in names
-    assert LayerKind.DOMAIN_CONTEXT in names
-    assert LayerKind.BEHAVIORAL_MEMORY in names
-    assert LayerKind.EXPERT_ENSEMBLE in names
-    assert LayerKind.PROBABILITY in names
-    assert LayerKind.COST in names
-    assert LayerKind.LIQUIDITY in names
-    assert LayerKind.RISK in names
-    assert LayerKind.PORTFOLIO in names
-    assert LayerKind.OPPORTUNITY in names
-    assert LayerKind.HEALTH in names
-    assert LayerKind.AUDIT in names
-    assert LayerKind.EXECUTION_BOUNDARY in names
+    for required in (
+        LayerKind.DATA,
+        LayerKind.DATA_FRESHNESS,
+        LayerKind.INTEGRITY,
+        LayerKind.DOMAIN_CONTEXT,
+        LayerKind.BEHAVIORAL_MEMORY,
+        LayerKind.EXPERT_ENSEMBLE,
+        LayerKind.PROBABILITY,
+        LayerKind.CALIBRATION,
+        LayerKind.COST,
+        LayerKind.LIQUIDITY,
+        LayerKind.RISK,
+        LayerKind.PORTFOLIO,
+        LayerKind.OPPORTUNITY,
+        LayerKind.HEALTH,
+        LayerKind.TRADE_EVOLUTION,
+        LayerKind.PAPER_SHADOW,
+        LayerKind.SAFETY,
+        LayerKind.AUDIT,
+        LayerKind.EXECUTION_BOUNDARY,
+    ):
+        assert required in names
     assert LayerKind.VALIDATION not in names
 
 
