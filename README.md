@@ -1,12 +1,14 @@
 # DuraPlex Trader Bot
 
-Private, research-first algorithmic trading system.
+Research-first algorithmic trading system.
+
+The source repository is currently public and contains the public-safe engineering shell: contracts, orchestration, tests, documentation, and non-sensitive infrastructure. Private market data, proprietary research evidence, credentials, private feature stores, and production configuration must remain outside this repository.
 
 ## Engineering status
 
-The system is built in audited stages. The architecture separates market-data acquisition, data integrity, asset-aware market context, historical similarity, probability/risk, portfolio control, decision, safety, execution boundaries, validation, and audit layers.
+The system is built in audited stages. The architecture separates market-data acquisition, data integrity, asset-aware market context, historical similarity, probability/risk, portfolio control, decision, trade evolution, data freshness, safety, execution boundaries, validation, and audit layers.
 
-**Current boundary:** the system is research-first and non-live by default. The existing Forex V5 profitability validation remains independently gated while the multi-asset foundation is expanded.
+**Current boundary:** the system is research-first and non-live by default. Profitability validation is a later gated stage and is not used to declare the architecture complete.
 
 ## Asset coverage direction
 
@@ -23,9 +25,9 @@ New instruments enter as `RESEARCH_ONLY` and must earn validation independently.
 
 The bot is not designed to trade constantly. Its operating flow is:
 
-`observe -> validate -> understand context -> estimate edge -> test costs -> check risk -> check portfolio -> decide -> audit`
+`refresh -> validate -> understand context -> estimate edge -> test costs -> check liquidity -> check risk -> check portfolio -> evaluate trade evolution -> decide -> audit`
 
-`WAIT` and `BLOCKED` are normal successful outcomes. No component is allowed to manufacture certainty, force a trade, or bypass the decision and safety boundaries.
+`WAIT` and `BLOCKED` are normal successful outcomes. No component is allowed to manufacture certainty, force a trade, use stale data silently, or bypass the decision and safety boundaries.
 
 ## Core principles
 
@@ -33,10 +35,12 @@ The bot is not designed to trade constantly. Its operating flow is:
 - Provider-independent market-data interface.
 - Asset-specific market rules rather than one-size-fits-all assumptions.
 - BID/ASK or equivalent executable pricing remains distinct through the pipeline where available.
-- Raw market data is temporary unless deliberately retained for reproducibility/audit.
-- Analytical storage uses Parquet/DuckDB where persistent research data is required.
+- Raw market data is kept outside the public repository and retained only when needed for reproducibility/audit.
+- Analytical storage uses Parquet/DuckDB where persistent private research data is required.
 - Historical evaluation must be chronological and leakage-resistant.
 - Each asset domain must model realistic transaction costs and liquidity.
+- Automatic refresh is incremental, bounded, resumable, and independently scoped per asset domain.
+- A stale or unverifiable feed blocks downstream empirical use.
 - No strategy is considered profitable merely because it fits historical data.
 - Live execution is disabled until research, validation, risk controls, portfolio safeguards, and operational gates pass.
 
@@ -46,4 +50,4 @@ This software cannot guarantee profits, eliminate losses, or predict the future.
 
 ## Development
 
-Python is the primary research/control language. Providers and venue adapters must remain behind provider-independent interfaces so that crypto exchanges, metals venues and equity data sources can be introduced without rewriting the research or risk layers.
+Python is the primary research/control language. Providers and venue adapters remain behind provider-independent interfaces so that crypto exchanges, metals venues and equity data sources can be introduced without rewriting the research or risk layers.
