@@ -68,7 +68,7 @@ def default_real_data_sources() -> tuple[RealDataSource, ...]:
             raw_format="broker historical export",
             public_or_authenticated="public historical access",
             primary_url="https://www.dukascopy.com/api/data/get/historical-data-export",
-            notes="Preferred source for FX and supported CFD-style instruments. Preserve bid/ask and volume where supplied.",
+            notes="Preferred source for FX, metals and supported commodity CFDs. Preserve bid/ask and volume where supplied; verify instrument availability before ingestion.",
             required_fields=frozenset({DataField.TIMESTAMP, DataField.OPEN, DataField.HIGH, DataField.LOW, DataField.CLOSE}),
         ),
         RealDataSource(
@@ -80,7 +80,7 @@ def default_real_data_sources() -> tuple[RealDataSource, ...]:
             public_or_authenticated="public market data",
             primary_url="https://data.binance.vision/",
             notes="Use public market data only. Keep venue identity, trade/aggTrade semantics, volume and funding/derivatives fields separate.",
-            required_fields=frozenset({DataField.TIMESTAMP, DataField.OPEN, DataField.HIGH, DataField.LOW, DataField.CLOSE, DataField.VOLUME}),
+            required_fields=frozenset({DataField.TIMESTAMP, DataField.OPEN, DataField.HIGH, DataField.LOW, DataField.CLOSE, DataField.VOLUME, DataField.TRADE_COUNT}),
         ),
         RealDataSource(
             source_id="STOOQ_MARKET_HISTORY",
@@ -90,7 +90,7 @@ def default_real_data_sources() -> tuple[RealDataSource, ...]:
             raw_format="CSV historical download",
             public_or_authenticated="public access",
             primary_url="https://stooq.com/q/d/l/",
-            notes="Use for broad historical daily coverage. Intraday equity research should use a provider with explicit intraday licensing and exchange-aware metadata.",
+            notes="Use for broad historical daily coverage. Intraday equity/index research requires a provider with explicit intraday licensing and exchange-aware metadata.",
             required_fields=frozenset({DataField.TIMESTAMP, DataField.OPEN, DataField.HIGH, DataField.LOW, DataField.CLOSE, DataField.VOLUME}),
         ),
     )
