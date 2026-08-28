@@ -35,11 +35,7 @@ class KnowledgeScope(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class InstrumentCulture:
-    """Native market grammar for one instrument.
-
-    Every instrument has its own culture. Cross-asset information is not part of
-    the native culture and can only enter through approved relationship evidence.
-    """
+    """Native market grammar for one instrument."""
 
     symbol: str
     venue: str
@@ -111,6 +107,9 @@ def culture_for(profile: InstrumentProfile) -> InstrumentCulture:
             MarketElement.HISTORICAL_MEMORY,
         }
     )
+    elements: frozenset[MarketElement]
+    drivers: tuple[str, ...]
+    trade_keys: tuple[str, ...]
     if profile.asset_class is AssetClass.FOREX:
         elements = common | {MarketElement.MACRO, MarketElement.FUNDING}
         drivers = ("currencies", "rates", "macro_events", "session_flows")
@@ -167,12 +166,7 @@ def may_influence_target(
     target: InstrumentCulture,
     knowledge: ScopedKnowledge,
 ) -> bool:
-    """Return whether a learned fact may influence a target instrument.
-
-    Same-instrument knowledge is native. Cross-instrument sharing requires an
-    explicitly broad knowledge scope and the same asset class. Cross-asset sharing
-    is never implicit and must be handled by a separate relationship-evidence layer.
-    """
+    """Return whether a learned fact may influence a target instrument."""
 
     validate_knowledge_for_culture(knowledge, source)
     if source.symbol == target.symbol and source.venue == target.venue:
