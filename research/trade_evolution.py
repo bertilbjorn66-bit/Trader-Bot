@@ -172,9 +172,9 @@ def evaluate_trade_evolution(
     *,
     policy: TradeEvolutionPolicy | None = None,
 ) -> TradeEvolutionState:
-    """Evaluate an open trade using its evolution history without changing its entry thesis."""
+    """Evaluate an open trade without reordering or changing its entry thesis."""
 
-    active_policy = policy or TradeEvolutionPolicy()
+    active_policy = policy if policy is not None else TradeEvolutionPolicy()
     active_policy.validate()
     if not observations:
         raise ValueError("at least one trade observation is required")
@@ -183,12 +183,13 @@ def evaluate_trade_evolution(
     asset_classes = {observation.asset_class for observation in observations}
     if len(asset_classes) != 1:
         raise ValueError("a trade cannot change asset class during its lifecycle")
-    ordered = sorted(observations, key=lambda item: item.timestamp)
-    timestamps = [observation.timestamp for observation in ordered]
+    timestamps = [observation.timestamp for observation in observations]
+    if timestamps != sorted(timestamps):
+        raise ValueError("trade observations must be supplied chronologically")
     if len(set(timestamps)) != len(timestamps):
         raise ValueError("trade observations must have unique timestamps")
-    current = ordered[-1]
-    periods = len(ordered)
+    current = observations[-1]
+    periods = len(observations)
 
     if current.invalidation_score >= active_policy.invalidation_threshold:
         return TradeEvolutionState(
