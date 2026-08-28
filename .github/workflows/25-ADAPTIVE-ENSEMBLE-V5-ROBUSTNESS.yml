@@ -1,3 +1,4 @@
+# V5 robustness runner: bounded parallel empirical validation; non-live only.
 name: "25 — ADAPTIVE ENSEMBLE V5 ROBUSTNESS — NON-LIVE"
 
 on:
