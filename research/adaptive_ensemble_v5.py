@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import heapq
 import json
 import math
@@ -31,6 +32,23 @@ LOWER_Z = 1.28
 MIN_VOTE_CONF = 0.58
 MAX_DISAGREEMENT = 0.30
 MAX_SPREAD_Z = 2.0
+DISCOVERY_FRACTION = 0.60
+CONFIRMATION_FRACTION = 0.40
+
+CANDIDATE_SPEC = {
+    "strategy_set": STRATEGIES,
+    "min_context_observations": MIN_CONTEXT_OBS,
+    "shrinkage": SHRINKAGE,
+    "lower_confidence_z": LOWER_Z,
+    "minimum_vote_confidence": MIN_VOTE_CONF,
+    "maximum_ensemble_disagreement": MAX_DISAGREEMENT,
+    "maximum_spread_z": MAX_SPREAD_Z,
+    "discovery_fraction": DISCOVERY_FRACTION,
+    "confirmation_fraction": CONFIRMATION_FRACTION,
+}
+CANDIDATE_FINGERPRINT = hashlib.sha256(
+    json.dumps(CANDIDATE_SPEC, sort_keys=True, separators=(",", ":")).encode("utf-8")
+).hexdigest()
 
 
 class Stat:
@@ -135,6 +153,7 @@ def analogue_vote(
     horizon: int,
     costs: ExecutionAssumptions,
     target_index: int,
+    learning_cutoff_index: int | None,
 ) -> tuple[int, float]:
     scaler = fit_scaler(history, DEFAULT_FEATURES)
     neighbours = nearest_states(target, history, scaler, k=min(100, len(history)))
@@ -142,6 +161,8 @@ def analogue_vote(
     for neighbour, distance in neighbours:
         index = state_index[neighbour.timestamp]
         if index + horizon >= target_index:
+            continue
+        if learning_cutoff_index is not None and index + horizon >= learning_cutoff_index:
             continue
         direction = "long" if float(neighbour.features.get("momentum") or 0.0) >= 0.0 else "short"
         outcome = future_outcome(bars, index, horizon, direction)
@@ -218,11 +239,19 @@ def evaluate_pair(
     rows, _quality = _execution_valid_rows(rows, pair)
     bars = _merge(*_market_bars(rows))
     states = [state_from_bar_window(bars, i, STATE_LOOKBACK) for i in range(STATE_LOOKBACK, len(bars))]
+    if len(states) <= history_states + max(DEFAULT_HORIZONS) + 10:
+        raise ValueError(f"{pair}: insufficient states for V5 evaluation")
     state_index = {state.timestamp: i + STATE_LOOKBACK for i, state in enumerate(states)}
     local: dict[tuple[Any, ...], Stat] = defaultdict(Stat)
     global_stats: dict[tuple[str, int], Stat] = defaultdict(Stat)
     pending: list[tuple[int, tuple[Any, ...], tuple[Any, ...], tuple[Any, ...], str, int, float]] = []
     decisions: list[dict[str, Any]] = []
+
+    split_position = int(len(states) * DISCOVERY_FRACTION)
+    split_position = max(history_states, split_position)
+    split_position = min(split_position, len(states) - max(DEFAULT_HORIZONS) - 1)
+    learning_cutoff_index = state_index[states[split_position].timestamp]
+    cutoff_timestamp = states[split_position].timestamp
 
     def drain(mature_index: int) -> None:
         while pending and pending[0][0] <= mature_index:
@@ -235,7 +264,9 @@ def evaluate_pair(
     for position in range(history_states, len(states) - max(DEFAULT_HORIZONS), sample_stride):
         target = states[position]
         target_index = state_index[target.timestamp]
-        drain(target_index)
+        phase = "discovery" if position < split_position else "confirmation"
+        if phase == "discovery":
+            drain(target_index)
         history = states[position - history_states:position]
         regime = classify_regime(
             float(target.features.get("trend") or 0.0),
@@ -255,7 +286,17 @@ def evaluate_pair(
         base_votes = strategy_votes(target, history)
         for horizon in DEFAULT_HORIZONS:
             votes = dict(base_votes)
-            votes["analogue"] = analogue_vote(pair, target, history, state_index, bars, horizon, costs, target_index)
+            votes["analogue"] = analogue_vote(
+                pair,
+                target,
+                history,
+                state_index,
+                bars,
+                horizon,
+                costs,
+                target_index,
+                learning_cutoff_index,
+            )
             strategy, direction_sign, confidence, reason = route(
                 votes, local, global_stats, horizon, pair, f"regime:{regime}", session
             )
@@ -267,6 +308,7 @@ def evaluate_pair(
                     "timestamp": target.timestamp.isoformat(),
                     "pair": pair,
                     "horizon": horizon,
+                    "phase": phase,
                     "regime": f"regime:{regime}",
                     "session": session,
                     "strategy": strategy,
@@ -276,6 +318,8 @@ def evaluate_pair(
                     "outcome_pips": value,
                 })
 
+            if phase != "discovery":
+                continue
             for name, (vote_direction, vote_confidence) in votes.items():
                 if vote_direction == 0 or vote_confidence < MIN_VOTE_CONF:
                     continue
@@ -288,6 +332,11 @@ def evaluate_pair(
                     (maturity, exact_key, regime_key, pair_key, name, horizon, vote_value),
                 )
 
+    for record in decisions:
+        if record["timestamp"] >= cutoff_timestamp.isoformat():
+            record["candidate_frozen_before_confirmation"] = True
+        else:
+            record["candidate_frozen_before_confirmation"] = False
     return decisions
 
 
@@ -305,6 +354,7 @@ def run(
 
     all_records: list[dict[str, Any]] = []
     pair_summaries: dict[str, Any] = {}
+    pair_cutoffs: dict[str, str] = {}
     for pair in PAIR_TO_SYMBOL:
         pip = PAIR_PIP[pair]
         costs = ExecutionAssumptions(slippage=slippage_pips * pip, commission=commission_pips * pip)
@@ -317,13 +367,14 @@ def run(
         )
         all_records.extend(records)
         pair_summaries[pair] = summary(records)
+        confirmation = [r for r in records if r["phase"] == "confirmation"]
+        pair_summaries[pair + "::confirmation"] = summary(confirmation)
+        cutoff_candidates = [r["timestamp"] for r in records if r["phase"] == "confirmation"]
+        pair_cutoffs[pair] = min(cutoff_candidates) if cutoff_candidates else ""
 
     ordered = sorted(all_records, key=lambda item: (item["timestamp"], item["pair"], item["horizon"]))
-    timestamps = sorted({item["timestamp"] for item in ordered})
-    split_at = max(1, int(len(timestamps) * 0.60))
-    cutoff = timestamps[min(split_at, len(timestamps) - 1)] if timestamps else ""
-    discovery = [item for item in ordered if item["timestamp"] < cutoff]
-    confirmation = [item for item in ordered if item["timestamp"] >= cutoff]
+    discovery = [item for item in ordered if item["phase"] == "discovery"]
+    confirmation = [item for item in ordered if item["phase"] == "confirmation"]
     stress = {str(cost): summary(confirmation, cost) for cost in (0.0, 0.2, 0.5, 1.0, 1.5)}
     years: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in confirmation:
@@ -335,6 +386,7 @@ def run(
     )
     base = summary(confirmation)
     hard = stress["1.5"]
+    positive_year_fraction = positive_years / len(year_reports) if year_reports else 0.0
     preliminary = bool(
         base["n"] >= 100
         and base["expectancy_pips"] is not None
@@ -343,12 +395,14 @@ def run(
         and hard["expectancy_pips"] is not None
         and hard["expectancy_pips"] > 0.0
         and (hard["profit_factor"] or 0.0) > 1.0
-        and (positive_years / len(year_reports) if year_reports else 0.0) >= 0.67
+        and positive_year_fraction >= 0.67
     )
     return {
         "status": "ADAPTIVE_ENSEMBLE_V5_COMPLETED",
         "empirical": True,
         "synthetic": False,
+        "candidate_fingerprint": CANDIDATE_FINGERPRINT,
+        "candidate_spec": CANDIDATE_SPEC,
         "strategy_set": list(STRATEGIES),
         "decision_count": len(ordered),
         "pair_summaries": pair_summaries,
@@ -360,7 +414,21 @@ def run(
             "years": year_reports,
             "positive_year_count": positive_years,
             "observed_year_count": len(year_reports),
-            "positive_year_fraction": positive_years / len(year_reports) if year_reports else 0.0,
+            "positive_year_fraction": positive_year_fraction,
+        },
+        "holdout_integrity": {
+            "candidate_frozen_before_confirmation": True,
+            "confirmation_learning_updates": False,
+            "confirmation_outcomes_feed_back_into_model": False,
+            "analogue_labels_restricted_to_discovery": True,
+            "chronological_timestamp_split": True,
+            "pair_cutoff_timestamps": pair_cutoffs,
+        },
+        "controlled_operation": {
+            "abstain_on_disagreement": True,
+            "spread_filter_enabled": True,
+            "evidence_floor_enabled": True,
+            "decision_order": ["context", "evidence", "cost", "risk", "decision"],
         },
         "design": {
             "multi_expert_consensus": True,
@@ -373,7 +441,7 @@ def run(
             "abstain_on_disagreement": True,
             "live_orders": False,
         },
-        "validation_cutoff_timestamp": cutoff,
+        "validation_cutoff_timestamps": pair_cutoffs,
         "promotion_recommendation": "PRELIMINARY_PASS" if preliminary else "NOT_READY",
         "promotion_authorized": False,
         "live_execution_authorized": False,
@@ -398,8 +466,10 @@ def main() -> None:
         "confirmation": result["chronological_confirmation_40pct"],
         "stress_1_5": result["stress"]["1.5"],
         "year_stability": result["year_stability"],
+        "holdout_integrity": result["holdout_integrity"],
+        "candidate_fingerprint": result["candidate_fingerprint"],
         "promotion_recommendation": result["promotion_recommendation"],
-        "validation_cutoff_timestamp": result["validation_cutoff_timestamp"],
+        "validation_cutoff_timestamps": result["validation_cutoff_timestamps"],
     }, sort_keys=True))
     print("LIVE_EXECUTION_AUTHORIZED=false")
 
