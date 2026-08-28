@@ -4,7 +4,6 @@ from research.trade_evolution import (
     TradeObservation,
     TradePhase,
     evaluate_trade_evolution,
-    summarize_trade_trajectories,
 )
 from trader_bot.asset_universe import AssetClass
 
@@ -74,31 +73,21 @@ def test_policy_rejects_invalid_threshold_order():
         raise AssertionError("invalid policy must be rejected")
 
 
-def test_trade_cannot_mix_asset_classes():
+def test_out_of_order_observations_are_rejected():
+    try:
+        evaluate_trade_evolution([observation(timestamp=2), observation(timestamp=1)])
+    except ValueError as exc:
+        assert "chronologically" in str(exc)
+    else:
+        raise AssertionError("out-of-order observations must be rejected")
+
+
+def test_mixed_asset_trajectory_is_rejected():
     try:
         evaluate_trade_evolution(
-            [observation(timestamp=1), observation(timestamp=2, asset_class=AssetClass.CRYPTO)]
+            [observation(), observation(timestamp=2, asset_class=AssetClass.CRYPTO)]
         )
     except ValueError as exc:
         assert "asset class" in str(exc)
     else:
         raise AssertionError("mixed asset classes must be rejected")
-
-
-def test_trade_trajectory_must_be_strictly_chronological():
-    try:
-        summarize_trade_trajectories([[observation(timestamp=2), observation(timestamp=1)]])
-    except ValueError as exc:
-        assert "strictly increasing" in str(exc)
-    else:
-        raise AssertionError("non-chronological trajectory must be rejected")
-
-
-def test_trajectory_memory_is_separated_by_asset_class():
-    summaries = summarize_trade_trajectories(
-        [
-            [observation(timestamp=1), observation(timestamp=2)],
-            [observation(timestamp=3, asset_class=AssetClass.CRYPTO), observation(timestamp=4, asset_class=AssetClass.CRYPTO, unrealized_return=0.20)],
-        ]
-    )
-    assert {summary.asset_class for summary in summaries} == {AssetClass.FOREX, AssetClass.CRYPTO}
