@@ -78,27 +78,30 @@ def allocate(
     snapshot: PortfolioSnapshot,
     limits: PortfolioLimits | None = None,
 ) -> AllocationDecision:
-    """Reserve risk only when the upstream flow is READY.
+    """Allocate risk only after hard portfolio caps and upstream flow checks pass.
 
-    The allocator never increases pressure to trade. A full, uncertain or stale
-    portfolio simply returns a bounded rejection reason.
+    Hard portfolio concentration/count limits are evaluated first so the
+    returned reason identifies the binding portfolio constraint even when the
+    upstream assessment is otherwise WAIT.
     """
 
     active_limits = limits if limits is not None else PortfolioLimits()
     normalized_symbol = symbol.upper()
-    if assessment.state is not FlowState.READY:
-        return AllocationDecision(False, 0.0, f"flow_state_{assessment.state.lower()}")
+    class_risk = snapshot.risk_for_asset_class(asset_class)
+
     if any(position.symbol.upper() == normalized_symbol for position in snapshot.open_positions):
         return AllocationDecision(False, 0.0, "position_already_open")
     if len(snapshot.open_positions) >= active_limits.max_open_positions:
         return AllocationDecision(False, 0.0, "position_count_limit_reached")
     if snapshot.total_risk >= active_limits.max_total_risk_fraction:
         return AllocationDecision(False, 0.0, "portfolio_risk_limit_reached")
-    if snapshot.risk_for_asset_class(asset_class) >= active_limits.max_asset_class_fraction:
+    if class_risk >= active_limits.max_asset_class_fraction:
         return AllocationDecision(False, 0.0, "asset_class_risk_limit_reached")
+    if assessment.state is not FlowState.READY:
+        return AllocationDecision(False, 0.0, f"flow_state_{assessment.state.lower()}")
 
     available_total = active_limits.max_total_risk_fraction - snapshot.total_risk
-    available_class = active_limits.max_asset_class_fraction - snapshot.risk_for_asset_class(asset_class)
+    available_class = active_limits.max_asset_class_fraction - class_risk
     granted = min(
         active_limits.max_single_position_fraction,
         available_total,
