@@ -1,5 +1,9 @@
 from research.domain_profiles import ContextFeature, domain_profile
-from research.multi_asset_engine import FixedEvidenceAdapter, MultiAssetResearchEngine, ResearchVerdict
+from research.multi_asset_engine import (
+    FixedEvidenceAdapter,
+    MultiAssetResearchEngine,
+    ResearchVerdict,
+)
 from trader_bot.asset_universe import AssetClass, ResearchStatus, default_asset_registry
 from trader_bot.market_flow import MarketEvidence
 from trader_bot.portfolio_flow import PortfolioSnapshot
