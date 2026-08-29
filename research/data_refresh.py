@@ -35,6 +35,13 @@ class RefreshRequest:
         )
 
 
+def _required_offer_sides(contract: DataFeedContract, fallback: OfferSide) -> tuple[OfferSide, ...]:
+    fields = set(contract.required_fields)
+    if {"bid", "ask"}.issubset(fields):
+        return (OfferSide.BID, OfferSide.ASK)
+    return (fallback,)
+
+
 def plan_refresh(
     snapshot: FeedSnapshot | None,
     contract: DataFeedContract,
@@ -47,6 +54,7 @@ def plan_refresh(
     if window is None:
         return ()
     start, end = window
+    sides = _required_offer_sides(contract, offer_side)
     return tuple(
         RefreshRequest(
             asset_class=contract.asset_class,
@@ -54,10 +62,11 @@ def plan_refresh(
             timeframe=timeframe,
             start=start,
             end=end,
-            offer_side=offer_side,
+            offer_side=side,
             provider=contract.provider,
         )
         for timeframe in contract.required_timeframes
+        for side in sides
     )
 
 
