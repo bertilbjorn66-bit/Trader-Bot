@@ -84,6 +84,7 @@ class BinanceProvider:
     @staticmethod
     def _interval(timeframe: Timeframe) -> str:
         mapping = {
+            Timeframe.ONE_SECOND: "1s",
             Timeframe.ONE_MINUTE: "1m",
             Timeframe.TEN_MINUTES: "10m",
             Timeframe.ONE_HOUR: "1h",
@@ -93,7 +94,7 @@ class BinanceProvider:
         try:
             return mapping[timeframe]
         except KeyError as exc:
-            raise ValueError("Binance provider currently supports minute/hour/day candle intervals") from exc
+            raise ValueError("Binance provider currently supports 1s/minute/hour/day candle intervals") from exc
 
     def instruments(self) -> Sequence[Instrument]:
         return [Instrument(id=instrument_id, name=symbol, name_long=symbol) for instrument_id, symbol in sorted(self._symbols.items())]
@@ -119,8 +120,12 @@ class BinanceProvider:
             raise ProviderProtocolError("Expected Binance klines response to be a JSON array")
         bars: list[MarketBar] = []
         for row in payload:
-            if not isinstance(row, list) or len(row) < 6:
+            if not isinstance(row, list) or len(row) < 9:
                 raise ProviderProtocolError("Malformed Binance kline row")
+            try:
+                trade_count = int(row[8])
+            except (TypeError, ValueError) as exc:
+                raise ProviderProtocolError("Invalid Binance kline trade count") from exc
             bars.append(
                 MarketBar(
                     timestamp=self._timestamp(row[0]),
@@ -132,6 +137,7 @@ class BinanceProvider:
                     low=self._decimal(row[3]),
                     close=self._decimal(row[4]),
                     volume=self._decimal(row[5]),
+                    trade_count=trade_count,
                 )
             )
         return [bar for bar in bars if request.start <= bar.timestamp < request.end]
@@ -160,6 +166,6 @@ class BinanceProvider:
     def health_check(self) -> bool:
         try:
             payload = self._get("/api/v3/ping", {})
-            return payload == {}
+            return isinstance(payload, dict) and not payload
         except Exception:
             return False
