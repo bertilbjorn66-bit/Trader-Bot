@@ -171,7 +171,7 @@ def summarize_trade_trajectories(
 
 
 def _domain_penalty(observation: TradeObservation) -> float:
-    """Return a conservative penalty for domain conditions that threaten an open thesis."""
+    """Return a conservative score penalty for domain conditions affecting an open thesis."""
 
     penalty = 0.0
     if observation.asset_class is AssetClass.CRYPTO:
@@ -215,6 +215,7 @@ def evaluate_trade_evolution(
         raise ValueError("trade observations must be supplied chronologically")
     if len(set(timestamps)) != len(timestamps):
         raise ValueError("trade observations must have unique timestamps")
+
     current = observations[-1]
     periods = len(observations)
 
@@ -226,9 +227,11 @@ def evaluate_trade_evolution(
             ("trade_thesis_invalidated",),
         )
 
-    domain_penalty = _domain_penalty(current)
-    stability = min(current.thesis_strength, current.context_score, current.liquidity_score, current.cost_score)
-    deterioration = max(0.0, 1.0 - stability + domain_penalty)
+    # Thesis/context deterioration is the lifecycle risk signal. Liquidity and
+    # cost penalties lower confidence but do not independently manufacture an
+    # exit on a newly opened trade; hard invalidation remains explicit above.
+    thesis_context_stability = min(current.thesis_strength, current.context_score)
+    deterioration = max(0.0, 1.0 - thesis_context_stability)
 
     if deterioration >= active_policy.invalidation_threshold:
         return TradeEvolutionState(
@@ -248,13 +251,19 @@ def evaluate_trade_evolution(
         return TradeEvolutionState(
             TradePhase.DETERIORATING,
             action,
-            max(0.0, 1.0 - deterioration),
+            max(0.0, thesis_context_stability),
             tuple(reasons),
         )
 
+    score = min(1.0, thesis_context_stability - _domain_penalty(current))
     if current.unrealized_return > 0 and current.thesis_strength >= active_policy.favorable_lock_threshold:
-        phase = TradePhase.MATURE if periods >= active_policy.mature_periods else TradePhase.DEVELOPING
-        return TradeEvolutionState(phase, TradeAction.HOLD, min(1.0, stability), ("thesis_remains_supported",))
+        if periods <= active_policy.early_periods:
+            phase = TradePhase.EARLY
+        elif periods >= active_policy.mature_periods:
+            phase = TradePhase.MATURE
+        else:
+            phase = TradePhase.DEVELOPING
+        return TradeEvolutionState(phase, TradeAction.HOLD, max(0.0, score), ("thesis_remains_supported",))
 
     phase = TradePhase.EARLY if periods <= active_policy.early_periods else TradePhase.DEVELOPING
-    return TradeEvolutionState(phase, TradeAction.HOLD, min(1.0, stability), ("trade_remains_valid",))
+    return TradeEvolutionState(phase, TradeAction.HOLD, max(0.0, score), ("trade_remains_valid",))
