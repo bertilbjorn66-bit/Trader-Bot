@@ -4,9 +4,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
-import httpx
-
-from trader_bot.ingestion import IngestionContractError, ingest_series
+from trader_bot.ingestion import IngestionContractError, ingest_series, validate_provider_bars
 from trader_bot.ingestion_cycle import SeriesPlan, run_cycle
 from trader_bot.ingestion_store import IngestionStore
 from trader_bot.models import DataRequest, Instrument, MarketBar, OfferSide, Quote, Timeframe
@@ -124,7 +122,6 @@ def test_invalid_provider_response_fails_closed() -> None:
     )
     wrong = _bar(2, start)
     try:
-        from trader_bot.ingestion import validate_provider_bars
         validate_provider_bars([wrong], request=request)
     except IngestionContractError as exc:
         assert "unexpected instrument" in str(exc)
