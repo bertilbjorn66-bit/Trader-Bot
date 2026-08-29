@@ -66,6 +66,29 @@ class ResearchOnlyAdapter:
         )
 
 
+class FixedEvidenceAdapter:
+    """Deterministic development adapter; never authorizes live execution."""
+
+    def __init__(self, asset_class: AssetClass, evidence: MarketEvidence) -> None:
+        self.asset_class = asset_class
+        self.evidence = evidence
+
+    def observe(self, profile: InstrumentProfile) -> DomainObservation:
+        if profile.asset_class is not self.asset_class:
+            raise ValueError("adapter asset class does not match instrument")
+        profile_contract = contract_for(profile)
+        if profile_contract.mode not in {
+            ResearchMode.HISTORICAL,
+            ResearchMode.WALK_FORWARD,
+            ResearchMode.CONFIRMATION,
+        }:
+            raise ValueError("unsupported research mode")
+        return DomainObservation(
+            available_features=frozenset(domain_profile(profile).required),
+            evidence=self.evidence,
+        )
+
+
 class MultiAssetResearchEngine:
     """Uniform orchestration with asset-specific intelligence at the observation boundary."""
 
@@ -82,12 +105,14 @@ class MultiAssetResearchEngine:
         required = domain_profile(profile).required
         adapter = self._adapters.get(profile.asset_class)
         if adapter is None:
+            reason = "asset_class_intelligence_adapter_missing"
+            flow = FlowAssessment(FlowState.BLOCKED, (reason,), 0.0)
             return ResearchDecision(
                 profile.symbol,
                 profile.asset_class,
                 ResearchVerdict.BLOCKED,
-                ("asset_class_intelligence_adapter_missing",),
-                FlowAssessment(FlowState.BLOCKED, ("asset_class_intelligence_adapter_missing",), 0.0),
+                (reason,),
+                flow,
                 None,
             )
         if adapter.asset_class is not profile.asset_class:
@@ -97,12 +122,13 @@ class MultiAssetResearchEngine:
         missing = tuple(sorted(feature.value for feature in required - observation.available_features))
         if missing:
             reasons = tuple(f"missing_context:{feature}" for feature in missing)
+            flow = FlowAssessment(FlowState.BLOCKED, reasons, 0.0)
             return ResearchDecision(
                 profile.symbol,
                 profile.asset_class,
                 ResearchVerdict.BLOCKED,
                 reasons,
-                FlowAssessment(FlowState.BLOCKED, reasons, 0.0),
+                flow,
                 None,
             )
 
