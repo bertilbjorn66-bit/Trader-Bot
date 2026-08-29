@@ -5,6 +5,7 @@ from typing import Protocol
 
 from trader_bot.asset_universe import AssetClass, InstrumentProfile
 from trader_bot.market_flow import MarketEvidence
+
 from .domain_profiles import ContextFeature, domain_profile
 
 
