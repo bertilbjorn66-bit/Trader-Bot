@@ -117,20 +117,28 @@ def default_instrument_data_plans() -> tuple[InstrumentDataPlan, ...]:
                 symbol=symbol,
                 asset_class=AssetClass.EQUITY,
                 source_id="STOOQ_MARKET_HISTORY",
-                source_symbol=symbol.lower(),
+                source_symbol=f"{symbol.lower()}.us",
                 resolutions=frozenset({DataResolution.DAILY}),
                 required_fields=frozenset({DataField.TIMESTAMP, DataField.OPEN, DataField.HIGH, DataField.LOW, DataField.CLOSE, DataField.VOLUME}),
                 coverage_tier=CoverageTier.DAILY,
             )
         )
 
-    for symbol in ("SPX", "NDX", "DJI", "FTSE", "DAX", "NIKKEI"):
+    index_source_symbols = {
+        "SPX": "^spx",
+        "NDX": "^ndq",
+        "DJI": "^dji",
+        "FTSE": "^ftse",
+        "DAX": "^dax",
+        "NIKKEI": "^nkx",
+    }
+    for symbol, source_symbol in index_source_symbols.items():
         plans.append(
             InstrumentDataPlan(
                 symbol=symbol,
                 asset_class=AssetClass.INDEX,
                 source_id="STOOQ_MARKET_HISTORY",
-                source_symbol=symbol.lower(),
+                source_symbol=source_symbol,
                 resolutions=frozenset({DataResolution.DAILY}),
                 required_fields=frozenset({DataField.TIMESTAMP, DataField.OPEN, DataField.HIGH, DataField.LOW, DataField.CLOSE, DataField.VOLUME}),
                 coverage_tier=CoverageTier.DAILY,
