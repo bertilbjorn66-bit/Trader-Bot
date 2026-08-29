@@ -1,4 +1,4 @@
--- Mirrors the Trader Bot control-plane migrations applied to the dedicated
+-- Mirrors the Trader Bot control-plane schema and security hardening applied to the dedicated
 -- Supabase project. Raw market observations remain outside this relational plane.
 
 create extension if not exists pgcrypto;
@@ -115,6 +115,7 @@ create index if not exists market_series_instrument_idx on public.market_series(
 create index if not exists market_refresh_runs_series_started_idx on public.market_refresh_runs(series_id, started_at desc);
 create index if not exists market_knowledge_scopes_instrument_idx on public.market_knowledge_scopes(instrument_id);
 create index if not exists market_relationship_evidence_source_target_idx on public.market_relationship_evidence(source_instrument_id, target_instrument_id);
+create index if not exists market_relationship_evidence_target_instrument_idx on public.market_relationship_evidence(target_instrument_id);
 
 alter table public.market_providers enable row level security;
 alter table public.market_instruments enable row level security;
@@ -127,6 +128,7 @@ alter table public.market_relationship_evidence enable row level security;
 
 create or replace function public.set_updated_at() returns trigger
 language plpgsql
+set search_path = pg_catalog, public
 as $$
 begin
   new.updated_at = now();
@@ -146,3 +148,20 @@ drop trigger if exists market_series_health_set_updated_at on public.market_seri
 create trigger market_series_health_set_updated_at before update on public.market_series_health for each row execute function public.set_updated_at();
 drop trigger if exists market_knowledge_scopes_set_updated_at on public.market_knowledge_scopes;
 create trigger market_knowledge_scopes_set_updated_at before update on public.market_knowledge_scopes for each row execute function public.set_updated_at();
+
+drop policy if exists market_providers_service_role on public.market_providers;
+create policy market_providers_service_role on public.market_providers for all to service_role using (true) with check (true);
+drop policy if exists market_instruments_service_role on public.market_instruments;
+create policy market_instruments_service_role on public.market_instruments for all to service_role using (true) with check (true);
+drop policy if exists market_series_service_role on public.market_series;
+create policy market_series_service_role on public.market_series for all to service_role using (true) with check (true);
+drop policy if exists market_refresh_policies_service_role on public.market_refresh_policies;
+create policy market_refresh_policies_service_role on public.market_refresh_policies for all to service_role using (true) with check (true);
+drop policy if exists market_series_health_service_role on public.market_series_health;
+create policy market_series_health_service_role on public.market_series_health for all to service_role using (true) with check (true);
+drop policy if exists market_refresh_runs_service_role on public.market_refresh_runs;
+create policy market_refresh_runs_service_role on public.market_refresh_runs for all to service_role using (true) with check (true);
+drop policy if exists market_knowledge_scopes_service_role on public.market_knowledge_scopes;
+create policy market_knowledge_scopes_service_role on public.market_knowledge_scopes for all to service_role using (true) with check (true);
+drop policy if exists market_relationship_evidence_service_role on public.market_relationship_evidence;
+create policy market_relationship_evidence_service_role on public.market_relationship_evidence for all to service_role using (true) with check (true);
