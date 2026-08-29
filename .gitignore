@@ -17,6 +17,12 @@ ENV/
 !.env.example
 *.pem
 *.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*credentials*.json
+*secrets*.json
 
 # Runtime / logs
 logs/
@@ -26,16 +32,29 @@ tmp/
 
 # Market-data caches and databases
 .data/
-data/cache/
+data/
 data/raw/
+data/processed/
+data/cache/
 data/live/
+market_data/
+feeds/
 *.duckdb
 *.duckdb.wal
 *.parquet
+*.feather
+*.arrow
+*.csv
+*.zip
 
-# Local research outputs
+# Local research outputs and private evidence
 research/output/
 research/artifacts/
+research/private/
+reports/private/
+reports/**/*.json
+reports/**/*.csv
+reports/**/*.parquet
 
 # OS / IDE
 .DS_Store
@@ -52,5 +71,4 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Test artifacts
-.pytest_cache/
 coverage.xml
