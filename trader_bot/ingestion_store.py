@@ -65,6 +65,7 @@ class IngestionStore:
             return 0
         if not provider.strip() or not asset_class.strip():
             raise ValueError("provider and asset_class must not be empty")
+        before = self._count_rows(provider=provider, asset_class=asset_class, bars=bars)
         rows = [
             (
                 provider,
@@ -90,7 +91,24 @@ class IngestionStore:
             """,
             rows,
         )
-        return len(rows)
+        after = self._count_rows(provider=provider, asset_class=asset_class, bars=bars)
+        return after - before
+
+    def _count_rows(self, *, provider: str, asset_class: str, bars: list[MarketBar]) -> int:
+        if not bars:
+            return 0
+        instrument = bars[0].instrument
+        timeframe = bars[0].timeframe.value
+        offer_side = bars[0].offer_side.value
+        row = self._conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM market_bars
+            WHERE provider = ? AND asset_class = ? AND instrument = ? AND timeframe = ? AND offer_side = ?
+            """,
+            [provider, asset_class, instrument, timeframe, offer_side],
+        ).fetchone()
+        return 0 if row is None else int(row[0])
 
     def checkpoint(self, *, provider: str, asset_class: str, instrument: int, timeframe: str, offer_side: str) -> dict[str, Any] | None:
         row = self._conn.execute(
