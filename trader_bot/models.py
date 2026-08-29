@@ -57,6 +57,7 @@ class MarketBar(BaseModel):
     low: Decimal
     close: Decimal
     volume: Decimal | None = None
+    trade_count: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_ohlc(self) -> MarketBar:
