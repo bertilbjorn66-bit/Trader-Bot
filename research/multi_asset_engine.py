@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping, Protocol, Sequence
+from typing import Mapping, Protocol
 
 from trader_bot.asset_universe import AssetClass, InstrumentProfile
 from trader_bot.market_flow import FlowAssessment, FlowState, MarketEvidence, assess_flow
 from trader_bot.portfolio_flow import AllocationDecision, PortfolioSnapshot, allocate
+
 from .asset_research_contract import ResearchContract, ResearchMode, contract_for
 from .domain_profiles import ContextFeature, domain_profile
 
@@ -95,12 +96,13 @@ class MultiAssetResearchEngine:
         observation = adapter.observe(profile)
         missing = tuple(sorted(feature.value for feature in required - observation.available_features))
         if missing:
+            reasons = tuple(f"missing_context:{feature}" for feature in missing)
             return ResearchDecision(
                 profile.symbol,
                 profile.asset_class,
                 ResearchVerdict.BLOCKED,
-                (f"missing_context:{feature}" for feature in missing),
-                FlowAssessment(FlowState.BLOCKED, tuple(f"missing_context:{feature}" for feature in missing), 0.0),
+                reasons,
+                FlowAssessment(FlowState.BLOCKED, reasons, 0.0),
                 None,
             )
 
