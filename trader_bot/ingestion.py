@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Sequence, TypedDict
 
 from .data_provider import MarketDataProvider
 from .ingestion_store import IngestionStore
@@ -11,6 +11,20 @@ from .models import DataRequest, MarketBar, OfferSide, Timeframe
 
 class IngestionContractError(RuntimeError):
     """Raised when a provider response violates the normalized data contract."""
+
+
+class IngestionResult(TypedDict):
+    provider: str
+    asset_class: str
+    instrument: int
+    timeframe: Timeframe
+    offer_side: OfferSide
+    requested_start: datetime
+    requested_end: datetime
+    received: int
+    stored: int
+    latest_timestamp: datetime | None
+    source_hash: str | None
 
 
 def canonical_bar_hash(bars: Sequence[MarketBar]) -> str:
@@ -72,7 +86,7 @@ def ingest_series(
     start: datetime,
     end: datetime,
     observed_at: datetime | None = None,
-) -> dict[str, object]:
+) -> IngestionResult:
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("start and end must be timezone-aware")
     if start >= end:
