@@ -34,12 +34,12 @@ def test_binance_parses_klines_and_quotes() -> None:
     bars = provider.historical_bars(request)
     quotes = provider.current_quotes([7])
     assert len(bars) == 1
-    assert bars[0].close == "42300"
+    assert str(bars[0].close) == "42300"
     assert len(quotes) == 1
-    assert quotes[0].bid == "42299"
-    assert quotes[0].ask == "42301"
+    assert str(quotes[0].bid) == "42299"
+    assert str(quotes[0].ask) == "42301"
     assert provider.health_check() is True
-    client.close()
+    provider.close()
 
 
 def test_binance_rejects_ask_side_candles() -> None:
