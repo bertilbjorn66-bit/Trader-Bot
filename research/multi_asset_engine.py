@@ -11,8 +11,10 @@ from trader_bot.portfolio_flow import AllocationDecision, PortfolioSnapshot, all
 from .asset_research_contract import ResearchContract, ResearchMode, contract_for
 from .domain_profiles import ContextFeature, domain_profile
 from .domain_reasoning import (
+    Direction,
     DomainContext,
     DomainReasoning,
+    ExpertFamily,
     ExpertObservation,
     combine_experts,
     validate_context,
@@ -75,10 +77,24 @@ class FixedEvidenceAdapter:
             regime="test_context",
             quality_score=1.0,
         )
+        expected_return = self.evidence.expected_return or 0.0
+        direction = Direction.BUY if expected_return > 0.0 else Direction.SELL if expected_return < 0.0 else Direction.NO_TRADE
+        experts: tuple[ExpertObservation, ...] = ()
+        if direction is not Direction.NO_TRADE and self.evidence.confidence is not None:
+            experts = (
+                ExpertObservation(
+                    family=ExpertFamily.TREND,
+                    direction=direction,
+                    confidence=self.evidence.confidence,
+                    evidence_strength=self.evidence.agreement if self.evidence.agreement is not None else 1.0,
+                    rationale=("fixed_evidence_adapter",),
+                ),
+            )
         return DomainObservation(
             available_features=frozenset(required),
             evidence=self.evidence,
             context=context,
+            experts=experts,
         )
 
 
@@ -105,6 +121,11 @@ class MultiAssetResearchEngine:
             raise ValueError("intelligence adapter asset class does not match instrument")
 
         observation = adapter.observe(profile)
+        if not profile.is_research_ready:
+            reason = "instrument_not_research_ready"
+            flow = FlowAssessment(FlowState.WAIT, (reason,), 0.0)
+            return ResearchDecision(profile.symbol, profile.asset_class, ResearchVerdict.WAIT, (reason,), flow, None)
+
         missing = tuple(sorted(feature.value for feature in required - observation.available_features))
         if missing:
             reasons = tuple(f"missing_context:{feature}" for feature in missing)
