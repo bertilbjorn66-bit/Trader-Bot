@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+import datetime
 
 import pytest
 
@@ -10,8 +10,8 @@ from trader_bot.market_data_governance import (
 )
 
 
-UTC = timezone.utc
-NOW = datetime(2026, 8, 29, 12, 0, tzinfo=UTC)
+UTC = datetime.timezone.utc
+NOW = datetime.datetime(2026, 8, 29, 12, 0, tzinfo=UTC)
 
 
 def test_policies_are_domain_specific() -> None:
@@ -34,7 +34,7 @@ def test_missing_series_is_blocked() -> None:
 
 
 def test_invalid_source_or_gap_blocks_research() -> None:
-    latest = NOW - timedelta(minutes=1)
+    latest = NOW - datetime.timedelta(minutes=1)
     invalid_source = assess_health(
         asset_class="CRYPTO",
         latest_timestamp=latest,
@@ -56,21 +56,21 @@ def test_invalid_source_or_gap_blocks_research() -> None:
 def test_fresh_watch_and_stale_states() -> None:
     fresh = assess_health(
         asset_class="FOREX",
-        latest_timestamp=NOW - timedelta(minutes=4),
+        latest_timestamp=NOW - datetime.timedelta(minutes=4),
         now=NOW,
         source_valid=True,
         contiguous=True,
     )
     watch = assess_health(
         asset_class="FOREX",
-        latest_timestamp=NOW - timedelta(minutes=10),
+        latest_timestamp=NOW - datetime.timedelta(minutes=10),
         now=NOW,
         source_valid=True,
         contiguous=True,
     )
     stale = assess_health(
         asset_class="FOREX",
-        latest_timestamp=NOW - timedelta(minutes=30),
+        latest_timestamp=NOW - datetime.timedelta(minutes=30),
         now=NOW,
         source_valid=True,
         contiguous=True,
@@ -86,7 +86,7 @@ def test_fresh_watch_and_stale_states() -> None:
 def test_future_timestamp_is_fail_closed() -> None:
     state = assess_health(
         asset_class="EQUITY",
-        latest_timestamp=NOW + timedelta(seconds=1),
+        latest_timestamp=NOW + datetime.timedelta(seconds=1),
         now=NOW,
         source_valid=True,
         contiguous=True,
@@ -98,11 +98,11 @@ def test_future_timestamp_is_fail_closed() -> None:
 def test_refresh_window_is_bounded_and_incremental() -> None:
     start, end = refresh_window(
         asset_class="FOREX",
-        latest_timestamp=NOW - timedelta(minutes=6),
+        latest_timestamp=NOW - datetime.timedelta(minutes=6),
         now=NOW,
     )
     assert end == NOW
-    assert start == NOW - timedelta(minutes=6)
+    assert start == NOW - datetime.timedelta(minutes=6)
 
     cold_start, _ = refresh_window(asset_class="EQUITY", latest_timestamp=None, now=NOW)
     assert NOW - cold_start == policy_for("EQUITY").max_backfill
