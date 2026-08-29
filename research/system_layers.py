@@ -67,7 +67,17 @@ LAYER_CONTRACTS: tuple[LayerContract, ...] = (
 
 
 def required_layer_names() -> tuple[LayerKind, ...]:
-    return tuple(contract.name for contract in LAYER_CONTRACTS if contract.required)
+    """Return the authoritative pre-validation operating stack.
+
+    Validation is intentionally retained as a separately modeled deferred
+    stage, but it is not an operating-layer requirement for this foundation.
+    """
+
+    return tuple(
+        contract.name
+        for contract in LAYER_CONTRACTS
+        if contract.required and not contract.profitability_testing_stage
+    )
 
 
 def contracts_by_owner() -> Mapping[str, tuple[LayerContract, ...]]:
@@ -78,5 +88,5 @@ def contracts_by_owner() -> Mapping[str, tuple[LayerContract, ...]]:
 
 
 def architecture_ready(*, implemented_layers: set[LayerKind], live_execution_enabled: bool = False) -> bool:
-    required = set(required_layer_names()) - {LayerKind.VALIDATION}
+    required = set(required_layer_names())
     return required.issubset(implemented_layers) and not live_execution_enabled
