@@ -9,7 +9,6 @@ from trader_bot.market_data_governance import (
     refresh_window,
 )
 
-
 UTC = datetime.timezone.utc
 NOW = datetime.datetime(2026, 8, 29, 12, 0, tzinfo=UTC)
 
