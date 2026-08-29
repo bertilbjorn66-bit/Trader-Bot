@@ -35,6 +35,7 @@ class SeriesHealth:
 POLICIES: dict[str, RefreshPolicy] = {
     "FOREX": RefreshPolicy(timedelta(minutes=5), timedelta(minutes=10), timedelta(days=7)),
     "CRYPTO": RefreshPolicy(timedelta(minutes=1), timedelta(minutes=3), timedelta(days=3)),
+    "METAL": RefreshPolicy(timedelta(minutes=5), timedelta(minutes=15), timedelta(days=7)),
     "METALS": RefreshPolicy(timedelta(minutes=5), timedelta(minutes=15), timedelta(days=7)),
     "ENERGY": RefreshPolicy(timedelta(minutes=5), timedelta(minutes=15), timedelta(days=7)),
     "COMMODITY": RefreshPolicy(timedelta(hours=1), timedelta(hours=2), timedelta(days=31)),
