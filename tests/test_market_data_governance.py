@@ -17,6 +17,7 @@ NOW = datetime(2026, 8, 29, 12, 0, tzinfo=UTC)
 def test_policies_are_domain_specific() -> None:
     assert policy_for("FOREX").interval < policy_for("EQUITY").interval
     assert policy_for("CRYPTO").interval < policy_for("COMMODITY").interval
+    assert policy_for("METAL").interval == policy_for("FOREX").interval
 
 
 def test_missing_series_is_blocked() -> None:
