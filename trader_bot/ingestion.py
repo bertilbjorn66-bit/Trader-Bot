@@ -72,7 +72,7 @@ def ingest_series(
     start: datetime,
     end: datetime,
     observed_at: datetime | None = None,
-):
+) -> dict[str, object]:
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("start and end must be timezone-aware")
     if start >= end:
@@ -88,7 +88,7 @@ def ingest_series(
     digest = canonical_bar_hash(bars) if bars else None
     stored = store.append_verified(list(bars), provider=provider_name, asset_class=asset_class)
     latest = bars[-1].timestamp if bars else None
-    if bars:
+    if latest is not None:
         observed = observed_at or datetime.now(timezone.utc)
         store.save_checkpoint(
             provider=provider_name,
