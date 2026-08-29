@@ -35,6 +35,7 @@ def test_all_asset_classes_have_covered_instruments():
 def test_crypto_uses_high_frequency_real_market_fields():
     plan = next(plan for plan in default_instrument_data_plans() if plan.symbol == "BTC/USD")
     assert plan.source_id == "BINANCE_PUBLIC_MARKET_DATA"
+    assert plan.source_symbol == "BTCUSDT"
     assert DataResolution.SECOND in plan.resolutions
     assert DataField.VOLUME in plan.required_fields
     assert DataField.TRADE_COUNT in plan.required_fields
@@ -43,8 +44,19 @@ def test_crypto_uses_high_frequency_real_market_fields():
 def test_oil_and_metals_use_dukascopy_real_market_source():
     plans = {plan.symbol: plan for plan in default_instrument_data_plans()}
     assert plans["BRENT.CMD/USD"].source_id == "DUKASCOPY_HISTORICAL"
+    assert plans["BRENT.CMD/USD"].source_symbol == "BRENT.CMD/USD"
     assert plans["LIGHT.CMD/USD"].source_id == "DUKASCOPY_HISTORICAL"
     assert plans["XAU/USD"].source_id == "DUKASCOPY_HISTORICAL"
+
+
+def test_stooq_symbols_are_provider_native():
+    plans = {plan.symbol: plan for plan in default_instrument_data_plans()}
+    assert plans["NVDA"].source_symbol == "nvda.us"
+    assert plans["MSFT"].source_symbol == "msft.us"
+    assert plans["SPX"].source_symbol == "^spx"
+    assert plans["NDX"].source_symbol == "^ndq"
+    assert plans["DJI"].source_symbol == "^dji"
+    assert plans["NIKKEI"].source_symbol == "^nkx"
 
 
 def test_each_plan_matches_an_approved_source():
