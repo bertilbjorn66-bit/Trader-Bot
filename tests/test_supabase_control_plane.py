@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 
 import httpx
 import pytest
@@ -56,10 +57,11 @@ def test_health_upsert_sends_control_metadata() -> None:
             reason=None,
         )
 
+    payload = json.loads(requests[0].content)
     assert requests[0].method == "POST"
     assert requests[0].url.path == "/rest/v1/market_series_health"
-    assert requests[0].json()["row_count"] == 10
-    assert "open" not in str(requests[0].json()).lower()
+    assert payload["row_count"] == 10
+    assert "open" not in str(payload).lower()
 
 
 def test_start_refresh_requires_returned_id() -> None:
