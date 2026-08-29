@@ -108,9 +108,12 @@ class SupabaseControlPlane:
         )
         response.raise_for_status()
         rows = response.json()
-        if not rows or not isinstance(rows[0].get("id"), str):
+        if not rows:
             raise RuntimeError("Supabase did not return a refresh run id")
-        return rows[0]["id"]
+        refresh_id = rows[0].get("id")
+        if not isinstance(refresh_id, str) or not refresh_id:
+            raise RuntimeError("Supabase did not return a valid refresh run id")
+        return refresh_id
 
     def finish_refresh(
         self,
