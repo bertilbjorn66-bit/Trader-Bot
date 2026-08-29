@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from trader_bot.asset_universe import AssetClass, default_asset_registry
 from research.domain_profiles import ContextFeature, domain_profile
+from trader_bot.asset_universe import AssetClass, default_asset_registry
 
 
 def test_crypto_requires_market_microstructure_features() -> None:

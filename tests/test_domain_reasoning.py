@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from trader_bot.asset_universe import AssetClass, default_asset_registry
 from research.domain_profiles import ContextFeature, domain_profile
 from research.domain_reasoning import (
     Direction,
@@ -11,6 +10,7 @@ from research.domain_reasoning import (
     required_expert_families,
     validate_context,
 )
+from trader_bot.asset_universe import default_asset_registry
 
 
 def _context(symbol: str) -> DomainContext:

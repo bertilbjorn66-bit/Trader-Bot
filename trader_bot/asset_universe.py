@@ -30,11 +30,7 @@ class ResearchStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CostProfile:
-    """Execution-cost assumptions expressed in instrument-native units.
-
-    The cost model is deliberately not expressed in pips because that is not a
-    universal unit across FX, crypto, metals and equities.
-    """
+    """Execution-cost assumptions expressed in instrument-native units."""
 
     typical_spread: float | None
     stress_spread: float | None
@@ -79,6 +75,8 @@ class InstrumentProfile:
     def __post_init__(self) -> None:
         if not self.symbol.strip():
             raise ValueError("symbol must be non-empty")
+        if self.symbol != self.symbol.upper():
+            raise ValueError("symbol must be normalized uppercase")
         if not self.venue.strip():
             raise ValueError("venue must be non-empty")
         if not self.quote_currency.strip():
@@ -90,10 +88,7 @@ class InstrumentProfile:
 
     @property
     def is_research_ready(self) -> bool:
-        return self.research_status in {
-            ResearchStatus.EXISTING_VALIDATED_DOMAIN,
-            ResearchStatus.RESEARCH_PLANNED,
-        }
+        return self.research_status is ResearchStatus.EXISTING_VALIDATED_DOMAIN
 
 
 class AssetRegistry:
@@ -125,12 +120,38 @@ class AssetRegistry:
         return tuple(self._profiles)
 
 
+def _add_profiles(
+    profiles: dict[str, InstrumentProfile],
+    symbols: tuple[str, ...],
+    *,
+    asset_class: AssetClass,
+    venue: str,
+    quote_currency: str,
+    price_increment: float,
+    research_status: ResearchStatus,
+    cost: CostProfile,
+    rules: MarketRules,
+) -> None:
+    for symbol in symbols:
+        profiles[symbol] = InstrumentProfile(
+            symbol=symbol,
+            asset_class=asset_class,
+            venue=venue,
+            quote_currency=quote_currency,
+            price_increment=price_increment,
+            contract_multiplier=1.0,
+            research_status=research_status,
+            cost=cost,
+            rules=rules,
+        )
+
 
 def default_asset_registry() -> AssetRegistry:
-    """Return the initial multi-asset universe.
+    """Return the initial multi-asset universe with validation-safe defaults.
 
-    Only the existing Forex domain is already validated. Every other instrument
-    remains research-only until its own empirical validation contract passes.
+    The registry is deliberately broad: each asset class has representative
+    instruments, while only the existing Forex domain is empirically validated.
+    New domains remain research-only until their own evidence gates pass.
     """
 
     forex_cost = CostProfile(typical_spread=None, stress_spread=None)
@@ -142,7 +163,6 @@ def default_asset_registry() -> AssetRegistry:
         volume_is_first_class=False,
         requires_exchange_calendar=False,
     )
-
     crypto_rules = MarketRules(
         session=TradingSession.TWENTY_FOUR_SEVEN,
         supports_shorting=True,
@@ -151,8 +171,6 @@ def default_asset_registry() -> AssetRegistry:
         volume_is_first_class=True,
         requires_exchange_calendar=False,
     )
-    crypto_cost = CostProfile(typical_spread=None, stress_spread=None)
-
     metal_rules = MarketRules(
         session=TradingSession.WEEKDAY_CONTINUOUS,
         supports_shorting=True,
@@ -161,7 +179,14 @@ def default_asset_registry() -> AssetRegistry:
         volume_is_first_class=False,
         requires_exchange_calendar=False,
     )
-
+    commodity_rules = MarketRules(
+        session=TradingSession.WEEKDAY_CONTINUOUS,
+        supports_shorting=True,
+        has_funding_or_carry=True,
+        event_gap_sensitive=True,
+        volume_is_first_class=True,
+        requires_exchange_calendar=False,
+    )
     equity_rules = MarketRules(
         session=TradingSession.EXCHANGE_HOURS,
         supports_shorting=True,
@@ -170,69 +195,113 @@ def default_asset_registry() -> AssetRegistry:
         volume_is_first_class=True,
         requires_exchange_calendar=True,
     )
-    equity_cost = CostProfile(typical_spread=None, stress_spread=None)
+    index_rules = MarketRules(
+        session=TradingSession.EXCHANGE_HOURS,
+        supports_shorting=True,
+        has_funding_or_carry=False,
+        event_gap_sensitive=True,
+        volume_is_first_class=True,
+        requires_exchange_calendar=True,
+    )
 
     profiles: dict[str, InstrumentProfile] = {}
-    for symbol, quote_currency, increment in (
-        ("EUR/USD", "USD", 0.0001),
-        ("GBP/USD", "USD", 0.0001),
-        ("USD/JPY", "JPY", 0.01),
-        ("AUD/USD", "USD", 0.0001),
-        ("USD/CAD", "CAD", 0.0001),
-        ("USD/CHF", "CHF", 0.0001),
-        ("NZD/USD", "USD", 0.0001),
-        ("EUR/JPY", "JPY", 0.01),
-        ("GBP/JPY", "JPY", 0.01),
-    ):
+
+    _add_profiles(
+        profiles,
+        ("EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD", "USD/CHF", "NZD/USD", "EUR/JPY", "GBP/JPY"),
+        asset_class=AssetClass.FOREX,
+        venue="Dukascopy",
+        quote_currency="USD",
+        price_increment=0.0001,
+        research_status=ResearchStatus.EXISTING_VALIDATED_DOMAIN,
+        cost=forex_cost,
+        rules=fx_rules,
+    )
+    for symbol in ("USD/JPY", "EUR/JPY", "GBP/JPY"):
         profiles[symbol] = InstrumentProfile(
             symbol=symbol,
             asset_class=AssetClass.FOREX,
             venue="Dukascopy",
-            quote_currency=quote_currency,
-            price_increment=increment,
+            quote_currency="JPY",
+            price_increment=0.01,
             contract_multiplier=1.0,
             research_status=ResearchStatus.EXISTING_VALIDATED_DOMAIN,
             cost=forex_cost,
             rules=fx_rules,
         )
 
-    for symbol in ("BTC/USD", "ETH/USD", "SOL/USD"):
-        profiles[symbol] = InstrumentProfile(
-            symbol=symbol,
-            asset_class=AssetClass.CRYPTO,
-            venue="MULTI_VENUE_PENDING",
-            quote_currency="USD",
-            price_increment=0.01,
-            contract_multiplier=1.0,
-            research_status=ResearchStatus.RESEARCH_ONLY,
-            cost=crypto_cost,
-            rules=crypto_rules,
-        )
+    _add_profiles(
+        profiles,
+        ("BTC/USD", "ETH/USD", "SOL/USD", "BNB/USD", "XRP/USD", "ADA/USD", "DOGE/USD", "AVAX/USD", "LINK/USD"),
+        asset_class=AssetClass.CRYPTO,
+        venue="Binance",
+        quote_currency="USD",
+        price_increment=0.01,
+        research_status=ResearchStatus.RESEARCH_ONLY,
+        cost=CostProfile(typical_spread=None, stress_spread=None),
+        rules=crypto_rules,
+    )
 
-    for symbol, increment in (("XAU/USD", 0.01), ("XAG/USD", 0.001)):
+    _add_profiles(
+        profiles,
+        ("XAU/USD", "XAG/USD", "XPT/USD", "XPD/USD"),
+        asset_class=AssetClass.METAL,
+        venue="Dukascopy",
+        quote_currency="USD",
+        price_increment=0.01,
+        research_status=ResearchStatus.RESEARCH_ONLY,
+        cost=CostProfile(typical_spread=None, stress_spread=None),
+        rules=metal_rules,
+    )
+
+    commodity_increments = {
+        "BRENT.CMD/USD": 0.01,
+        "LIGHT.CMD/USD": 0.01,
+        "GAS.CMD/USD": 0.001,
+        "COPPER.CMD/USD": 0.001,
+        "DIESEL.CMD/USD": 0.01,
+        "COFFEE.CMD/USX": 0.01,
+        "COCOA.CMD/USD": 0.01,
+        "SUGAR.CMD/USD": 0.01,
+        "COTTON.CMD/USX": 0.01,
+        "OJUICE.CMD/USX": 0.01,
+        "SOYBEAN.CMD/USX": 0.01,
+    }
+    for symbol, increment in commodity_increments.items():
         profiles[symbol] = InstrumentProfile(
             symbol=symbol,
-            asset_class=AssetClass.METAL,
-            venue="MULTI_VENUE_PENDING",
-            quote_currency="USD",
+            asset_class=AssetClass.COMMODITY,
+            venue="Dukascopy",
+            quote_currency="USD" if symbol.endswith("/USD") else "USX",
             price_increment=increment,
             contract_multiplier=1.0,
             research_status=ResearchStatus.RESEARCH_ONLY,
             cost=CostProfile(typical_spread=None, stress_spread=None),
-            rules=metal_rules,
+            rules=commodity_rules,
         )
 
-    for symbol in ("NVDA", "MSFT", "AAPL", "AMZN", "META"):
-        profiles[symbol] = InstrumentProfile(
-            symbol=symbol,
-            asset_class=AssetClass.EQUITY,
-            venue="EXCHANGE_PENDING",
-            quote_currency="USD",
-            price_increment=0.01,
-            contract_multiplier=1.0,
-            research_status=ResearchStatus.RESEARCH_ONLY,
-            cost=equity_cost,
-            rules=equity_rules,
-        )
+    _add_profiles(
+        profiles,
+        ("NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "GOOG", "AVGO", "AMD", "TSLA", "ORCL", "CRM", "ADBE", "INTC", "QCOM"),
+        asset_class=AssetClass.EQUITY,
+        venue="EXCHANGE_PENDING",
+        quote_currency="USD",
+        price_increment=0.01,
+        research_status=ResearchStatus.RESEARCH_ONLY,
+        cost=CostProfile(typical_spread=None, stress_spread=None),
+        rules=equity_rules,
+    )
+
+    _add_profiles(
+        profiles,
+        ("SPX", "NDX", "DJI", "FTSE", "DAX", "NIKKEI"),
+        asset_class=AssetClass.INDEX,
+        venue="INDEX_PENDING",
+        quote_currency="USD",
+        price_increment=0.01,
+        research_status=ResearchStatus.RESEARCH_ONLY,
+        cost=CostProfile(typical_spread=None, stress_spread=None),
+        rules=index_rules,
+    )
 
     return AssetRegistry(profiles)

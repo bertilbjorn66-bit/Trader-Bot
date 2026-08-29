@@ -1,8 +1,12 @@
+from research.domain_profiles import ContextFeature, domain_profile
+from research.multi_asset_engine import (
+    FixedEvidenceAdapter,
+    MultiAssetResearchEngine,
+    ResearchVerdict,
+)
 from trader_bot.asset_universe import AssetClass, ResearchStatus, default_asset_registry
 from trader_bot.market_flow import MarketEvidence
 from trader_bot.portfolio_flow import PortfolioSnapshot
-from research.domain_profiles import ContextFeature, domain_profile
-from research.multi_asset_engine import FixedEvidenceAdapter, MultiAssetResearchEngine, ResearchVerdict
 
 
 def _engine() -> MultiAssetResearchEngine:
@@ -44,6 +48,11 @@ def test_research_only_assets_are_not_operationally_ready() -> None:
     assert registry.require("BTC/USD").research_status is ResearchStatus.RESEARCH_ONLY
     assert registry.require("XAU/USD").research_status is ResearchStatus.RESEARCH_ONLY
     assert registry.require("NVDA").research_status is ResearchStatus.RESEARCH_ONLY
+
+
+def test_research_planned_status_is_not_ready() -> None:
+    registry = default_asset_registry()
+    assert registry.require("BTC/USD").is_research_ready is False
 
 
 def test_missing_asset_adapter_blocks_without_pressure() -> None:
