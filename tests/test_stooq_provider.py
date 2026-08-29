@@ -23,9 +23,9 @@ def test_stooq_parses_daily_csv() -> None:
     )
     bars = provider.historical_bars(request)
     assert len(bars) == 2
-    assert bars[0].close == "104"
-    assert bars[1].volume == "1300000"
-    client.close()
+    assert str(bars[0].close) == "104"
+    assert str(bars[1].volume) == "1300000"
+    provider.close()
 
 
 def test_stooq_rejects_intraday_requests() -> None:
