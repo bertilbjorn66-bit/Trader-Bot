@@ -1,0 +1,157 @@
+name: "26 — V5 PROFITABILITY VERDICT — NON-LIVE"
+
+on:
+  workflow_run:
+    workflows:
+      - "25 — ADAPTIVE ENSEMBLE V5 ROBUSTNESS — NON-LIVE"
+    types: [completed]
+    branches: [adaptive-ensemble-v1]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verdict:
+    name: "Consolidate four V5 robustness reports"
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact validated V5 source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Download baseline evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-robustness-baseline
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: evidence/baseline
+
+      - name: Download dense evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-robustness-dense
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: evidence/dense
+
+      - name: Download wider-history evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-robustness-wide-history
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: evidence/wide_history
+
+      - name: Download severe-cost evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-robustness-severe-cost
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: evidence/severe_cost
+
+      - name: Run final non-live profitability verdict
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          expected = {
+              "baseline": Path("evidence/baseline/v5_baseline.json"),
+              "dense": Path("evidence/dense/v5_dense.json"),
+              "wide_history": Path("evidence/wide_history/v5_wide_history.json"),
+              "severe_cost": Path("evidence/severe_cost/v5_severe_cost.json"),
+          }
+          reports = {}
+          for name, path in expected.items():
+              if not path.is_file():
+                  raise SystemExit(f"Missing required evidence: {path}")
+              reports[name] = json.loads(path.read_text(encoding="utf-8"))
+
+          fingerprints = {report.get("candidate_fingerprint") for report in reports.values()}
+          if len(fingerprints) != 1 or None in fingerprints:
+              raise SystemExit(f"Candidate fingerprints are inconsistent: {fingerprints}")
+
+          failures = []
+          for name, report in reports.items():
+              holdout = report.get("holdout_integrity", {})
+              design = report.get("design", {})
+              confirmation = report.get("chronological_confirmation_40pct", {})
+              hard = report.get("stress", {}).get("1.5", {})
+              years = report.get("year_stability", {})
+              checks = {
+                  "empirical": report.get("empirical") is True,
+                  "synthetic_false": report.get("synthetic") is False,
+                  "live_execution_disabled": report.get("live_execution_authorized") is False,
+                  "candidate_frozen": holdout.get("candidate_frozen_before_confirmation") is True,
+                  "confirmation_updates_disabled": holdout.get("confirmation_learning_updates") is False,
+                  "confirmation_outcome_feedback_disabled": holdout.get("confirmation_outcomes_feed_back_into_model") is False,
+                  "analogue_labels_restricted": holdout.get("analogue_labels_restricted_to_discovery") is True,
+                  "timestamp_split": holdout.get("chronological_timestamp_split") is True,
+                  "maturity_delay": design.get("maturity_delayed_learning") is True,
+                  "cross_horizon_leakage_blocked": design.get("same_timestamp_cross_horizon_leakage_blocked") is True,
+                  "confirmation_sample_ge_500": confirmation.get("n", 0) >= 500,
+                  "confirmation_expectancy_positive": (confirmation.get("expectancy_pips") or 0.0) > 0.0,
+                  "confirmation_pf_gt_1": (confirmation.get("profit_factor") or 0.0) > 1.0,
+                  "severe_cost_expectancy_positive": (hard.get("expectancy_pips") or 0.0) > 0.0,
+                  "severe_cost_pf_gt_1": (hard.get("profit_factor") or 0.0) > 1.0,
+                  "at_least_three_confirmation_years": years.get("observed_year_count", 0) >= 3,
+                  "year_stability_ge_67pct": (years.get("positive_year_fraction") or 0.0) >= 0.67,
+              }
+              failed = [key for key, passed in checks.items() if not passed]
+              if failed:
+                  failures.append({"report": name, "failed_checks": failed})
+
+          baseline = reports["baseline"]
+          positive_pairs = 0
+          for pair in baseline.get("pair_summaries", {}):
+              if "::confirmation" not in pair:
+                  continue
+              report = baseline["pair_summaries"][pair]
+              if (report.get("expectancy_pips") or 0.0) > 0.0 and (report.get("profit_factor") or 0.0) > 1.0:
+                  positive_pairs += 1
+
+          baseline_pair_check = positive_pairs >= 2
+          verdict = "PASS" if not failures and baseline_pair_check else "FAIL"
+          result = {
+              "verdict": verdict,
+              "candidate_fingerprint": next(iter(fingerprints)),
+              "source_run_id": int("${{ github.event.workflow_run.id }}"),
+              "source_commit": "${{ github.event.workflow_run.head_sha }}",
+              "reports_checked": list(reports),
+              "all_four_reports_present": True,
+              "baseline_positive_confirmation_pairs_ge_2": baseline_pair_check,
+              "baseline_positive_confirmation_pair_count": positive_pairs,
+              "failures": failures,
+              "live_execution_authorized": False,
+              "promotion_authorized": False,
+              "statement": (
+                  "V5 demonstrates a historically robust, transaction-cost-aware non-live profitability result under the locked empirical validation contract."
+                  if verdict == "PASS" else
+                  "V5 profitability has not been established under the locked empirical validation contract."
+              ),
+          }
+          Path("v5_profitability_verdict.json").write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+          print(json.dumps(result, indent=2, sort_keys=True))
+          if verdict != "PASS":
+              raise SystemExit(1)
+          PY
+
+      - name: Upload final verdict evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: V5-PROFITABILITY-VERDICT
+          path: v5_profitability_verdict.json
+          if-no-files-found: error
+          retention-days: 30
