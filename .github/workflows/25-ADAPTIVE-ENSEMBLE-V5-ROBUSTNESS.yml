@@ -126,7 +126,7 @@ jobs:
           name: v5-prepared-nine-pair-feeds
           path: verified-nine-pair-feeds.tar.gz
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 90
 
   baseline:
     needs: [static, prepare]
@@ -163,7 +163,7 @@ jobs:
           name: v5-robustness-baseline
           path: artifacts/v5_baseline.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
   dense:
     needs: [static, prepare]
@@ -200,7 +200,7 @@ jobs:
           name: v5-robustness-dense
           path: artifacts/v5_dense.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
   wide_history:
     needs: [static, prepare]
@@ -209,6 +209,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
@@ -237,7 +238,7 @@ jobs:
           name: v5-robustness-wide-history
           path: artifacts/v5_wide_history.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
   severe_cost:
     needs: [static, prepare]
@@ -274,7 +275,7 @@ jobs:
           name: v5-robustness-severe-cost
           path: artifacts/v5_severe_cost.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
   crosscheck:
     needs: [baseline, dense, wide_history, severe_cost]
@@ -318,6 +319,7 @@ jobs:
           paths = set(path.name for path in Path('artifacts').glob('v5_*.json'))
           assert paths == expected, f'Unexpected evidence set: {paths}'
 
+          required_pairs = {'audusd', 'usdcad', 'usdchf', 'nzdusd', 'eurjpy', 'gbpjpy', 'eurusd', 'gbpusd', 'usdjpy'}
           for path in sorted(Path('artifacts').glob('v5_*.json')):
               report = json.loads(path.read_text(encoding='utf-8'))
               assert report['empirical'] is True
@@ -328,6 +330,14 @@ jobs:
               assert report['live_execution_authorized'] is False
               confirmation = report['chronological_confirmation_40pct']
               assert confirmation['n'] >= 100
+              pair_summaries = report.get('pair_summaries', {})
+              confirmation_pairs = {
+                  key.split('::', 1)[0].lower()
+                  for key, value in pair_summaries.items()
+                  if '::confirmation' in key and (value.get('n') or 0) > 0
+              }
+              missing_pairs = sorted(required_pairs - confirmation_pairs)
+              assert not missing_pairs, f'{path.name} missing frozen confirmation coverage: {missing_pairs}'
               assert report['promotion_recommendation'] in {'PRELIMINARY_PASS', 'NOT_READY'}
               print(path.name, report['status'], confirmation, report['stress']['1.5'], report['promotion_recommendation'])
 
@@ -340,4 +350,4 @@ jobs:
           name: ADAPTIVE-ENSEMBLE-V5-ROBUSTNESS-EVIDENCE
           path: artifacts/v5_*.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
