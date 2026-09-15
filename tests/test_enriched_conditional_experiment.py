@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from research.enriched_conditional_experiment import evaluate, wilson_interval, _is_contiguous_window
+from research.enriched_conditional_experiment import (
+    _is_contiguous_window,
+    evaluate,
+    wilson_interval,
+)
 
 
 def test_wilson_interval_is_bounded() -> None:
