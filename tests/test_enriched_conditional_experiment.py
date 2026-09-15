@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-from research.enriched_conditional_experiment import (
-    DISTANCE_GRID if False else bootstrap_ci,
-)
 from research.enriched_conditional_experiment import evaluate, wilson_interval, _is_contiguous_window
 
 
