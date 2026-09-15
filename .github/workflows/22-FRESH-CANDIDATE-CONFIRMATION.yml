@@ -4,12 +4,6 @@ on:
   workflow_run:
     workflows: ["21 — FRESH DISCOVERY CYCLE — DISCOVERY ONLY"]
     types: [completed]
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/22-FRESH-CANDIDATE-CONFIRMATION.yml"
-      - "research/fresh_candidate_confirmation.py"
-      - "tests/test_fresh_candidate_confirmation.py"
   workflow_dispatch:
     inputs:
       discovery_run_id:
@@ -34,7 +28,7 @@ permissions:
   actions: read
 
 env:
-  DISCOVERY_RUN_ID: ${{ github.event.workflow_run.id || inputs.discovery_run_id || '32892555632' }}
+  DISCOVERY_RUN_ID: ${{ github.event.workflow_run.id || inputs.discovery_run_id }}
   DISCOVERY_HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
   SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
   SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
@@ -182,7 +176,7 @@ jobs:
           assert result['live_execution_authorized'] is False
           assert result['state'] in {'PASS', 'FAIL', 'INCOMPLETE'}
           assert 'stress_resilient_0_to_1_5_pips' in result.get('gates', {})
-          assert 'positive_pair_count_min_2_and_min_20_each' in result.get('gates', {})
+          assert 'positive_pair_count_min_3_and_min_20_each' in result.get('gates', {})
           assert 'pair_observation_concentration_lte_80pct' in result.get('gates', {})
           print('FRESH_PRIMARY_CONFIRMATION_VERIFIED=true')
           print('STATE=', result['state'])
