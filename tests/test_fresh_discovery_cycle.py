@@ -2,12 +2,33 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from research.fresh_discovery_cycle import DISTANCE_GRID, REGIMES, run_discovery
+from research.fresh_discovery_cycle import (
+    DISTANCE_GRID,
+    REGIMES,
+    discovery_result_is_admissible,
+    run_discovery,
+)
 
 
 def test_discovery_grid_is_finite_and_confirmation_free() -> None:
     assert len(DISTANCE_GRID) == 5
     assert len(REGIMES) == 9
+
+
+def test_discovery_screen_requires_sample_pf_and_positive_bootstrap_lower_tail() -> None:
+    base = {
+        "n": 150,
+        "expectancy_pips": 0.5,
+        "profit_factor": 1.10,
+        "win_rate": 0.55,
+        "win_rate_ci": [0.47, 0.63],
+        "bootstrap_expectancy_ci_pips": [0.01, 0.9],
+        "median_outcome_pips": 0.4,
+    }
+    assert discovery_result_is_admissible(base)
+    assert not discovery_result_is_admissible({**base, "n": 149})
+    assert not discovery_result_is_admissible({**base, "profit_factor": 1.09})
+    assert not discovery_result_is_admissible({**base, "bootstrap_expectancy_ci_pips": [-0.01, 0.9]})
 
 
 def test_discovery_report_is_structurally_one_way(monkeypatch) -> None:
@@ -27,3 +48,5 @@ def test_discovery_report_is_structurally_one_way(monkeypatch) -> None:
     assert report["status"] == "FRESH_DISCOVERY_COMPLETED"
     assert report["selection_policy"]["confirmation_used_for_selection"] is False
     assert report["selection_policy"]["prior_frozen_confirmation_artifact_read"] is False
+    assert report["selection_policy"]["minimum_discovery_profit_factor"] == 1.10
+    assert report["selection_policy"]["minimum_discovery_bootstrap_lower_expectancy_pips"] == 0.0
