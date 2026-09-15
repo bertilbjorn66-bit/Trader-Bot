@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from research.enriched_conditional_experiment import evaluate, wilson_interval
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from research.enriched_conditional_experiment import (
+    DISTANCE_GRID if False else bootstrap_ci,
+)
+from research.enriched_conditional_experiment import evaluate, wilson_interval, _is_contiguous_window
 
 
 def test_wilson_interval_is_bounded() -> None:
@@ -33,3 +39,16 @@ def test_confirmation_is_separate_from_discovery() -> None:
     assert discovery is not None and confirmation is not None
     assert discovery["expectancy_pips"] == 3.0
     assert confirmation["expectancy_pips"] == -2.0
+
+
+def test_continuity_rejects_weekend_or_missing_bar_gaps() -> None:
+    base = datetime(2026, 1, 2, 23, 0, tzinfo=timezone.utc)
+
+    class BarStub:
+        def __init__(self, timestamp: datetime) -> None:
+            self.timestamp = timestamp
+
+    contiguous = [BarStub(base + i * timedelta(minutes=10)) for i in range(4)]
+    gapped = [contiguous[0], contiguous[1], BarStub(base + timedelta(minutes=40)), contiguous[3]]
+    assert _is_contiguous_window(contiguous, 0, 3)
+    assert not _is_contiguous_window(gapped, 0, 3)
