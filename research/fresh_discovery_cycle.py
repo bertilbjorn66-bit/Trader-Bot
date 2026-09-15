@@ -14,6 +14,7 @@ from research.sequential_empirical import DEFAULT_HORIZONS
 
 
 # Stage 21 is intentionally discovery-only: confirmation remains a separate frozen gate.
+DISCOVERY_CONTRACT_VERSION = "v2-continuity-hardened"
 AGREEMENT_GRID = (0.50, 0.55, 0.60, 0.65, 0.70, 0.75)
 DISTANCE_GRID: tuple[float | None, ...] = (None, 0.5, 1.0, 1.5, 2.0)
 REGIMES = (
@@ -115,6 +116,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
     return {
         "status": "FRESH_DISCOVERY_COMPLETED",
         "selection_policy": {
+            "contract_version": DISCOVERY_CONTRACT_VERSION,
             "source": "verified nine-pair historical feed",
             "split": "chronological discovery segment only",
             "minimum_discovery_samples": MIN_DISCOVERY_SAMPLES,
@@ -131,6 +133,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
             "ranking": "discovery bootstrap lower 95% expectancy, then discovery profit factor, then discovery expectancy, then sample count",
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
+            "time_continuity": "exact 10-minute continuity is enforced in state, analogue, and target windows by the research engine",
         },
         "record_count": len(all_records),
         "candidate_count": len(candidates),
