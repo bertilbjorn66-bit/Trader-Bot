@@ -4,7 +4,7 @@ import argparse
 import json
 import math
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from statistics import mean, median
 from typing import TypedDict
@@ -27,6 +27,7 @@ PAIR_PIP = {
 
 MIN_HOLDOUT_SAMPLES = 100
 DISCOVERY_FRACTION = 0.60
+EXPECTED_BAR_INTERVAL = timedelta(minutes=10)
 
 
 class EvalResult(TypedDict):
@@ -137,6 +138,15 @@ def evaluate(records: list[TargetRecord], distance_max: float | None = None, agr
     }
 
 
+def _is_contiguous_window(bars, start: int, end: int) -> bool:
+    if start < 0 or end >= len(bars) or start > end:
+        return False
+    return all(
+        (current.timestamp - previous.timestamp) == EXPECTED_BAR_INTERVAL
+        for previous, current in zip(bars[start:end], bars[start + 1 : end + 1], strict=True)
+    )
+
+
 def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, history_states: int, costs: ExecutionAssumptions) -> tuple[list[TargetRecord], dict[str, object]]:
     rows, quality = _execution_valid_rows(rows, pair)
     bid, ask = _market_bars(rows)
@@ -145,14 +155,20 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
     minimum = empirical.STATE_LOOKBACK + history_states + max(horizons) + 10
     if len(bars) < minimum:
         raise ValueError(f"insufficient bars for {pair}: {len(bars)} < {minimum}")
-    states = [state_from_bar_window(bars, index, empirical.STATE_LOOKBACK) for index in range(empirical.STATE_LOOKBACK, len(bars))]
-    state_index = {state.timestamp: index + empirical.STATE_LOOKBACK for index, state in enumerate(states)}
+    states: list[State] = []
+    state_index: dict[datetime, int] = {}
+    for index in range(empirical.STATE_LOOKBACK, len(bars)):
+        if not _is_contiguous_window(bars, index - empirical.STATE_LOOKBACK, index):
+            continue
+        state = state_from_bar_window(bars, index, empirical.STATE_LOOKBACK)
+        states.append(state)
+        state_index[state.timestamp] = index
     targets: list[TargetRecord] = []
 
     for position in range(history_states, len(states), sample_stride):
         target = states[position]
         target_index = state_index[target.timestamp]
-        if target_index + max(horizons) >= len(bars):
+        if not _is_contiguous_window(bars, target_index, target_index + max(horizons)):
             continue
         history = states[position - history_states:position]
         scaler = fit_scaler(history, DEFAULT_FEATURES)
@@ -161,6 +177,8 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
         for state, distance in nearest:
             state_index_value = state_index[state.timestamp]
             if any(state_index_value + horizon >= target_index for horizon in horizons):
+                continue
+            if not _is_contiguous_window(bars, state_index_value, state_index_value + max(horizons)):
                 continue
             neighbors.append((state, distance))
         if not neighbors:
@@ -173,6 +191,7 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
             evidence = [
                 net_move(future_outcome(bars, state_index[neighbor.timestamp], horizon, direction).return_abs, costs)
                 for neighbor, _ in neighbors
+                if _is_contiguous_window(bars, state_index[neighbor.timestamp], state_index[neighbor.timestamp] + horizon)
             ]
             if not evidence:
                 continue
@@ -287,6 +306,7 @@ def main() -> None:
             "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp",
             "outcome": "directional executable movement using BID/ASK, converted to pair-specific pips",
             "cost_model": "BID/ASK embedded; additional slippage and commission fixed at zero in this research artifact",
+            "time_continuity": "state lookbacks, analogue outcomes, and target outcomes require exact 10-minute bar continuity; discontinuous windows are excluded",
             "interpretation": "confirmation is the only segment eligible for strategy candidacy; it is not used for candidate selection",
         },
     }
