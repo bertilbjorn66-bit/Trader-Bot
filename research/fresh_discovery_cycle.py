@@ -30,14 +30,17 @@ REGIMES = (
 SESSIONS = ("asia", "london", "new_york", "overlap")
 PAIRSETS = ("all", "JPY")
 MIN_DISCOVERY_SAMPLES = 150
+MIN_DISCOVERY_PF = 1.10
 TOP_N = 25
 
 
-def _candidate_key(candidate: dict[str, Any]) -> tuple[float, float, int]:
+def _candidate_key(candidate: dict[str, Any]) -> tuple[float, float, float, int]:
     discovery = candidate["discovery"]
+    bootstrap_low = discovery.get("bootstrap_expectancy_ci_pips", [None, None])[0]
     return (
-        float(discovery["expectancy_pips"]),
+        float(bootstrap_low if bootstrap_low is not None else -math.inf),
         float(discovery["profit_factor"] or -math.inf),
+        float(discovery["expectancy_pips"]),
         int(discovery["n"]),
     )
 
@@ -85,6 +88,11 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                             )
                             if result is None or result["n"] < MIN_DISCOVERY_SAMPLES:
                                 continue
+                            lower_bootstrap = result["bootstrap_expectancy_ci_pips"][0]
+                            if result["profit_factor"] is None or result["profit_factor"] < MIN_DISCOVERY_PF:
+                                continue
+                            if lower_bootstrap is None or lower_bootstrap <= 0.0:
+                                continue
                             candidates.append(
                                 {
                                     "horizon": horizon,
@@ -105,6 +113,8 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
             "source": "verified nine-pair historical feed",
             "split": "chronological discovery segment only",
             "minimum_discovery_samples": MIN_DISCOVERY_SAMPLES,
+            "minimum_discovery_profit_factor": MIN_DISCOVERY_PF,
+            "minimum_discovery_bootstrap_lower_expectancy_pips": 0.0,
             "candidate_grid": {
                 "horizons": list(DEFAULT_HORIZONS),
                 "agreement_min": list(AGREEMENT_GRID),
@@ -113,7 +123,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                 "sessions": list(SESSIONS),
                 "pairsets": list(PAIRSETS),
             },
-            "ranking": "discovery expectancy, then discovery profit factor, then sample count",
+            "ranking": "discovery bootstrap lower 95% expectancy, then discovery profit factor, then discovery expectancy, then sample count",
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
         },
