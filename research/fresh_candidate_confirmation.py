@@ -20,8 +20,9 @@ from research.non_live_evaluation import (
     profit_factor,
 )
 
-MIN_CONFIRMATION_SAMPLES = 100
+MIN_CONFIRMATION_SAMPLES = 500
 MIN_PAIR_SAMPLES = 20
+MIN_POSITIVE_PAIRS = 3
 FOLDS = 4
 STRESS_COSTS_PIPS = (0.0, 0.2, 0.5, 1.0, 1.5)
 BOOTSTRAP_REPS = 2000
@@ -123,7 +124,7 @@ def evaluate_primary(report: dict[str, Any], records: Sequence[TargetRecord]) ->
     if len(values) < MIN_CONFIRMATION_SAMPLES:
         return {
             "state": "INCOMPLETE",
-            "reason": "primary candidate confirmation sample is below the predefined minimum",
+            "reason": "primary candidate confirmation sample is below the certification-aligned minimum",
             "candidate": primary,
             "candidate_fingerprint": fingerprint,
             "confirmation": _stats(values),
@@ -156,7 +157,7 @@ def evaluate_primary(report: dict[str, Any], records: Sequence[TargetRecord]) ->
         and result["profit_factor"] > 1
     )
     largest_pair_share = max((result["n"] / len(values) for result in pairs.values()), default=1.0)
-    pair_diversity_ok = positive_pairs >= 2 and largest_pair_share <= MAX_PAIR_OBSERVATION_SHARE
+    pair_diversity_ok = positive_pairs >= MIN_POSITIVE_PAIRS and largest_pair_share <= MAX_PAIR_OBSERVATION_SHARE
 
     bootstrap = _bootstrap(values)
     ruin = probability_of_ruin(
@@ -173,20 +174,20 @@ def evaluate_primary(report: dict[str, Any], records: Sequence[TargetRecord]) ->
     )
 
     gates = {
-        "confirmation_sample_min_100": len(values) >= MIN_CONFIRMATION_SAMPLES,
+        "confirmation_sample_min_500": len(values) >= MIN_CONFIRMATION_SAMPLES,
         "confirmation_expectancy_positive": bool(base["expectancy_pips"] is not None and base["expectancy_pips"] > 0),
         "confirmation_pf_gt_1": bool(base["profit_factor"] is not None and base["profit_factor"] > 1),
         "chronological_fold_stability": all_folds_positive,
         "stress_resilient_0_to_1_5_pips": stress_resilient,
         "uncertainty_supportive": uncertainty_supportive,
-        "positive_pair_count_min_2_and_min_20_each": positive_pairs >= 2,
+        "positive_pair_count_min_3_and_min_20_each": positive_pairs >= MIN_POSITIVE_PAIRS,
         "pair_observation_concentration_lte_80pct": largest_pair_share <= MAX_PAIR_OBSERVATION_SHARE,
     }
     gates["pair_diversity"] = pair_diversity_ok
     passed = all(gates.values())
     return {
         "state": "PASS" if passed else "FAIL",
-        "reason": "primary fresh candidate passed all predefined confirmation robustness gates" if passed else "primary fresh candidate failed one or more predefined confirmation robustness gates",
+        "reason": "primary fresh candidate passed all predefined certification-aligned confirmation robustness gates" if passed else "primary fresh candidate failed one or more predefined certification-aligned confirmation robustness gates",
         "candidate": primary,
         "candidate_fingerprint": fingerprint,
         "candidate_selection_rule": "rank-1 discovery candidate only; confirmation results never select an alternate candidate",
