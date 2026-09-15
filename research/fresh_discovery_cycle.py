@@ -8,7 +8,7 @@ from typing import Any
 
 import research.enriched_conditional_experiment as experiment
 from research.datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
-from research.enriched_conditional_experiment import TargetRecord
+from research.enriched_conditional_experiment import EvalResult, TargetRecord
 from research.execution import ExecutionAssumptions
 from research.sequential_empirical import DEFAULT_HORIZONS
 
@@ -31,7 +31,17 @@ SESSIONS = ("asia", "london", "new_york", "overlap")
 PAIRSETS = ("all", "JPY")
 MIN_DISCOVERY_SAMPLES = 150
 MIN_DISCOVERY_PF = 1.10
+MIN_DISCOVERY_BOOTSTRAP_LOWER = 0.0
 TOP_N = 25
+
+
+def discovery_result_is_admissible(result: EvalResult | None) -> bool:
+    """Apply the discovery-only statistical screen before candidate ranking."""
+    if result is None or result["n"] < MIN_DISCOVERY_SAMPLES:
+        return False
+    pf = result["profit_factor"]
+    lower = result["bootstrap_expectancy_ci_pips"][0]
+    return pf is not None and pf >= MIN_DISCOVERY_PF and lower is not None and lower > MIN_DISCOVERY_BOOTSTRAP_LOWER
 
 
 def _candidate_key(candidate: dict[str, Any]) -> tuple[float, float, float, int]:
@@ -86,12 +96,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                                 "discovery",
                                 with_bootstrap=True,
                             )
-                            if result is None or result["n"] < MIN_DISCOVERY_SAMPLES:
-                                continue
-                            lower_bootstrap = result["bootstrap_expectancy_ci_pips"][0]
-                            if result["profit_factor"] is None or result["profit_factor"] < MIN_DISCOVERY_PF:
-                                continue
-                            if lower_bootstrap is None or lower_bootstrap <= 0.0:
+                            if not discovery_result_is_admissible(result):
                                 continue
                             candidates.append(
                                 {
@@ -114,7 +119,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
             "split": "chronological discovery segment only",
             "minimum_discovery_samples": MIN_DISCOVERY_SAMPLES,
             "minimum_discovery_profit_factor": MIN_DISCOVERY_PF,
-            "minimum_discovery_bootstrap_lower_expectancy_pips": 0.0,
+            "minimum_discovery_bootstrap_lower_expectancy_pips": MIN_DISCOVERY_BOOTSTRAP_LOWER,
             "candidate_grid": {
                 "horizons": list(DEFAULT_HORIZONS),
                 "agreement_min": list(AGREEMENT_GRID),
