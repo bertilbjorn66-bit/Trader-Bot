@@ -17,7 +17,7 @@ from .outcomes import future_outcome
 from .pipeline import state_from_bar_window
 from .regimes import classify_regime
 from .similarity import DEFAULT_FEATURES, fit_scaler, nearest_states
-from .types import State
+from .types import Bar, State
 
 PAIR_PIP = {
     "EUR/USD": 0.0001, "GBP/USD": 0.0001, "USD/JPY": 0.01,
@@ -138,7 +138,7 @@ def evaluate(records: list[TargetRecord], distance_max: float | None = None, agr
     }
 
 
-def _is_contiguous_window(bars, start: int, end: int) -> bool:
+def _is_contiguous_window(bars: list[Bar], start: int, end: int) -> bool:
     if start < 0 or end >= len(bars) or start > end:
         return False
     return all(
