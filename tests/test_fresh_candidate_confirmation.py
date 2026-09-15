@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from research.fresh_candidate_confirmation import (
@@ -25,6 +27,7 @@ def _candidate() -> dict[str, object]:
 
 
 def _record(split: str, pair: str, outcome: float, minute: int, agreement: float = 0.7) -> dict[str, object]:
+    timestamp = datetime(2025, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=minute)
     return {
         "split": split,
         "pair": pair,
@@ -34,7 +37,7 @@ def _record(split: str, pair: str, outcome: float, minute: int, agreement: float
         "median_distance": 1.0,
         "agreement": agreement,
         "outcome_pips": outcome,
-        "timestamp": f"2025-01-01T00:{minute:02d}:00+00:00",
+        "timestamp": timestamp.isoformat(),
     }
 
 
