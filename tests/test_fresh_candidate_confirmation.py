@@ -4,6 +4,8 @@ import pytest
 
 from research.fresh_candidate_confirmation import (
     MAX_PAIR_OBSERVATION_SHARE,
+    MIN_CONFIRMATION_SAMPLES,
+    MIN_POSITIVE_PAIRS,
     _matches,
     candidate_fingerprint,
     evaluate_primary,
@@ -86,11 +88,16 @@ def test_prior_frozen_confirmation_reference_is_rejected() -> None:
 
 
 def test_confirmation_sample_floor_is_fail_closed() -> None:
-    records = [_record("confirmation", "EUR/USD", 1.0, minute) for minute in range(25)]
+    records = [_record("confirmation", "EUR/USD", 1.0, minute) for minute in range(MIN_CONFIRMATION_SAMPLES - 1)]
     result = evaluate_primary(_report(), records)
     assert result["state"] == "INCOMPLETE"
     assert result["promotion_authorized"] is False
     assert result["live_execution_authorized"] is False
+
+
+def test_certification_aligned_minimums_are_not_relaxed() -> None:
+    assert MIN_CONFIRMATION_SAMPLES >= 500
+    assert MIN_POSITIVE_PAIRS >= 3
 
 
 def test_pair_concentration_limit_is_explicit() -> None:
