@@ -14,7 +14,7 @@ from research.sequential_empirical import DEFAULT_HORIZONS
 
 
 # Stage 21 is intentionally discovery-only: confirmation remains a separate frozen gate.
-DISCOVERY_CONTRACT_VERSION = "v2-continuity-hardened"
+DISCOVERY_CONTRACT_VERSION = "v3-continuity-hardened-two-stage-screen"
 AGREEMENT_GRID = (0.50, 0.55, 0.60, 0.65, 0.70, 0.75)
 DISTANCE_GRID: tuple[float | None, ...] = (None, 0.5, 1.0, 1.5, 2.0)
 REGIMES = (
@@ -75,6 +75,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
         quality[pair] = pair_quality
 
     candidates: list[dict[str, Any]] = []
+    bootstrap_screened = 0
     for horizon in DEFAULT_HORIZONS:
         for agreement_min in AGREEMENT_GRID:
             for distance_max in DISTANCE_GRID:
@@ -90,26 +91,39 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                                 and record["session"] == session
                                 and (pairset == "all" or record["pair"].endswith("/JPY"))
                             ]
-                            result = experiment.evaluate(
+                            cheap = experiment.evaluate(
+                                subset,
+                                distance_max,
+                                agreement_min,
+                                "discovery",
+                                with_bootstrap=False,
+                            )
+                            if cheap is None or cheap["n"] < MIN_DISCOVERY_SAMPLES:
+                                continue
+                            pf = cheap["profit_factor"]
+                            if pf is None or pf < MIN_DISCOVERY_PF:
+                                continue
+                            candidate: dict[str, Any] = {
+                                "horizon": horizon,
+                                "agreement_min": agreement_min,
+                                "distance_max": distance_max,
+                                "regime": regime,
+                                "session": session,
+                                "pairset": pairset,
+                                "discovery": cheap,
+                            }
+                            bootstrap = experiment.evaluate(
                                 subset,
                                 distance_max,
                                 agreement_min,
                                 "discovery",
                                 with_bootstrap=True,
                             )
-                            if not discovery_result_is_admissible(result):
+                            bootstrap_screened += 1
+                            if not discovery_result_is_admissible(bootstrap):
                                 continue
-                            candidates.append(
-                                {
-                                    "horizon": horizon,
-                                    "agreement_min": agreement_min,
-                                    "distance_max": distance_max,
-                                    "regime": regime,
-                                    "session": session,
-                                    "pairset": pairset,
-                                    "discovery": result,
-                                }
-                            )
+                            candidate["discovery"] = bootstrap
+                            candidates.append(candidate)
 
     candidates.sort(key=_candidate_key, reverse=True)
     selected = candidates[:TOP_N]
@@ -131,6 +145,8 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                 "pairsets": list(PAIRSETS),
             },
             "ranking": "discovery bootstrap lower 95% expectancy, then discovery profit factor, then discovery expectancy, then sample count",
+            "two_stage_screen": "sample/PF evaluated first; bootstrap lower-tail computed only for sample/PF survivors; no threshold relaxed",
+            "bootstrap_screened_candidate_count": bootstrap_screened,
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
             "time_continuity": "exact 10-minute continuity is enforced in state, analogue, and target windows by the research engine",
