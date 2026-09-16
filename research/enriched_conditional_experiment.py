@@ -147,6 +147,16 @@ def _is_contiguous_window(bars: list[Bar], start: int, end: int) -> bool:
     )
 
 
+def _assign_split(target_timestamp: datetime, horizon: int, cutoff: datetime | None) -> str:
+    """Assign a target to discovery/confirmation only when its full outcome is on that side of the cutoff."""
+    if cutoff is None:
+        return "confirmation"
+    if target_timestamp >= cutoff:
+        return "confirmation"
+    outcome_end = target_timestamp + horizon * EXPECTED_BAR_INTERVAL
+    return "discovery" if outcome_end < cutoff else "purged_boundary"
+
+
 def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, history_states: int, costs: ExecutionAssumptions) -> tuple[list[TargetRecord], dict[str, object]]:
     rows, quality = _execution_valid_rows(rows, pair)
     bid, ask = _market_bars(rows)
@@ -216,7 +226,11 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
     timestamps = sorted({datetime.fromisoformat(record["timestamp"]) for record in targets})
     cutoff = timestamps[int(len(timestamps) * DISCOVERY_FRACTION)] if timestamps else None
     for record in targets:
-        record["split"] = "discovery" if cutoff and datetime.fromisoformat(record["timestamp"]) < cutoff else "confirmation"
+        record["split"] = _assign_split(
+            datetime.fromisoformat(record["timestamp"]),
+            int(record["horizon"]),
+            cutoff,
+        )
     return targets, quality
 
 
@@ -299,11 +313,12 @@ def main() -> None:
         "discovery_candidates": candidates[:100],
         "confirmation_finalists": finalists,
         "methodology": {
-            "split": "chronological 60/40 discovery/confirmation within each pair",
+            "split": "chronological 60/40 discovery/confirmation within each pair with horizon-purged boundary observations",
             "candidate_search": "finite threshold grid selected only on discovery data, with session included and a structural minimum discovery sample for the 100-observation holdout gate",
             "holdout_min_samples": MIN_HOLDOUT_SAMPLES,
             "analogue_k": 100,
             "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp",
+            "split_leakage_rule": "discovery targets whose full horizon reaches the confirmation cutoff are purged from both splits",
             "outcome": "directional executable movement using BID/ASK, converted to pair-specific pips",
             "cost_model": "BID/ASK embedded; additional slippage and commission fixed at zero in this research artifact",
             "time_continuity": "state lookbacks, analogue outcomes, and target outcomes require exact 10-minute bar continuity; discontinuous windows are excluded",

@@ -6,7 +6,18 @@ on:
     paths:
       - ".github/workflows/21-FRESH-DISCOVERY-CYCLE.yml"
       - "research/fresh_discovery_cycle.py"
+      - "research/enriched_conditional_experiment.py"
+      - "research/datafeed_empirical.py"
+      - "research/execution.py"
+      - "research/sequential_empirical.py"
+      - "research/cross_section.py"
+      - "research/outcomes.py"
+      - "research/pipeline.py"
+      - "research/regimes.py"
+      - "research/similarity.py"
+      - "research/types.py"
       - "tests/test_fresh_discovery_cycle.py"
+      - "tests/test_enriched_conditional_experiment.py"
   workflow_dispatch:
     inputs:
       source_run_id:
@@ -21,10 +32,6 @@ on:
         description: "Historical states used per target"
         required: true
         default: "10000"
-
-permissions:
-  contents: read
-  actions: read
 
 env:
   SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}

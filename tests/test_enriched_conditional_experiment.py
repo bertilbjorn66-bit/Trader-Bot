@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from research.enriched_conditional_experiment import (
+    _assign_split,
     _is_contiguous_window,
     evaluate,
     wilson_interval,
@@ -52,3 +53,12 @@ def test_continuity_rejects_weekend_or_missing_bar_gaps() -> None:
     gapped = [contiguous[0], contiguous[1], BarStub(base + timedelta(minutes=40)), contiguous[3]]
     assert _is_contiguous_window(contiguous, 0, 3)
     assert not _is_contiguous_window(gapped, 0, 3)
+
+
+def test_split_purges_targets_whose_horizon_crosses_cutoff() -> None:
+    cutoff = datetime(2026, 1, 3, 0, 40, tzinfo=timezone.utc)
+    assert _assign_split(cutoff - timedelta(minutes=40), 2, cutoff) == "discovery"
+    assert _assign_split(cutoff - timedelta(minutes=20), 1, cutoff) == "discovery"
+    assert _assign_split(cutoff - timedelta(minutes=20), 2, cutoff) == "purged_boundary"
+    assert _assign_split(cutoff, 1, cutoff) == "confirmation"
+    assert _assign_split(cutoff + timedelta(minutes=10), 6, cutoff) == "confirmation"
