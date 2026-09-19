@@ -92,10 +92,7 @@ def test_no_candidate_is_fail_closed() -> None:
 
 def test_prior_frozen_confirmation_reference_is_rejected() -> None:
     report = _report()
-    report["selection_policy"] = {
-        "confirmation_used_for_selection": False,
-        "prior_frozen_confirmation_artifact_read": True,
-    }
+    report["selection_policy"]["prior_frozen_confirmation_artifact_read"] = True
     with pytest.raises(ValueError, match="prior frozen confirmation artifact"):
         evaluate_primary(report, [])
 
