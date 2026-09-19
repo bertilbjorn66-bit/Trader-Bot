@@ -38,6 +38,7 @@ MIN_DISCOVERY_SAMPLES = 150
 MIN_DISCOVERY_PF = 1.10
 MIN_DISCOVERY_BOOTSTRAP_LOWER = 0.0
 TOP_N = 25
+DISCOVERY_HOLM_ALPHA = 0.05
 
 
 def _sha256_file(path: Path) -> str:
@@ -148,7 +149,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
 
     global_split_cutoff = assign_global_split(all_records)
 
-    candidates: list[dict[str, Any]] = []
+    family_hypotheses: list[dict[str, Any]] = []
     bootstrap_near_misses: list[dict[str, Any]] = []
     bootstrap_screened = 0
     discovery_search_started = time.perf_counter()
@@ -175,9 +176,17 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                                 )
                                 if cheap is None or cheap["n"] < MIN_DISCOVERY_SAMPLES:
                                     continue
-                                pf = cheap["profit_factor"]
-                                if pf is None or pf < MIN_DISCOVERY_PF:
-                                    continue
+
+                                values = experiment.filtered_outcomes(
+                                    subset,
+                                    distance_max,
+                                    agreement_min,
+                                    "discovery",
+                                )
+                                if len(values) != cheap["n"]:
+                                    raise RuntimeError("candidate filtering and evaluator sample counts diverged")
+                                raw_hac_pvalue = hac_mean_pvalue(values)
+
                                 candidate: dict[str, Any] = {
                                     "horizon": horizon,
                                     "agreement_min": agreement_min,
@@ -188,6 +197,22 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                                     "direction": direction,
                                     "discovery": cheap,
                                 }
+                                family_hypotheses.append({
+                                    "candidate": candidate,
+                                    "raw_hac_one_sided_pvalue": raw_hac_pvalue,
+                                    "profit_factor_pass": (
+                                        cheap["profit_factor"] is not None
+                                        and cheap["profit_factor"] >= MIN_DISCOVERY_PF
+                                    ),
+                                    "bootstrap_pass": False,
+                                    "bootstrap": None,
+                                })
+
+                                if not family_hypotheses[-1]["profit_factor_pass"]:
+                                    continue
+                                if raw_hac_pvalue > DISCOVERY_HOLM_ALPHA:
+                                    continue
+
                                 bootstrap = experiment.evaluate(
                                     subset,
                                     distance_max,
@@ -196,20 +221,39 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                                     with_bootstrap=True,
                                 )
                                 bootstrap_screened += 1
-                                if not discovery_result_is_admissible(bootstrap):
-                                    bootstrap_near_misses.append({
-                                        "horizon": horizon,
-                                        "agreement_min": agreement_min,
-                                        "distance_max": distance_max,
-                                        "regime": regime,
-                                        "session": session,
-                                        "pairset": pairset,
-                                        "direction": direction,
-                                        "discovery": bootstrap,
-                                    })
-                                    continue
-                                candidate["discovery"] = bootstrap
-                                candidates.append(candidate)
+                                family_hypotheses[-1]["bootstrap"] = bootstrap
+                                if discovery_result_is_admissible(bootstrap):
+                                    family_hypotheses[-1]["bootstrap_pass"] = True
+
+    family_adjusted_pvalues = holm_bonferroni(
+        [float(item["raw_hac_one_sided_pvalue"]) for item in family_hypotheses]
+    )
+    candidates: list[dict[str, Any]] = []
+    for item, adjusted_pvalue in zip(family_hypotheses, family_adjusted_pvalues, strict=True):
+        candidate = dict(item["candidate"])
+        bootstrap = item["bootstrap"]
+        raw_pvalue = float(item["raw_hac_one_sided_pvalue"])
+        candidate["discovery_hac_one_sided_pvalue"] = raw_pvalue
+        candidate["discovery_hac_holm_adjusted_pvalue"] = adjusted_pvalue
+        candidate["discovery_family_size"] = len(family_hypotheses)
+        if (
+            bool(item["profit_factor_pass"])
+            and bool(item["bootstrap_pass"])
+            and adjusted_pvalue <= DISCOVERY_HOLM_ALPHA
+        ):
+            if bootstrap is None:
+                raise RuntimeError("bootstrap result missing for admissible discovery candidate")
+            candidate["discovery"] = bootstrap
+            candidates.append(candidate)
+        elif bool(item["profit_factor_pass"]) and bootstrap is not None:
+            near_miss = dict(candidate)
+            near_miss["discovery"] = bootstrap
+            near_miss["near_miss_reason"] = (
+                "failed discovery-family Holm-adjusted HAC p-value"
+                if adjusted_pvalue > DISCOVERY_HOLM_ALPHA
+                else "failed discovery bootstrap lower-tail admission"
+            )
+            bootstrap_near_misses.append(near_miss)
 
     candidates.sort(key=_candidate_key, reverse=True)
     bootstrap_near_misses.sort(key=_candidate_key, reverse=True)
@@ -233,10 +277,14 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                 "directions": list(DIRECTIONS),
             },
             "ranking": "discovery bootstrap lower 95% expectancy, then discovery profit factor, then discovery expectancy, then sample count",
-            "two_stage_screen": "sample/PF evaluated first; bootstrap lower-tail computed only for sample/PF survivors; no threshold relaxed",
+            "discovery_familywise_control": "one-sided HAC mean p-values for every selectable discovery hypothesis (n>=150) followed by Holm correction across the entire selectable family",
+            "discovery_family_holm_alpha": DISCOVERY_HOLM_ALPHA,
+            "discovery_family_size": len(family_hypotheses),
+            "two_stage_screen": "sample/PF evaluated first; HAC family p-value computed for every selectable hypothesis; bootstrap lower-tail computed only for PF and raw-p<=alpha survivors; final selection also requires Holm-adjusted HAC p<=alpha; no threshold relaxed",
             "bootstrap_screened_candidate_count": bootstrap_screened,
             "bootstrap_near_miss_count": len(bootstrap_near_misses),
             "bootstrap_near_miss_policy": "diagnostic only; near-misses never enter candidate selection or confirmation",
+            "bootstrap_near_miss_reasons": "failed bootstrap lower-tail admission and/or discovery-family Holm-adjusted HAC p-value",
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
             "time_continuity": "exact 10-minute continuity is enforced in state, analogue, and target windows by the research engine",
