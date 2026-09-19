@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from math import sqrt
+from math import erfc, sqrt
 from statistics import mean, median
 from typing import Sequence
 
@@ -46,6 +46,34 @@ def expectancy(values: Sequence[float], transaction_cost: float = 0.0) -> dict[s
         "avg_loss": mean(losses) if losses else 0.0,
         "profit_factor": gross_profit / gross_loss if gross_loss > 0 else None,
     }
+
+
+HAC_DEFAULT_LAG = 5
+
+
+def hac_mean_pvalue(values: Sequence[float], max_lag: int = HAC_DEFAULT_LAG) -> float:
+    """One-sided HAC-normal p-value for positive mean under time dependence."""
+    if len(values) < 2:
+        raise ValueError("HAC p-value requires at least two observations")
+    if max_lag < 0 or max_lag >= len(values):
+        raise ValueError("invalid HAC lag")
+    centre = mean(values)
+    centred = [value - centre for value in values]
+    gamma_0 = mean(value * value for value in centred)
+    variance = gamma_0
+    for lag in range(1, max_lag + 1):
+        gamma = mean(
+            centred[index] * centred[index - lag]
+            for index in range(lag, len(values))
+        )
+        weight = 1.0 - lag / (max_lag + 1.0)
+        variance += 2.0 * weight * gamma
+    variance = max(variance, 0.0)
+    standard_error = sqrt(variance / len(values))
+    if standard_error == 0.0:
+        return 0.0 if centre > 0.0 else 1.0
+    z = centre / standard_error
+    return 0.5 * erfc(z / sqrt(2.0))
 
 
 def max_drawdown(returns: Sequence[float]) -> float:

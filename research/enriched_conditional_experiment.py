@@ -126,13 +126,23 @@ def wilson_interval(win_rate: float, n: int, z: float = 1.959963984540054) -> tu
     return centre - half, centre + half
 
 
-def evaluate(records: list[TargetRecord], distance_max: float | None = None, agreement_min: float = 0.0, split: str = "all", with_bootstrap: bool = False) -> EvalResult | None:
-    values = [
-        record["outcome_pips"] for record in records
+
+def filtered_outcomes(
+    records: list[TargetRecord],
+    distance_max: float | None = None,
+    agreement_min: float = 0.0,
+    split: str = "all",
+) -> list[float]:
+    return [
+        record["outcome_pips"]
+        for record in records
         if (split == "all" or record["split"] == split)
         and (distance_max is None or record["median_distance"] <= distance_max)
         and record["agreement"] >= agreement_min
     ]
+
+def evaluate(records: list[TargetRecord], distance_max: float | None = None, agreement_min: float = 0.0, split: str = "all", with_bootstrap: bool = False) -> EvalResult | None:
+    values = filtered_outcomes(records, distance_max, agreement_min, split)
     if not values:
         return None
     wins = sum(value > 0.0 for value in values)

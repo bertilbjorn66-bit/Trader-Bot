@@ -57,7 +57,7 @@ def _discovery() -> dict[str, object]:
     return {
         "status": "FRESH_DISCOVERY_COMPLETED",
         "selection_policy": {
-            "contract_version": "v4-global-horizon-aware-two-stage-screen",
+            "contract_version": "v5-global-horizon-aware-familywise-screen",
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
         },
