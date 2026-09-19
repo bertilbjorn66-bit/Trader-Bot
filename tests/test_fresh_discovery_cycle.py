@@ -181,7 +181,7 @@ def test_discovery_familywise_holm_gate_blocks_unadjusted_signal(monkeypatch, tm
 
     def fake_analyze_pair(pair, feed_path, sample_stride, history_states, costs):
         pair_records = [dict(record, pair=pair) for record in records]
-        return pair_records, {"pair": pair}
+        return pair, pair_records, {"pair": pair}
 
     monkeypatch.setattr(module, "_analyze_pair_from_feed", fake_analyze_pair)
     monkeypatch.setattr(module, "_sha256_file", lambda _path: "0" * 64)
