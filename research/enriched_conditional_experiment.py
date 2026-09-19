@@ -16,7 +16,7 @@ from .execution import ExecutionAssumptions, net_move
 from .outcomes import future_outcome
 from .pipeline import state_from_bar_window
 from .regimes import classify_regime
-from .similarity import DEFAULT_FEATURES, fit_scaler, nearest_states
+from .similarity import DEFAULT_FEATURES, SimilarityIndex
 from .types import Bar, State
 
 PAIR_PIP = {
@@ -188,15 +188,17 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
         states.append(state)
         state_index[state.timestamp] = index
     targets: list[TargetRecord] = []
+    similarity_index = SimilarityIndex(states, DEFAULT_FEATURES)
 
     for position in range(history_states, len(states), sample_stride):
         target = states[position]
         target_index = state_index[target.timestamp]
         if not _is_contiguous_window(bars, target_index, target_index + max(horizons)):
             continue
-        history = states[position - history_states:position]
-        scaler = fit_scaler(history, DEFAULT_FEATURES)
-        nearest = nearest_states(target, history, scaler, k=min(100, len(history)))
+        history_start = position - history_states
+        history = states[history_start:position]
+        scaler = similarity_index.fit_scaler(history_start, position)
+        nearest = similarity_index.nearest(target, history_start, position, scaler, k=min(100, len(history)))
         neighbors: list[tuple[State, float]] = []
         for state, distance in nearest:
             state_index_value = state_index[state.timestamp]

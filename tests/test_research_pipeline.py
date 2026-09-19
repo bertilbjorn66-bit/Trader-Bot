@@ -6,7 +6,7 @@ from research.execution import ExecutionAssumptions, net_move, validate_spread
 from research.multiple_testing import benjamini_hochberg, bonferroni, holm_bonferroni
 from research.outcomes import future_outcome, horizon_outcomes
 from research.pipeline import build_states, research_snapshot
-from research.similarity import fit_scaler, nearest_states
+from research.similarity import SimilarityIndex, fit_scaler, nearest_states
 from research.statistics import expectancy, probability_summary
 from research.synthetic import generate_bars
 from research.validation import expanding_walk_forward
@@ -85,3 +85,36 @@ def test_end_to_end_snapshot_is_explicitly_non_empirical() -> None:
 def test_invalid_input_rejected() -> None:
     with pytest.raises(ValueError):
         generate_bars(10)
+
+
+def test_similarity_index_matches_scalar_nearest_neighbors() -> None:
+    states = build_states(generate_bars(500))
+    target = states[-1]
+    start = max(0, len(states) - 180)
+    end = len(states) - 1
+    history = states[start:end]
+    scalar_scaler = fit_scaler(history)
+    scalar = nearest_states(target, history, scalar_scaler, k=20)
+
+    index = SimilarityIndex(states)
+    indexed_scaler = index.fit_scaler(start, end)
+    indexed = index.nearest(target, start, end, indexed_scaler, k=20)
+
+    assert [state.timestamp for state, _ in indexed] == [state.timestamp for state, _ in scalar]
+    for (_, scalar_distance), (_, indexed_distance) in zip(scalar, indexed, strict=True):
+        assert indexed_distance == pytest.approx(scalar_distance, rel=1e-12, abs=1e-12)
+    for name in scalar_scaler:
+        assert indexed_scaler[name][0] == pytest.approx(scalar_scaler[name][0], rel=1e-12, abs=1e-12)
+        assert indexed_scaler[name][1] == pytest.approx(scalar_scaler[name][1], rel=1e-12, abs=1e-12)
+
+
+def test_similarity_index_falls_back_for_missing_features() -> None:
+    states = build_states(generate_bars(120))
+    target = states[-1]
+    history = states[:-1]
+    broken = history[0]
+    broken.features["momentum"] = None
+    scaler = fit_scaler(history)
+    expected = nearest_states(target, history, scaler, k=10)
+    actual = SimilarityIndex(history).nearest(target, 0, len(history), scaler, k=10)
+    assert [state.timestamp for state, _ in actual] == [state.timestamp for state, _ in expected]

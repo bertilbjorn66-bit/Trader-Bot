@@ -123,13 +123,17 @@ jobs:
           done
           echo "All nine verified pair datasets restored; no market-data downloader is invoked."
       - name: Run discovery-only search
+        env:
+          OMP_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
         run: |
           python -m research.fresh_discovery_cycle \
             --input-dir .data/empirical_feed \
             --output artifacts/fresh_discovery_report.json \
             --sample-stride "$SAMPLE_STRIDE" \
             --history-states "$HISTORY_STATES" \
-            --parallel-workers 2
+            --parallel-workers 4
       - name: Verify output is discovery-only
         run: |
           python - <<'PY'
