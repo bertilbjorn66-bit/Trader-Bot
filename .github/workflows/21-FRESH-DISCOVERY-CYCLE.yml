@@ -151,6 +151,7 @@ jobs:
           report = json.loads(path.read_text(encoding='utf-8'))
           report['orchestration_binding'] = {
               'discovery_head_sha': '${{ github.sha }}',
+              'discovery_run_id': int('${{ github.run_id }}'),
               'source_run_id': int('${{ env.SOURCE_RUN_ID }}'),
               'sample_stride': int('${{ env.SAMPLE_STRIDE }}'),
               'history_states': int('${{ env.HISTORY_STATES }}'),
