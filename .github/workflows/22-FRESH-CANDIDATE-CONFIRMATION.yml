@@ -194,11 +194,11 @@ jobs:
           path = Path('artifacts/fresh_candidate_confirmation.json')
           result = json.loads(path.read_text(encoding='utf-8'))
           result['orchestration_binding'] = {
-              'discovery_run_id': int('\${{ env.DISCOVERY_RUN_ID }}'),
-              'discovery_head_sha': '\${{ env.DISCOVERY_HEAD_SHA }}',
-              'source_run_id': int('\${{ env.SOURCE_RUN_ID }}'),
-              'sample_stride': int('\${{ env.SAMPLE_STRIDE }}'),
-              'history_states': int('\${{ env.HISTORY_STATES }}'),
+              'discovery_run_id': int('${{ env.DISCOVERY_RUN_ID }}'),
+              'discovery_head_sha': '${{ env.DISCOVERY_HEAD_SHA }}',
+              'source_run_id': int('${{ env.SOURCE_RUN_ID }}'),
+              'sample_stride': int('${{ env.SAMPLE_STRIDE }}'),
+              'history_states': int('${{ env.HISTORY_STATES }}'),
           }
           path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding='utf-8')
           PY
