@@ -67,7 +67,7 @@ def _candidate_fingerprint(candidate: Mapping[str, Any]) -> str:
 def _candidate_identity(candidate: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: candidate[key]
-        for key in ("horizon", "agreement_min", "distance_max", "regime", "session", "pairset")
+        for key in ("horizon", "agreement_min", "distance_max", "regime", "session", "pairset", "direction")
     }
 
 
@@ -76,6 +76,7 @@ def _matches(record: Mapping[str, Any], candidate: Mapping[str, Any]) -> bool:
         int(record["horizon"]) == int(candidate["horizon"])
         and str(record["regime"]) == str(candidate["regime"])
         and str(record["session"]) == str(candidate["session"])
+        and str(record["direction"]) == str(candidate["direction"])
         and (candidate["pairset"] == "all" or str(record["pair"]).endswith("/JPY"))
         and (
             candidate["distance_max"] is None
