@@ -282,6 +282,7 @@ def evaluate_parameter_stability(
             "reason": "candidate has no numeric threshold available for perturbation audit",
             "variants": [],
         }
+
     variant_results: list[dict[str, Any]] = []
     for index, variant in enumerate(variants):
         matched = [record for record in records if _matches(record, variant)]
@@ -291,34 +292,50 @@ def evaluate_parameter_stability(
             len(folds),
             timeline_records=timeline_records,
         )
-        fold_expectancies: list[float] = []
-        fold_pfs: list[float | None] = []
-        for fold in variant_folds:
-            values = [float(record["outcome_pips"]) for record in fold.records]
-            stats = _stats(values)
-            fold_expectancies.append(float(stats["expectancy_pips"] or 0.0))
-            fold_pfs.append(stats["profit_factor"])
-        aggregate = _stats([float(record["outcome_pips"]) for record in matched])
-        passed = (
-            len(variant_folds) == len(folds)
-            and bool(fold_expectancies)
-            and all(value > 0.0 for value in fold_expectancies)
-            and all(pf is not None and pf > 1.0 for pf in fold_pfs)
-            and aggregate["n"] >= MIN_RUN_TRADES
-            and aggregate["expectancy_pips"] > 0.0
-            and aggregate["profit_factor"] is not None
-            and aggregate["profit_factor"] > 1.0
-        )
+        model_results: list[dict[str, Any]] = []
+        variant_pass = len(variant_folds) == len(folds)
+        for model_name, model in EXECUTION_MODELS:
+            fold_results: list[dict[str, Any]] = []
+            for fold in variant_folds:
+                fold_records = list(fold.records)
+                values = _execution_values(fold_records, model)
+                stats = _stats(values)
+                fold_results.append({
+                    "fold_id": fold.fold_id,
+                    "statistics": stats,
+                    "passes": (
+                        stats["n"] >= MIN_RUN_TRADES
+                        and stats["expectancy_pips"] is not None
+                        and stats["expectancy_pips"] > 0.0
+                        and stats["profit_factor"] is not None
+                        and stats["profit_factor"] > 1.0
+                    ),
+                })
+            aggregate = _stats(_execution_values(matched, model))
+            model_pass = (
+                len(fold_results) == len(folds)
+                and all(item["passes"] for item in fold_results)
+                and aggregate["n"] >= MIN_RUN_TRADES
+                and aggregate["expectancy_pips"] is not None
+                and aggregate["expectancy_pips"] > 0.0
+                and aggregate["profit_factor"] is not None
+                and aggregate["profit_factor"] > 1.0
+            )
+            variant_pass = variant_pass and model_pass
+            model_results.append({
+                "execution_model": model_name,
+                "aggregate": aggregate,
+                "folds": fold_results,
+                "passes": model_pass,
+            })
         variant_results.append({
             "variant_id": index + 1,
             "candidate": _candidate_identity(variant),
-            "n": aggregate["n"],
-            "expectancy_pips": aggregate["expectancy_pips"],
-            "profit_factor": aggregate["profit_factor"],
-            "fold_expectancies": fold_expectancies,
-            "fold_profit_factors": fold_pfs,
-            "passed": passed,
+            "matched_observations": len(matched),
+            "execution_models": model_results,
+            "passed": variant_pass,
         })
+
     return {
         "variant_count": len(variant_results),
         "all_variants_pass": all(item["passed"] for item in variant_results),
