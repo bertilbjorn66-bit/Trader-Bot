@@ -66,6 +66,7 @@ class Candidate(TypedDict, total=False):
     regime: str
     session: str
     pairset: str
+    direction: str
     discovery: EvalResult
     discovery_bootstrap: EvalResult | None
     confirmation: EvalResult | None
@@ -317,11 +318,11 @@ def main() -> None:
         "discovery_candidates": candidates[:100],
         "confirmation_finalists": finalists,
         "methodology": {
-            "split": "chronological 60/40 discovery/confirmation within each pair",
+            "split": "global horizon-aware 60/40 discovery/confirmation across all nine pairs",
             "candidate_search": "finite threshold grid selected only on discovery data, with session included and a structural minimum discovery sample for the 100-observation holdout gate",
             "holdout_min_samples": MIN_HOLDOUT_SAMPLES,
             "analogue_k": 100,
-            "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp",
+            "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp; a discovery target is admitted only when its own complete outcome ends strictly before the global split cutoff",
             "outcome": "directional executable movement using BID/ASK, converted to pair-specific pips",
             "cost_model": "BID/ASK embedded; additional slippage and commission fixed at zero in this research artifact",
             "time_continuity": "state lookbacks, analogue outcomes, and target outcomes require exact 10-minute bar continuity; discontinuous windows are excluded",
