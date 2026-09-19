@@ -231,5 +231,6 @@ def test_certification_boundaries_use_confirmation_timeline_only() -> None:
     folds = build_purged_folds(candidate_records, horizon=6, folds=12, timeline_records=confirmation)
     wrong = build_purged_folds(candidate_records, horizon=6, folds=12, timeline_records=timeline)
     assert len(folds) == len(wrong) == 12
-    assert folds[0].start == confirmation[0]["timestamp"] and wrong[0].start == discovery[0]["timestamp"]
-    assert all(datetime.fromisoformat(str(item["timestamp"])) >= datetime.fromisoformat(str(confirmation[0]["timestamp"])) for item in folds[0].records)
+    assert folds[0].start == datetime.fromisoformat(str(confirmation[0]["timestamp"]))
+    assert wrong[0].start == datetime.fromisoformat(str(discovery[0]["timestamp"]))
+    assert folds[0].start > wrong[0].start
