@@ -99,7 +99,7 @@ jobs:
           discovery = json.loads(Path('artifacts/discovery/fresh_discovery_report.json').read_text(encoding='utf-8'))
           confirmation = json.loads(Path('artifacts/confirmation/fresh_candidate_confirmation.json').read_text(encoding='utf-8'))
           assert discovery['status'] == 'FRESH_DISCOVERY_COMPLETED'
-          assert discovery['selection_policy']['contract_version'] == 'v4-global-horizon-aware-two-stage-screen'
+          assert discovery['selection_policy']['contract_version'] == 'v5-global-horizon-aware-familywise-screen'
           assert discovery['selection_policy']['confirmation_used_for_selection'] is False
           assert discovery['selection_policy']['prior_frozen_confirmation_artifact_read'] is False
           assert discovery['top_candidates']
