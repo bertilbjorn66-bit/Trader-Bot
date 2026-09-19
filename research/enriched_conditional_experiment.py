@@ -55,6 +55,8 @@ class TargetRecord(TypedDict):
     distance_p90: float | None
     outcome_pips: float
     split: str
+    target_end_timestamp: str
+    global_split: str
 
 
 class Candidate(TypedDict, total=False):
@@ -81,6 +83,17 @@ def integer_feature(state: State, name: str) -> int:
     if not isinstance(value, int):
         raise ValueError(f"state feature {name!r} must be an integer")
     return value
+
+
+def assign_global_split(records: list[TargetRecord]) -> str | None:
+    if not records:
+        return None
+    timestamps = sorted(datetime.fromisoformat(record["timestamp"]) for record in records)
+    cutoff = timestamps[int(len(timestamps) * DISCOVERY_FRACTION)]
+    for record in records:
+        target_end = datetime.fromisoformat(record["target_end_timestamp"])
+        record["global_split"] = "discovery" if target_end < cutoff else "confirmation"
+    return cutoff.isoformat()
 
 
 def percentile(values: list[float], probability: float) -> float | None:
@@ -211,6 +224,8 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
                 "distance_p90": percentile(distances, 0.90),
                 "outcome_pips": net_move(target_outcome.return_abs, costs) / PAIR_PIP[pair],
                 "split": "",
+                "target_end_timestamp": bars[target_index + horizon].timestamp.isoformat(),
+                "global_split": "",
             })
 
     timestamps = sorted({datetime.fromisoformat(record["timestamp"]) for record in targets})
@@ -238,6 +253,8 @@ def main() -> None:
         records, pair_quality = analyze_pair(pair, load_feed_bars(input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"), args.sample_stride, args.history_states, costs)
         all_records.extend(records)
         quality[pair] = pair_quality
+
+    global_cutoff = assign_global_split(all_records)
 
     regimes = (
         "regime:breakout_up", "regime:breakout_down", "regime:high_vol_trend_up", "regime:high_vol_trend_down",
@@ -296,6 +313,7 @@ def main() -> None:
         "record_count": len(all_records),
         "data_quality": quality,
         "target_records": all_records,
+        "global_split_cutoff": global_cutoff,
         "discovery_candidates": candidates[:100],
         "confirmation_finalists": finalists,
         "methodology": {
