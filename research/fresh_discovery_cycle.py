@@ -211,6 +211,11 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                                 if not family_hypotheses[-1]["profit_factor_pass"]:
                                     continue
                                 if raw_hac_pvalue > DISCOVERY_HOLM_ALPHA:
+                                    near_miss = dict(candidate)
+                                    near_miss["discovery_hac_one_sided_pvalue"] = raw_hac_pvalue
+                                    near_miss["discovery_family_size"] = 0
+                                    near_miss["near_miss_reason"] = "failed raw discovery HAC p-value prefilter"
+                                    bootstrap_near_misses.append(near_miss)
                                     continue
 
                                 bootstrap = experiment.evaluate(
