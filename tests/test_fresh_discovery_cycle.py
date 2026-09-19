@@ -57,6 +57,8 @@ def test_discovery_report_is_structurally_one_way(monkeypatch) -> None:
     assert report["selection_policy"]["minimum_discovery_profit_factor"] == 1.10
     assert report["selection_policy"]["minimum_discovery_bootstrap_lower_expectancy_pips"] == 0.0
     assert report["selection_policy"]["candidate_grid"]["directions"] == ["long", "short"]
+    assert report["selection_policy"]["bootstrap_near_miss_policy"].startswith("diagnostic only")
+    assert "bootstrap_near_misses" in report
 
 
 def test_sha256_file_is_deterministic(tmp_path) -> None:
