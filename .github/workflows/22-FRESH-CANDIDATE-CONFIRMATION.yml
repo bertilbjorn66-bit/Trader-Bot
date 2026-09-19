@@ -131,7 +131,7 @@ jobs:
         with:
           name: empirical-recovery-eurusd
           repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
+          run-id: ${{ steps.discovery_binding.outputs.source_run_id }}
           github-token: ${{ github.token }}
           path: /tmp/repaired/eurusd
       - name: Download GBP/USD repaired artifact
@@ -139,7 +139,7 @@ jobs:
         with:
           name: empirical-recovery-gbpusd
           repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
+          run-id: ${{ steps.discovery_binding.outputs.source_run_id }}
           github-token: ${{ github.token }}
           path: /tmp/repaired/gbpusd
       - name: Download USD/JPY repaired artifact
@@ -147,9 +147,14 @@ jobs:
         with:
           name: empirical-recovery-usdjpy
           repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
+          run-id: ${{ steps.discovery_binding.outputs.source_run_id }}
           github-token: ${{ github.token }}
           path: /tmp/repaired/usdjpy
+      - name: Assert all confirmation data downloads use discovery-bound source run
+        run: |
+          set -euo pipefail
+          ! grep -q '\${{ env.SOURCE_RUN_ID }}' .github/workflows/22-FRESH-CANDIDATE-CONFIRMATION.yml
+          echo "CONFIRMATION_SOURCE_BINDING_CHECK=true"
       - name: Place repaired pair files
         run: |
           set -euo pipefail
