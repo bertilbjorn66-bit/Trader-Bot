@@ -64,7 +64,7 @@ jobs:
           binding = data.get('orchestration_binding')
           if not isinstance(binding, dict):
               raise SystemExit('confirmation artifact has no immutable orchestration binding')
-          for key in ('discovery_run_id', 'discovery_head_sha', 'confirmation_head_sha', 'source_run_id', 'sample_stride', 'history_states'):
+          for key in ('discovery_run_id', 'confirmation_run_id', 'discovery_head_sha', 'confirmation_head_sha', 'source_run_id', 'sample_stride', 'history_states'):
               if key not in binding:
                   raise SystemExit(f'missing binding field: {key}')
           if environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':
@@ -72,6 +72,8 @@ jobs:
                   raise SystemExit('manual certification requires a bound discovery run')
           if binding['confirmation_head_sha'] != environ['CONFIRMATION_HEAD_SHA']:
               raise SystemExit('confirmation artifact commit SHA does not match requested revision')
+          if int(binding['confirmation_run_id']) != int(environ['CONFIRMATION_RUN_ID']):
+              raise SystemExit('confirmation artifact run ID does not match requested confirmation run')
           with open(environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               print(f"discovery_run_id={int(binding['discovery_run_id'])}", file=output)
               print(f"discovery_head_sha={binding['discovery_head_sha']}", file=output)
@@ -97,6 +99,7 @@ jobs:
           discovery = json.loads(Path('artifacts/discovery/fresh_discovery_report.json').read_text(encoding='utf-8'))
           confirmation = json.loads(Path('artifacts/confirmation/fresh_candidate_confirmation.json').read_text(encoding='utf-8'))
           assert discovery['status'] == 'FRESH_DISCOVERY_COMPLETED'
+          assert discovery['selection_policy']['contract_version'] == 'v4-global-horizon-aware-two-stage-screen'
           assert discovery['selection_policy']['confirmation_used_for_selection'] is False
           assert discovery['selection_policy']['prior_frozen_confirmation_artifact_read'] is False
           assert discovery['top_candidates']
@@ -104,10 +107,11 @@ jobs:
           assert confirmation['candidate']['rank'] == 1
           assert confirmation['promotion_authorized'] is False
           assert confirmation['live_execution_authorized'] is False
-          selected = {key: discovery['top_candidates'][0][key] for key in ('horizon','agreement_min','distance_max','regime','session','pairset')}
+          selected = {key: discovery['top_candidates'][0][key] for key in ('horizon','agreement_min','distance_max','regime','session','pairset','direction')}
           confirmed = {key: confirmation['candidate'][key] for key in selected}
           assert selected == confirmed
           assert confirmation['orchestration_binding']['discovery_head_sha'] == '${{ steps.binding.outputs.discovery_head_sha }}'
+          assert int(confirmation['orchestration_binding']['confirmation_run_id']) == int('${{ env.CONFIRMATION_RUN_ID }}')
           print('CERTIFICATION_INPUT_BINDING_OK=true')
           PY
       - name: Download reused six-pair artifact bundle
