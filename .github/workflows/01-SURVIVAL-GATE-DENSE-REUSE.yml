@@ -1,7 +1,6 @@
 name: "🚨 FINAL HOLDOUT VALIDATION — RUN WORKFLOW (LEGACY / MANUAL ONLY)"
 
 on:
-on:
   workflow_dispatch:
 
 permissions:
