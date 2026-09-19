@@ -91,6 +91,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
         quality[pair] = pair_quality
 
     candidates: list[dict[str, Any]] = []
+    bootstrap_near_misses: list[dict[str, Any]] = []
     bootstrap_screened = 0
     for horizon in DEFAULT_HORIZONS:
         for agreement_min in AGREEMENT_GRID:
@@ -140,11 +141,22 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                                 )
                                 bootstrap_screened += 1
                                 if not discovery_result_is_admissible(bootstrap):
+                                    bootstrap_near_misses.append({
+                                        "horizon": horizon,
+                                        "agreement_min": agreement_min,
+                                        "distance_max": distance_max,
+                                        "regime": regime,
+                                        "session": session,
+                                        "pairset": pairset,
+                                        "direction": direction,
+                                        "discovery": bootstrap,
+                                    })
                                     continue
                                 candidate["discovery"] = bootstrap
                                 candidates.append(candidate)
 
     candidates.sort(key=_candidate_key, reverse=True)
+    bootstrap_near_misses.sort(key=_candidate_key, reverse=True)
     selected = candidates[:TOP_N]
     return {
         "status": "FRESH_DISCOVERY_COMPLETED",
@@ -167,6 +179,8 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
             "ranking": "discovery bootstrap lower 95% expectancy, then discovery profit factor, then discovery expectancy, then sample count",
             "two_stage_screen": "sample/PF evaluated first; bootstrap lower-tail computed only for sample/PF survivors; no threshold relaxed",
             "bootstrap_screened_candidate_count": bootstrap_screened,
+            "bootstrap_near_miss_count": len(bootstrap_near_misses),
+            "bootstrap_near_miss_policy": "diagnostic only; near-misses never enter candidate selection or confirmation",
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
             "time_continuity": "exact 10-minute continuity is enforced in state, analogue, and target windows by the research engine",
@@ -175,6 +189,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
         "source_manifest": source_manifest,
         "candidate_count": len(candidates),
         "top_candidates": selected,
+        "bootstrap_near_misses": bootstrap_near_misses[:TOP_N],
         "data_quality": quality,
     }
 
