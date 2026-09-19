@@ -230,6 +230,8 @@ def _analyze_pair(
                     direction,
                 )
                 outcome_pips = net_move(target_outcome.return_abs, costs) / PAIR_PIP[pair]
+                nearest_distances = [distance for _, distance, _ in eligible[:k]]
+                chosen_values = long_values[:k] if direction == "long" else short_values[:k]
                 targets.append(
                     {
                         "pair": pair,
@@ -240,14 +242,18 @@ def _analyze_pair(
                         "direction": direction,
                         "horizon": horizon,
                         "k": k,
-                        "agreement": predicted,
-                        "median_distance": 0.0,
+                        "agreement": sum(value > 0.0 for value in chosen_values) / k,
+                        "median_distance": median(nearest_distances),
                         "distance_p10": None,
                         "distance_p90": None,
                         "outcome_pips": outcome_pips,
                         "split": "",
                         "target_end_timestamp": bars[target_end_index].timestamp.isoformat(),
                         "global_split": "",
+                        "predicted_direction_mean_pips": predicted,
+                        "long_direction_mean_pips": long_mean,
+                        "short_direction_mean_pips": short_mean,
+                        "decision_margin_pips": abs(long_mean - short_mean),
                     }
                 )
 
