@@ -290,6 +290,22 @@ def candidate_fingerprint(candidate: dict[str, int]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _analyze_pair_from_path(
+    pair: str,
+    path: Path,
+    sample_stride: int,
+    history_states: int,
+    costs: ExecutionAssumptions,
+) -> tuple[list[TargetRecord], dict[str, object]]:
+    return _analyze_pair(
+        pair,
+        load_feed_bars(path),
+        sample_stride,
+        history_states,
+        costs,
+    )
+
+
 def run_discovery(
     input_dir: Path,
     sample_stride: int,
@@ -301,19 +317,19 @@ def run_discovery(
 
     costs = ExecutionAssumptions()
     source_manifest: dict[str, object] = {}
-    jobs = []
+    jobs: list[tuple[str, Path]] = []
     for pair in PAIR_TO_SYMBOL:
         path = input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"
         source_manifest[pair] = {"path": str(path), "sha256": _sha256_file(path)}
         jobs.append((pair, path))
 
-    results = []
+    results: list[tuple[list[TargetRecord], dict[str, object]]] = []
     if parallel_workers == 1:
         for pair, path in jobs:
             results.append(
-                _analyze_pair(
+                _analyze_pair_from_path(
                     pair,
-                    load_feed_bars(path),
+                    path,
                     sample_stride,
                     history_states,
                     costs,
@@ -325,9 +341,9 @@ def run_discovery(
         with ProcessPoolExecutor(max_workers=parallel_workers) as executor:
             results = list(
                 executor.map(
-                    _analyze_pair,
+                    _analyze_pair_from_path,
                     [pair for pair, _path in jobs],
-                    [load_feed_bars(path) for _pair, path in jobs],
+                    [path for _pair, path in jobs],
                     [sample_stride] * len(jobs),
                     [history_states] * len(jobs),
                     [costs] * len(jobs),
@@ -341,7 +357,7 @@ def run_discovery(
         quality[pair] = pair_quality
 
     global_split_cutoff = assign_global_split(all_records)
-    family: list[dict[str, object]] = []
+    family: list[dict[str, Any]] = []
 
     for horizon in HORIZONS:
         for k in K_VALUES:
@@ -361,7 +377,7 @@ def run_discovery(
             values = [float(record["outcome_pips"]) for record in records]
             raw_pvalue = hac_mean_pvalue(values)
             pair_robust = _robust_discovery_record_set(records)
-            item: dict[str, object] = {
+            item: dict[str, Any] = {
                 "candidate": _candidate_identity(horizon, k),
                 "candidate_fingerprint": candidate_fingerprint(_candidate_identity(horizon, k)),
                 "n": int(stats["n"]),
@@ -388,8 +404,8 @@ def run_discovery(
     adjusted = holm_bonferroni(
         [float(item["raw_hac_one_sided_pvalue"]) for item in family]
     )
-    candidates: list[dict[str, object]] = []
-    near_misses: list[dict[str, object]] = []
+    candidates: list[dict[str, Any]] = []
+    near_misses: list[dict[str, Any]] = []
     for item, adjusted_pvalue in zip(family, adjusted, strict=True):
         candidate = dict(item["candidate"])
         candidate["candidate_fingerprint"] = item["candidate_fingerprint"]
