@@ -216,14 +216,12 @@ def _analyze_pair(
                 )
 
             for k in K_VALUES:
+                decision = decide_direction(long_values, short_values, k)
+                if decision is None:
+                    continue
+                direction, predicted, decision_margin = decision
                 long_mean = mean(long_values[:k])
                 short_mean = mean(short_values[:k])
-                if long_mean == short_mean:
-                    continue
-                direction = "long" if long_mean > short_mean else "short"
-                predicted = max(long_mean, short_mean)
-                if predicted <= 0.0:
-                    continue
 
                 target_outcome = empirical_outcome(
                     bars,
@@ -255,7 +253,7 @@ def _analyze_pair(
                         "predicted_direction_mean_pips": predicted,
                         "long_direction_mean_pips": long_mean,
                         "short_direction_mean_pips": short_mean,
-                        "decision_margin_pips": abs(long_mean - short_mean),
+                        "decision_margin_pips": decision_margin,
                     }
                 )
 
@@ -279,6 +277,24 @@ def empirical_outcome(
     direction: str,
 ):
     return empirical.future_outcome(bars, index, horizon, direction)
+
+
+def decide_direction(
+    long_values: list[float],
+    short_values: list[float],
+    k: int,
+) -> tuple[str, float, float] | None:
+    if k <= 0 or len(long_values) < k or len(short_values) < k:
+        raise ValueError("direction decision requires k available observations")
+    long_mean = mean(long_values[:k])
+    short_mean = mean(short_values[:k])
+    margin = abs(long_mean - short_mean)
+    if long_mean == short_mean:
+        return None
+    predicted = max(long_mean, short_mean)
+    if predicted <= 0.0:
+        return None
+    return ("long" if long_mean > short_mean else "short", predicted, margin)
 
 
 def _candidate_identity(horizon: int, k: int) -> dict[str, int]:
