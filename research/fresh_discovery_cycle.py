@@ -109,12 +109,12 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                                     and (pairset == "all" or record["pair"].endswith("/JPY"))
                                 ]
                                 cheap = experiment.evaluate(
-                                subset,
-                                distance_max,
-                                agreement_min,
-                                "discovery",
-                                with_bootstrap=False,
-                            )
+                                    subset,
+                                    distance_max,
+                                    agreement_min,
+                                    "discovery",
+                                    with_bootstrap=False,
+                                )
                                 if cheap is None or cheap["n"] < MIN_DISCOVERY_SAMPLES:
                                     continue
                                 pf = cheap["profit_factor"]
