@@ -92,12 +92,14 @@ class SimilarityIndex:
         if self._matrix is None or len(active) != len(self.features):
             return nearest_states(target, history, scaler, k=k)
 
-        means = np.asarray([scaler[name][0] for name in self.features], dtype=np.float64)
         stds = np.asarray([scaler[name][1] for name in self.features], dtype=np.float64)
-        target_values = np.asarray(
-            [float(target.features[name]) for name in self.features],
-            dtype=np.float64,
-        )
+        target_values_list: list[float] = []
+        for name in self.features:
+            value = target.features.get(name)
+            if not isinstance(value, (int, float)) or value is None:
+                return nearest_states(target, history, scaler, k=k)
+            target_values_list.append(float(value))
+        target_values = np.asarray(target_values_list, dtype=np.float64)
         block = self._matrix[start:end]
         distances_squared = np.mean(((block - target_values) / stds) ** 2, axis=1)
         pool_size = min(len(history), max(k + 64, k * 8))
