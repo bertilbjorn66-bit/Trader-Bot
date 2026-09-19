@@ -48,7 +48,6 @@ def expectancy(values: Sequence[float], transaction_cost: float = 0.0) -> dict[s
     }
 
 
-
 HAC_DEFAULT_LAG = 5
 
 
@@ -75,6 +74,7 @@ def hac_mean_pvalue(values: Sequence[float], max_lag: int = HAC_DEFAULT_LAG) -> 
         return 0.0 if centre > 0.0 else 1.0
     z = centre / standard_error
     return 0.5 * erfc(z / sqrt(2.0))
+
 
 def max_drawdown(returns: Sequence[float]) -> float:
     equity = 0.0
