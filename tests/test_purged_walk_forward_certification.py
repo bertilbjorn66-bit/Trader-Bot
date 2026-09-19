@@ -4,9 +4,9 @@ import pytest
 
 from research.purged_walk_forward_certification import (
     EXECUTION_MODELS,
-    _candidate_fingerprint,
     FOLDS,
     MIN_RUN_TRADES,
+    _candidate_fingerprint,
     _execution_values,
     _stats,
     build_purged_folds,
