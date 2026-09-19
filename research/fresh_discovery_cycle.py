@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -36,6 +37,13 @@ MIN_DISCOVERY_BOOTSTRAP_LOWER = 0.0
 TOP_N = 25
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
 def discovery_result_is_admissible(result: EvalResult | None) -> bool:
     """Apply the discovery-only statistical screen before candidate ranking."""
     if result is None or result["n"] < MIN_DISCOVERY_SAMPLES:
@@ -63,10 +71,16 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
     costs = ExecutionAssumptions()
     all_records: list[TargetRecord] = []
     quality: dict[str, Any] = {}
+    source_manifest: dict[str, Any] = {}
     for pair in PAIR_TO_SYMBOL:
+        feed_path = input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"
+        source_manifest[pair] = {
+            "path": str(feed_path),
+            "sha256": _sha256_file(feed_path),
+        }
         records, pair_quality = experiment.analyze_pair(
             pair,
-            load_feed_bars(input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"),
+            load_feed_bars(feed_path),
             sample_stride,
             history_states,
             costs,
@@ -152,6 +166,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
             "time_continuity": "exact 10-minute continuity is enforced in state, analogue, and target windows by the research engine",
         },
         "record_count": len(all_records),
+        "source_manifest": source_manifest,
         "candidate_count": len(candidates),
         "top_candidates": selected,
         "data_quality": quality,
