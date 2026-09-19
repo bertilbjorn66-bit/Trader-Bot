@@ -11,8 +11,8 @@ from typing import Any, Sequence
 from research import enriched_conditional_experiment as experiment
 from research.datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
 from research.enriched_conditional_experiment import TargetRecord, assign_global_split
-from research.fresh_discovery_cycle import DISCOVERY_CONTRACT_VERSION
 from research.execution import ExecutionAssumptions
+from research.fresh_discovery_cycle import DISCOVERY_CONTRACT_VERSION
 from research.non_live_evaluation import (
     block_bootstrap_means,
     bootstrap_means,
