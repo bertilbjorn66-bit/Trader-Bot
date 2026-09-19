@@ -31,6 +31,7 @@ REGIMES = (
 )
 SESSIONS = ("asia", "london", "new_york", "overlap")
 PAIRSETS = ("all", "JPY")
+DIRECTIONS = ("long", "short")
 MIN_DISCOVERY_SAMPLES = 150
 MIN_DISCOVERY_PF = 1.10
 MIN_DISCOVERY_BOOTSTRAP_LOWER = 0.0
@@ -96,48 +97,51 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                 for regime in REGIMES:
                     for session in SESSIONS:
                         for pairset in PAIRSETS:
-                            subset: list[TargetRecord] = [
-                                record
-                                for record in all_records
-                                if record["horizon"] == horizon
-                                and record["split"] == "discovery"
-                                and record["regime"] == regime
-                                and record["session"] == session
-                                and (pairset == "all" or record["pair"].endswith("/JPY"))
-                            ]
-                            cheap = experiment.evaluate(
+                            for direction in DIRECTIONS:
+                                subset: list[TargetRecord] = [
+                                    record
+                                    for record in all_records
+                                    if record["horizon"] == horizon
+                                    and record["split"] == "discovery"
+                                    and record["regime"] == regime
+                                    and record["session"] == session
+                                    and record["direction"] == direction
+                                    and (pairset == "all" or record["pair"].endswith("/JPY"))
+                                ]
+                                cheap = experiment.evaluate(
                                 subset,
                                 distance_max,
                                 agreement_min,
                                 "discovery",
                                 with_bootstrap=False,
                             )
-                            if cheap is None or cheap["n"] < MIN_DISCOVERY_SAMPLES:
-                                continue
-                            pf = cheap["profit_factor"]
-                            if pf is None or pf < MIN_DISCOVERY_PF:
-                                continue
-                            candidate: dict[str, Any] = {
-                                "horizon": horizon,
-                                "agreement_min": agreement_min,
-                                "distance_max": distance_max,
-                                "regime": regime,
-                                "session": session,
-                                "pairset": pairset,
-                                "discovery": cheap,
-                            }
-                            bootstrap = experiment.evaluate(
-                                subset,
-                                distance_max,
-                                agreement_min,
-                                "discovery",
-                                with_bootstrap=True,
-                            )
-                            bootstrap_screened += 1
-                            if not discovery_result_is_admissible(bootstrap):
-                                continue
-                            candidate["discovery"] = bootstrap
-                            candidates.append(candidate)
+                                if cheap is None or cheap["n"] < MIN_DISCOVERY_SAMPLES:
+                                    continue
+                                pf = cheap["profit_factor"]
+                                if pf is None or pf < MIN_DISCOVERY_PF:
+                                    continue
+                                candidate: dict[str, Any] = {
+                                    "horizon": horizon,
+                                    "agreement_min": agreement_min,
+                                    "distance_max": distance_max,
+                                    "regime": regime,
+                                    "session": session,
+                                    "pairset": pairset,
+                                    "direction": direction,
+                                    "discovery": cheap,
+                                }
+                                bootstrap = experiment.evaluate(
+                                    subset,
+                                    distance_max,
+                                    agreement_min,
+                                    "discovery",
+                                    with_bootstrap=True,
+                                )
+                                bootstrap_screened += 1
+                                if not discovery_result_is_admissible(bootstrap):
+                                    continue
+                                candidate["discovery"] = bootstrap
+                                candidates.append(candidate)
 
     candidates.sort(key=_candidate_key, reverse=True)
     selected = candidates[:TOP_N]
@@ -157,6 +161,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
                 "regimes": list(REGIMES),
                 "sessions": list(SESSIONS),
                 "pairsets": list(PAIRSETS),
+                "directions": list(DIRECTIONS),
             },
             "ranking": "discovery bootstrap lower 95% expectancy, then discovery profit factor, then discovery expectancy, then sample count",
             "two_stage_screen": "sample/PF evaluated first; bootstrap lower-tail computed only for sample/PF survivors; no threshold relaxed",
