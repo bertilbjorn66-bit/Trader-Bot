@@ -11,7 +11,7 @@ from typing import Any
 
 import research.enriched_conditional_experiment as experiment
 from research.datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
-from research.enriched_conditional_experiment import EvalResult, TargetRecord
+from research.enriched_conditional_experiment import EvalResult, TargetRecord, assign_global_split
 from research.execution import ExecutionAssumptions
 from research.sequential_empirical import DEFAULT_HORIZONS
 
@@ -73,7 +73,7 @@ def _group_discovery_records(
 ) -> dict[tuple[int, str, str, str, str, str], list[TargetRecord]]:
     grouped: dict[tuple[int, str, str, str, str, str], list[TargetRecord]] = {}
     for record in records:
-        if record["split"] != "discovery":
+        if record["global_split"] != "discovery":
             continue
         base_key = (
             int(record["horizon"]),
@@ -146,6 +146,8 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
         all_records.extend(records)
         quality[pair] = pair_quality
 
+    global_split_cutoff = assign_global_split(all_records)
+
     candidates: list[dict[str, Any]] = []
     bootstrap_near_misses: list[dict[str, Any]] = []
     bootstrap_screened = 0
@@ -217,7 +219,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
         "selection_policy": {
             "contract_version": DISCOVERY_CONTRACT_VERSION,
             "source": "verified nine-pair historical feed",
-            "split": "chronological discovery segment only",
+            "split": "global horizon-aware chronological discovery segment across all nine pairs",
             "minimum_discovery_samples": MIN_DISCOVERY_SAMPLES,
             "minimum_discovery_profit_factor": MIN_DISCOVERY_PF,
             "minimum_discovery_bootstrap_lower_expectancy_pips": MIN_DISCOVERY_BOOTSTRAP_LOWER,
@@ -238,11 +240,13 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
             "time_continuity": "exact 10-minute continuity is enforced in state, analogue, and target windows by the research engine",
+            "split_assignment": "global cutoff over all target timestamps; a target is discovery only when its complete target outcome ends strictly before the cutoff",
             "parallel_workers": parallel_workers,
             "discovery_search_seconds": time.perf_counter() - discovery_search_started,
             "grouped_record_key": "(horizon, regime, session, direction, split, pairset)",
         },
         "record_count": len(all_records),
+        "global_split_cutoff": global_split_cutoff,
         "source_manifest": source_manifest,
         "candidate_count": len(candidates),
         "top_candidates": selected,
