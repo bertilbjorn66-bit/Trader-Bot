@@ -9,23 +9,23 @@ on:
       confirmation_run_id:
         description: "Completed fresh candidate confirmation run"
         required: true
-        default: "32892555800"
+
       discovery_run_id:
         description: "Completed fresh discovery run containing the immutable discovery artifact"
         required: true
-        default: "32892555632"
+
       source_run_id:
         description: "Completed recovery run containing the nine verified pair artifacts"
         required: true
-        default: "32874819018"
+
       sample_stride:
         description: "Target stride in 10m bars"
         required: true
-        default: "60"
+
       history_states:
         description: "Historical states used per target"
         required: true
-        default: "10000"
+
 
 permissions:
   contents: read
