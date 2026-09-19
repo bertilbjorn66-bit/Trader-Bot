@@ -194,3 +194,14 @@ def test_certification_rejects_orchestration_binding_mismatch() -> None:
     }
     with pytest.raises(ValueError, match="orchestration binding mismatch"):
         certify(_discovery(), confirmation, [])
+
+
+def test_certification_returns_incomplete_for_unevaluable_sparse_runs() -> None:
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    records = [_record(base + timedelta(minutes=10 * index)) for index in range(24)]
+    confirmation = _confirmation()
+    result = certify(_discovery(), confirmation, records)
+    assert result["state"] == "INCOMPLETE"
+    assert result["promotion_authorized"] is False
+    assert result["live_execution_authorized"] is False
+    assert "fold_observation_counts" in result
