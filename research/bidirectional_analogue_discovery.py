@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 from math import inf
 from pathlib import Path
 from statistics import mean, median
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, Sequence
 
 from research import sequential_empirical as empirical
 from research.cross_section import session_label
@@ -89,14 +90,14 @@ def _max_drawdown(values: list[float]) -> float:
     return abs(worst)
 
 
-def _pair_breakdown(records: list[TargetRecord]) -> dict[str, dict[str, float | int | None]]:
+def _pair_breakdown(records: Sequence[Mapping[str, object]]) -> dict[str, dict[str, float | int | None]]:
     grouped: dict[str, list[float]] = {}
     for record in records:
         grouped.setdefault(str(record["pair"]), []).append(float(record["outcome_pips"]))
     return {pair: _stats(values) for pair, values in sorted(grouped.items())}
 
 
-def _robust_discovery_record_set(records: list[TargetRecord]) -> bool:
+def _robust_discovery_record_set(records: Sequence[Mapping[str, object]]) -> bool:
     pairs = _pair_breakdown(records)
     eligible = {
         pair: result
