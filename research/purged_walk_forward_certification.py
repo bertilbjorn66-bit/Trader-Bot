@@ -407,6 +407,17 @@ def certify(
             "promotion_authorized": False,
             "live_execution_authorized": False,
         }
+    fold_observation_counts = [len(fold.records) for fold in folds]
+    if any(count < 2 for count in fold_observation_counts):
+        return {
+            "state": "INCOMPLETE",
+            "reason": "one or more purged certification runs has fewer than two observations and cannot support statistical inference",
+            "candidate": candidate,
+            "fold_count": len(folds),
+            "fold_observation_counts": fold_observation_counts,
+            "promotion_authorized": False,
+            "live_execution_authorized": False,
+        }
 
     run_specs = [(fold, name, model) for fold in folds for name, model in EXECUTION_MODELS]
     raw_pvalues: list[float] = []
@@ -564,6 +575,7 @@ def certify(
             }
             for name, model in EXECUTION_MODELS
         },
+        "fold_observation_counts": fold_observation_counts,
         "certification_runs": certification_runs,
         "qualifying_run_count": qualifying_runs,
         "parameter_stability": stability,
