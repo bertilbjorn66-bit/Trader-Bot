@@ -13,21 +13,6 @@ on:
         description: "Exact commit SHA used by the completed confirmation run"
         required: true
 
-      discovery_run_id:
-        description: "Completed fresh discovery run containing the immutable discovery artifact"
-        required: true
-
-      source_run_id:
-        description: "Completed recovery run containing the nine verified pair artifacts"
-        required: true
-
-      sample_stride:
-        description: "Target stride in 10m bars"
-        required: true
-
-      history_states:
-        description: "Historical states used per target"
-        required: true
 
 
 permissions:
@@ -37,10 +22,6 @@ permissions:
 env:
   CONFIRMATION_RUN_ID: ${{ github.event.workflow_run.id || inputs.confirmation_run_id }}
   CONFIRMATION_HEAD_SHA: ${{ github.event.workflow_run.head_sha || inputs.confirmation_head_sha || github.sha }}
-  MANUAL_DISCOVERY_RUN_ID: ${{ inputs.discovery_run_id || '' }}
-  MANUAL_SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
-  SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
-  HISTORY_STATES: ${{ inputs.history_states || '10000' }}
 
 jobs:
   validate-and-certify:
@@ -87,10 +68,8 @@ jobs:
               if key not in binding:
                   raise SystemExit(f'missing binding field: {key}')
           if environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':
-              if str(binding['discovery_run_id']) != environ['MANUAL_DISCOVERY_RUN_ID']:
-                  raise SystemExit('manual discovery_run_id does not match confirmation binding')
-              if str(binding['source_run_id']) != environ['MANUAL_SOURCE_RUN_ID']:
-                  raise SystemExit('manual source_run_id does not match confirmation binding')
+              if str(binding['discovery_run_id']) == "":
+                  raise SystemExit('manual certification requires a bound discovery run')
           with open(environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               print(f"discovery_run_id={int(binding['discovery_run_id'])}", file=output)
               print(f"discovery_head_sha={binding['discovery_head_sha']}", file=output)
