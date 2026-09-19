@@ -3,6 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from math import sqrt
 
+import numpy as np
+from numpy.typing import NDArray
+
 from .types import State
 
 DEFAULT_FEATURES = (
@@ -34,11 +37,7 @@ class SimilarityIndex:
     def __init__(self, states: Sequence[State], features: Iterable[str] = DEFAULT_FEATURES) -> None:
         self.states = list(states)
         self.features = tuple(features)
-        self._matrix = None
-        try:
-            import numpy as np
-        except ImportError:
-            return
+        self._matrix: NDArray[np.float64] | None = None
         if not self.states or not self.features:
             return
         rows: list[list[float]] = []
@@ -57,8 +56,6 @@ class SimilarityIndex:
             raise ValueError("invalid scaler window")
         if self._matrix is None:
             return fit_scaler(self.states[start:end], self.features)
-        import numpy as np
-
         block = self._matrix[start:end]
         if len(block) == 0:
             return {}
@@ -95,8 +92,6 @@ class SimilarityIndex:
         ]
         if self._matrix is None or len(active) != len(self.features):
             return nearest_states(target, history, scaler, k=k)
-
-        import numpy as np
 
         means = np.asarray([scaler[name][0] for name in self.features], dtype=np.float64)
         stds = np.asarray([scaler[name][1] for name in self.features], dtype=np.float64)
