@@ -78,6 +78,7 @@ def test_no_candidate_is_fail_closed() -> None:
     report = {
         "status": "FRESH_DISCOVERY_COMPLETED",
         "selection_policy": {
+            "contract_version": "v4-global-horizon-aware-two-stage-screen",
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
         },
