@@ -4,6 +4,7 @@ import pytest
 
 from research.purged_walk_forward_certification import (
     EXECUTION_MODELS,
+    _candidate_fingerprint,
     FOLDS,
     MIN_RUN_TRADES,
     _execution_values,
@@ -55,6 +56,13 @@ def _discovery() -> dict[str, object]:
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
         },
+        "orchestration_binding": {
+            "discovery_head_sha": "a" * 40,
+            "discovery_run_id": 123,
+            "source_run_id": 456,
+            "sample_stride": 60,
+            "history_states": 10000,
+        },
         "top_candidates": [_candidate()],
     }
 
@@ -72,7 +80,14 @@ def _confirmation() -> dict[str, object]:
     return {
         "state": "PASS",
         "candidate": {**identity, "rank": 1},
-        "candidate_fingerprint": "f" * 64,
+        "candidate_fingerprint": _candidate_fingerprint(candidate),
+        "orchestration_binding": {
+            "discovery_head_sha": "a" * 40,
+            "discovery_run_id": 123,
+            "source_run_id": 456,
+            "sample_stride": 60,
+            "history_states": 10000,
+        },
     }
 
 
@@ -168,3 +183,13 @@ def test_fold_boundaries_can_be_anchored_to_full_confirmation_timeline() -> None
             < fold.end
             for record in fold.records
         )
+
+
+def test_certification_rejects_orchestration_binding_mismatch() -> None:
+    confirmation = _confirmation()
+    confirmation["orchestration_binding"] = {
+        **confirmation["orchestration_binding"],
+        "source_run_id": 999,
+    }
+    with pytest.raises(ValueError, match="orchestration binding mismatch"):
+        certify(_discovery(), confirmation, [])
