@@ -135,16 +135,16 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
     for record in all_records:
         if record["split"] != "discovery":
             continue
-        pairset_key = "JPY" if record["pair"].endswith("/JPY") else "non_JPY"
-        key = (
+        base_key = (
             int(record["horizon"]),
             str(record["regime"]),
             str(record["session"]),
             str(record["direction"]),
             "discovery",
-            pairset_key,
         )
-        grouped_records.setdefault(key, []).append(record)
+        grouped_records.setdefault((*base_key, "all"), []).append(record)
+        if record["pair"].endswith("/JPY"):
+            grouped_records.setdefault((*base_key, "JPY"), []).append(record)
 
     for horizon in DEFAULT_HORIZONS:
         for agreement_min in AGREEMENT_GRID:
@@ -153,22 +153,10 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                     for session in SESSIONS:
                         for pairset in PAIRSETS:
                             for direction in DIRECTIONS:
-                                if pairset == "all":
-                                    subset = (
-                                        grouped_records.get(
-                                            (horizon, regime, session, direction, "discovery", "non_JPY"),
-                                            [],
-                                        )
-                                        + grouped_records.get(
-                                            (horizon, regime, session, direction, "discovery", "JPY"),
-                                            [],
-                                        )
-                                    )
-                                else:
-                                    subset = grouped_records.get(
-                                        (horizon, regime, session, direction, "discovery", "JPY"),
-                                        [],
-                                    )
+                                subset = grouped_records.get(
+                                    (horizon, regime, session, direction, "discovery", pairset),
+                                    [],
+                                )
                                 cheap = experiment.evaluate(
                                     subset,
                                     distance_max,
@@ -245,7 +233,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
             "time_continuity": "exact 10-minute continuity is enforced in state, analogue, and target windows by the research engine",
             "parallel_workers": parallel_workers,
             "discovery_search_seconds": time.perf_counter() - discovery_search_started,
-            "grouped_record_key": "(horizon, regime, session, direction, split, pairset-subset)",
+            "grouped_record_key": "(horizon, regime, session, direction, split, pairset)",
         },
         "record_count": len(all_records),
         "source_manifest": source_manifest,
