@@ -30,7 +30,6 @@ def _numeric(state: State, names: Iterable[str]) -> dict[str, float]:
     return result
 
 
-
 class SimilarityIndex:
     """Precompute state features for fast rolling exact-semantics neighbor queries."""
 
@@ -119,6 +118,7 @@ class SimilarityIndex:
         ]
         exact_ranked.sort(key=lambda item: item[1])
         return exact_ranked[:k]
+
 
 def fit_scaler(states: Iterable[State], features: Iterable[str] = DEFAULT_FEATURES) -> dict[str, tuple[float, float]]:
     values: dict[str, list[float]] = {name: [] for name in features}
