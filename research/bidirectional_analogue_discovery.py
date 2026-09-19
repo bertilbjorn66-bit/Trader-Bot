@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from math import inf
 from pathlib import Path
 from statistics import mean, median
-from collections.abc import Mapping
 from typing import Any, Sequence
 
 from research import sequential_empirical as empirical
