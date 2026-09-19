@@ -9,6 +9,7 @@ from statistics import mean
 from typing import Any, Sequence
 
 from research import enriched_conditional_experiment as experiment
+from research.fresh_discovery_cycle import DISCOVERY_CONTRACT_VERSION
 from research.datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
 from research.enriched_conditional_experiment import TargetRecord, assign_global_split
 from research.execution import ExecutionAssumptions
@@ -106,6 +107,8 @@ def evaluate_primary(report: dict[str, Any], records: Sequence[TargetRecord]) ->
     if report.get("status") != "FRESH_DISCOVERY_COMPLETED":
         raise ValueError("source discovery report is not complete")
     policy = report.get("selection_policy", {})
+    if policy.get("contract_version") != DISCOVERY_CONTRACT_VERSION:
+        raise ValueError("discovery report uses an unsupported or stale discovery contract version")
     if policy.get("confirmation_used_for_selection") is not False:
         raise ValueError("discovery report does not prove confirmation-free selection")
     if policy.get("prior_frozen_confirmation_artifact_read") is not False:
