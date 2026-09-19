@@ -42,6 +42,7 @@ def test_discovery_report_is_structurally_one_way(monkeypatch) -> None:
     import research.fresh_discovery_cycle as module
 
     monkeypatch.setattr(module, "load_feed_bars", fake_load_feed_bars)
+    monkeypatch.setattr(module, "_sha256_file", lambda _path: "0" * 64)
     monkeypatch.setattr(module.experiment, "analyze_pair", fake_analyze_pair)
 
     report = run_discovery(Path("."), 60, 10000)
