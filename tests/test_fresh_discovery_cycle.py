@@ -12,8 +12,12 @@ from research.fresh_discovery_cycle import (
 
 
 def test_discovery_grid_is_finite_and_confirmation_free() -> None:
+    from research.fresh_discovery_cycle import DIRECTIONS, PAIRSETS
+
     assert len(DISTANCE_GRID) == 5
     assert len(REGIMES) == 9
+    assert DIRECTIONS == ("long", "short")
+    assert PAIRSETS == ("all", "JPY")
 
 
 def test_discovery_screen_requires_sample_pf_and_positive_bootstrap_lower_tail() -> None:
@@ -52,6 +56,7 @@ def test_discovery_report_is_structurally_one_way(monkeypatch) -> None:
     assert report["selection_policy"]["prior_frozen_confirmation_artifact_read"] is False
     assert report["selection_policy"]["minimum_discovery_profit_factor"] == 1.10
     assert report["selection_policy"]["minimum_discovery_bootstrap_lower_expectancy_pips"] == 0.0
+    assert report["selection_policy"]["directions"] == ["long", "short"]
 
 
 def test_sha256_file_is_deterministic(tmp_path) -> None:
