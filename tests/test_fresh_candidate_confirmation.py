@@ -40,6 +40,8 @@ def _record(split: str, pair: str, outcome: float, minute: int, agreement: float
         "agreement": agreement,
         "outcome_pips": outcome,
         "timestamp": timestamp.isoformat(),
+        "target_end_timestamp": (timestamp + timedelta(minutes=20)).isoformat(),
+        "global_split": split,
     }
 
 
@@ -52,6 +54,7 @@ def _report() -> dict[str, object]:
         },
         "candidate_count": 1,
         "record_count": 400,
+        "global_split_cutoff": (datetime(2025, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=240)).isoformat(),
         "top_candidates": [_candidate()],
     }
 
