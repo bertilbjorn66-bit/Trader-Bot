@@ -68,3 +68,20 @@ def test_sha256_file_is_deterministic(tmp_path) -> None:
     payload = b'{"timestamp":1,"bid_open":1,"bid_high":1,"bid_low":1,"bid_close":1,"ask_open":1,"ask_high":1,"ask_low":1,"ask_close":1}\n'
     path.write_bytes(payload)
     assert _sha256_file(path) == hashlib.sha256(payload).hexdigest()
+
+
+def test_discovery_parallel_workers_are_positive_and_reported(monkeypatch) -> None:
+    def fake_load_feed_bars(_path: Path):
+        return []
+
+    def fake_analyze_pair(pair, rows, sample_stride, history_states, costs):
+        return [], {"pair": pair, "rows": len(rows), "sample_stride": sample_stride, "history_states": history_states}
+
+    import research.fresh_discovery_cycle as module
+
+    monkeypatch.setattr(module, "load_feed_bars", fake_load_feed_bars)
+    monkeypatch.setattr(module, "_sha256_file", lambda _path: "0" * 64)
+    monkeypatch.setattr(module.experiment, "analyze_pair", fake_analyze_pair)
+
+    report = module.run_discovery(Path("."), 60, 10000, parallel_workers=1)
+    assert report["selection_policy"]["parallel_workers"] == 1
