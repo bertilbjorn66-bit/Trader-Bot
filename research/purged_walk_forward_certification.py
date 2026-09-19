@@ -401,11 +401,24 @@ def certify(
         raise ValueError("confirmation candidate fingerprint does not match the frozen rank-1 candidate")
 
     candidate_records = [record for record in all_records if _matches(record, candidate)]
+    confirmation_timeline = [
+        record
+        for record in all_records
+        if str(record["global_split"]) == "confirmation"
+    ]
+    if not confirmation_timeline:
+        return {
+            "state": "INCOMPLETE",
+            "reason": "no confirmation timeline is available for strict purged certification",
+            "candidate": candidate,
+            "promotion_authorized": False,
+            "live_execution_authorized": False,
+        }
     folds = build_purged_folds(
         candidate_records,
         int(candidate["horizon"]),
         FOLDS,
-        timeline_records=all_records,
+        timeline_records=confirmation_timeline,
     )
     if len(folds) != FOLDS:
         return {
@@ -464,7 +477,7 @@ def certify(
             "qualifies": all(gates.values()),
         })
 
-    stability = evaluate_parameter_stability(candidate, candidate_records, folds, all_records)
+    stability = evaluate_parameter_stability(candidate, candidate_records, folds, confirmation_timeline)
 
     certification_runs: list[dict[str, Any]] = []
     for fold_id in range(FOLDS):
@@ -572,7 +585,8 @@ def certify(
             "run_count": FOLDS,
             "purge_bars": int(candidate["horizon"]),
             "purge_interval": str(int(candidate["horizon"]) * 10) + " minutes",
-            "boundary_rule": "12 predeclared chronological test runs; each run begins after a horizon purge and every target outcome must finish strictly before the next run boundary",
+            "boundary_rule": "12 predeclared chronological test runs within the complete confirmation timeline; each run begins after a horizon purge and every target outcome must finish strictly before the next run boundary",
+            "timeline_scope": "confirmation-only records across all pairs; discovery records never define certification run boundaries",
         },
         "execution_models": {
             name: {

@@ -212,3 +212,25 @@ def test_certification_returns_incomplete_for_unevaluable_sparse_runs() -> None:
     assert result["promotion_authorized"] is False
     assert result["live_execution_authorized"] is False
     assert "fold_observation_counts" in result
+
+def test_certification_boundaries_use_confirmation_timeline_only() -> None:
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    discovery = []
+    confirmation = []
+    for index in range(120):
+        ts = base + timedelta(minutes=10 * index)
+        record = _record(ts)
+        if index < 60:
+            record["global_split"] = "discovery"
+            discovery.append(record)
+        else:
+            record["global_split"] = "confirmation"
+            confirmation.append(record)
+    candidate_records = confirmation
+    timeline = discovery + confirmation
+    folds = build_purged_folds(candidate_records, horizon=6, folds=12, timeline_records=confirmation)
+    wrong = build_purged_folds(candidate_records, horizon=6, folds=12, timeline_records=timeline)
+    assert len(folds) == len(wrong) == 12
+    assert folds[0].start == datetime.fromisoformat(str(confirmation[0]["timestamp"]))
+    assert wrong[0].start == datetime.fromisoformat(str(discovery[0]["timestamp"]))
+    assert folds[0].start > wrong[0].start
