@@ -120,3 +120,20 @@ def test_indexed_discovery_subsets_preserve_input_order() -> None:
     jpy_key = (6, "regime:trend_up", "london", "long", "discovery", "JPY")
     assert [item["pair"] for item in grouped[all_key]] == [item["pair"] for item in records]
     assert [item["pair"] for item in grouped[jpy_key]] == ["USD/JPY"]
+
+
+def test_discovery_familywise_policy_is_predeclared() -> None:
+    from research.fresh_discovery_cycle import DISCOVERY_HOLM_ALPHA
+
+    assert DISCOVERY_HOLM_ALPHA == 0.05
+
+
+def test_filtered_outcomes_share_evaluator_filter_semantics() -> None:
+    from research.enriched_conditional_experiment import filtered_outcomes
+
+    records = [
+        {"split": "discovery", "median_distance": 0.4, "agreement": 0.8, "outcome_pips": 2.0},
+        {"split": "discovery", "median_distance": 0.7, "agreement": 0.8, "outcome_pips": 1.0},
+        {"split": "confirmation", "median_distance": 0.4, "agreement": 0.8, "outcome_pips": -1.0},
+    ]
+    assert filtered_outcomes(records, distance_max=0.5, agreement_min=0.7, split="discovery") == [2.0]
