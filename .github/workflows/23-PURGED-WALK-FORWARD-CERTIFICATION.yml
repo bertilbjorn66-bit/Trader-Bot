@@ -1,0 +1,214 @@
+name: "23 — PURGED WALK-FORWARD CERTIFICATION — STRICT NON-LIVE"
+
+on:
+  workflow_run:
+    workflows: ["22 — FRESH CANDIDATE CONFIRMATION — HARDENED NON-LIVE"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      confirmation_run_id:
+        description: "Completed fresh candidate confirmation run"
+        required: true
+      confirmation_head_sha:
+        description: "Exact commit SHA used by the completed confirmation run"
+        required: true
+
+
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CONFIRMATION_RUN_ID: ${{ github.event.workflow_run.id || inputs.confirmation_run_id }}
+  CONFIRMATION_HEAD_SHA: ${{ github.event.workflow_run.head_sha || inputs.confirmation_head_sha || github.sha }}
+
+jobs:
+  validate-and-certify:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    name: "Strict 12-run purged certification"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout exact confirmation source revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CONFIRMATION_HEAD_SHA }}
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Create workspaces
+        run: mkdir -p .data/empirical_feed artifacts/confirmation artifacts/discovery artifacts/certification
+      - name: Download immutable confirmation evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: FRESH-CANDIDATE-CONFIRMATION-EVIDENCE
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CONFIRMATION_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: artifacts/confirmation
+      - name: Read immutable orchestration binding
+        id: binding
+        run: |
+          set -euo pipefail
+          test -s artifacts/confirmation/fresh_candidate_confirmation.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from os import environ
+          data = json.loads(Path('artifacts/confirmation/fresh_candidate_confirmation.json').read_text(encoding='utf-8'))
+          binding = data.get('orchestration_binding')
+          if not isinstance(binding, dict):
+              raise SystemExit('confirmation artifact has no immutable orchestration binding')
+          for key in ('discovery_run_id', 'discovery_head_sha', 'confirmation_head_sha', 'source_run_id', 'sample_stride', 'history_states'):
+              if key not in binding:
+                  raise SystemExit(f'missing binding field: {key}')
+          if environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':
+              if str(binding['discovery_run_id']) == "":
+                  raise SystemExit('manual certification requires a bound discovery run')
+          if binding['confirmation_head_sha'] != environ['CONFIRMATION_HEAD_SHA']:
+              raise SystemExit('confirmation artifact commit SHA does not match requested revision')
+          with open(environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              print(f"discovery_run_id={int(binding['discovery_run_id'])}", file=output)
+              print(f"discovery_head_sha={binding['discovery_head_sha']}", file=output)
+              print(f"source_run_id={int(binding['source_run_id'])}", file=output)
+              print(f"sample_stride={int(binding['sample_stride'])}", file=output)
+              print(f"history_states={int(binding['history_states'])}", file=output)
+          PY
+      - name: Download immutable discovery evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: FRESH-DISCOVERY-CYCLE-RESULT
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.discovery_run_id }}
+          github-token: ${{ github.token }}
+          path: artifacts/discovery
+      - name: Verify discovery-confirmation-certificate binding
+        run: |
+          set -euo pipefail
+          test -s artifacts/discovery/fresh_discovery_report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          discovery = json.loads(Path('artifacts/discovery/fresh_discovery_report.json').read_text(encoding='utf-8'))
+          confirmation = json.loads(Path('artifacts/confirmation/fresh_candidate_confirmation.json').read_text(encoding='utf-8'))
+          assert discovery['status'] == 'FRESH_DISCOVERY_COMPLETED'
+          assert discovery['selection_policy']['confirmation_used_for_selection'] is False
+          assert discovery['selection_policy']['prior_frozen_confirmation_artifact_read'] is False
+          assert discovery['top_candidates']
+          assert 'confirmation' not in discovery['top_candidates'][0]
+          assert confirmation['candidate']['rank'] == 1
+          assert confirmation['promotion_authorized'] is False
+          assert confirmation['live_execution_authorized'] is False
+          selected = {key: discovery['top_candidates'][0][key] for key in ('horizon','agreement_min','distance_max','regime','session','pairset')}
+          confirmed = {key: confirmation['candidate'][key] for key in selected}
+          assert selected == confirmed
+          assert confirmation['orchestration_binding']['discovery_head_sha'] == '${{ steps.binding.outputs.discovery_head_sha }}'
+          print('CERTIFICATION_INPUT_BINDING_OK=true')
+          PY
+      - name: Download reused six-pair artifact bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-reused-artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: .data/empirical_feed
+      - name: Download EUR/USD repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-eurusd
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/eurusd
+      - name: Download GBP/USD repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-gbpusd
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/gbpusd
+      - name: Download USD/JPY repaired artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-usdjpy
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/usdjpy
+      - name: Place repaired pair files
+        run: |
+          set -euo pipefail
+          for slug in eurusd gbpusd usdjpy; do
+            test -s "/tmp/repaired/$slug/$slug.jsonl"
+            cp "/tmp/repaired/$slug/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
+          done
+      - name: Verify all nine pair files
+        run: |
+          set -euo pipefail
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/$slug.jsonl" || { echo "Missing $slug.jsonl"; exit 1; }
+          done
+          echo "ALL_NINE_VERIFIED_PAIR_DATASETS=true"
+          echo "MARKET_DATA_DOWNLOADER_USED=false"
+      - name: Rebuild confirmation target records from exact source revision
+        run: |
+          python -m research.enriched_conditional_experiment \
+            --input-dir .data/empirical_feed \
+            --output artifacts/confirmation/enriched_confirmation_rebuild.json \
+            --sample-stride "${{ steps.binding.outputs.sample_stride }}" \
+            --history-states "${{ steps.binding.outputs.history_states }}"
+      - name: Extract confirmation records only
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path('artifacts/confirmation/enriched_confirmation_rebuild.json').read_text(encoding='utf-8'))
+          records = source.get('target_records')
+          if not isinstance(records, list):
+              raise SystemExit('rebuild did not contain target_records')
+          confirmation = [record for record in records if record.get('split') == 'confirmation']
+          if not confirmation:
+              raise SystemExit('no confirmation records were rebuilt')
+          Path('artifacts/confirmation/confirmation_records.json').write_text(json.dumps(confirmation), encoding='utf-8')
+          print('CONFIRMATION_RECORD_COUNT=', len(confirmation))
+          PY
+      - name: Run strict purged walk-forward certification
+        run: |
+          python -m research.purged_walk_forward_certification \
+            --discovery-report artifacts/discovery/fresh_discovery_report.json \
+            --confirmation-report artifacts/confirmation/fresh_candidate_confirmation.json \
+            --records artifacts/confirmation/confirmation_records.json \
+            --output artifacts/certification/purged_certification_report.json
+      - name: Verify strict non-live certification boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('artifacts/certification/purged_certification_report.json').read_text(encoding='utf-8'))
+          assert report['promotion_authorized'] is False
+          assert report['live_execution_authorized'] is False
+          assert report['state'] in {'PASS', 'FAIL', 'INCOMPLETE'}
+          if report['state'] == 'PASS':
+              assert report['qualifying_run_count'] == 12
+              assert len(report['certification_runs']) == 12
+              assert all(run['qualifies'] for run in report['certification_runs'])
+          print('PURGED_CERTIFICATION_VERIFIED=true')
+          print('STATE=', report['state'])
+          print('QUALIFYING_RUN_COUNT=', report.get('qualifying_run_count', 0))
+          print('PROMOTION_AUTHORIZED=false')
+          print('LIVE_EXECUTION_AUTHORIZED=false')
+          PY
+      - name: Upload purged certification evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: PURGED-WALK-FORWARD-CERTIFICATION-EVIDENCE
+          path: artifacts/certification/purged_certification_report.json
+          if-no-files-found: error
+          retention-days: 30
