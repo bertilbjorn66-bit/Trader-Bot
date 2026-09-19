@@ -10,7 +10,7 @@ from typing import Any, Sequence
 
 from research import enriched_conditional_experiment as experiment
 from research.datafeed_empirical import PAIR_TO_SYMBOL, load_feed_bars
-from research.enriched_conditional_experiment import TargetRecord
+from research.enriched_conditional_experiment import TargetRecord, assign_global_split
 from research.execution import ExecutionAssumptions
 from research.non_live_evaluation import (
     block_bootstrap_means,
@@ -40,7 +40,7 @@ def candidate_fingerprint(candidate: dict[str, Any]) -> str:
 
 def _matches(record: TargetRecord, candidate: dict[str, Any], split: str) -> bool:
     return (
-        record["split"] == split
+        record["global_split"] == split
         and int(record["horizon"]) == int(candidate["horizon"])
         and record["regime"] == candidate["regime"]
         and record["session"] == candidate["session"]
@@ -219,7 +219,11 @@ def run(input_dir: Path, discovery_report_path: Path, sample_stride: int, histor
             costs,
         )
         all_records.extend(records)
+    global_split_cutoff = assign_global_split(all_records)
+    if report.get("global_split_cutoff") != global_split_cutoff:
+        raise ValueError("confirmation rebuild global split cutoff does not match discovery evidence")
     result = evaluate_primary(report, all_records)
+    result["global_split_cutoff"] = global_split_cutoff
     result["source_discovery_candidate_count"] = report.get("candidate_count")
     result["source_discovery_record_count"] = report.get("record_count")
     result["source_discovery_status"] = report.get("status")
