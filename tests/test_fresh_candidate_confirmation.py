@@ -22,6 +22,7 @@ def _candidate() -> dict[str, object]:
         "regime": "regime:high_volatility_range",
         "session": "new_york",
         "pairset": "all",
+        "direction": "long",
         "discovery": {"n": 200, "expectancy_pips": 1.0, "profit_factor": 1.4},
     }
 
@@ -34,6 +35,7 @@ def _record(split: str, pair: str, outcome: float, minute: int, agreement: float
         "horizon": 2,
         "regime": "regime:high_volatility_range",
         "session": "new_york",
+        "direction": "long",
         "median_distance": 1.0,
         "agreement": agreement,
         "outcome_pips": outcome,
@@ -59,6 +61,9 @@ def test_matcher_uses_candidate_thresholds() -> None:
     assert _matches(_record("confirmation", "EUR/USD", 1.0, 1), candidate, "confirmation") is True
     record = _record("confirmation", "EUR/USD", 1.0, 1, agreement=0.4)
     assert _matches(record, candidate, "confirmation") is False
+    opposite = _record("confirmation", "EUR/USD", 1.0, 1)
+    opposite["direction"] = "short"
+    assert _matches(opposite, candidate, "confirmation") is False
 
 
 def test_candidate_fingerprint_is_stable() -> None:
