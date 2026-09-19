@@ -12,15 +12,12 @@ on:
       source_run_id:
         description: "Completed recovery run containing the nine verified pair artifacts"
         required: true
-        default: "32874819018"
       sample_stride:
         description: "Target stride in 10m bars"
         required: true
-        default: "60"
       history_states:
         description: "Historical states used per target"
         required: true
-        default: "10000"
 
 permissions:
   contents: read
@@ -144,6 +141,21 @@ jobs:
           print('FRESH_DISCOVERY_VERIFIED=true')
           print('CANDIDATE_COUNT=', report['candidate_count'])
           print('RECORD_COUNT=', report['record_count'])
+          PY
+      - name: Bind discovery evidence to immutable orchestration inputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('artifacts/fresh_discovery_report.json')
+          report = json.loads(path.read_text(encoding='utf-8'))
+          report['orchestration_binding'] = {
+              'discovery_head_sha': '${{ github.sha }}',
+              'source_run_id': int('${{ env.SOURCE_RUN_ID }}'),
+              'sample_stride': int('${{ env.SAMPLE_STRIDE }}'),
+              'history_states': int('${{ env.HISTORY_STATES }}'),
+          }
+          path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding='utf-8')
           PY
       - name: Upload fresh discovery evidence
         uses: actions/upload-artifact@v7
