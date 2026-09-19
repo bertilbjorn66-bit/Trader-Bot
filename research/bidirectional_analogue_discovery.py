@@ -6,19 +6,19 @@ import json
 from datetime import datetime, timedelta
 from math import inf
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median
+from typing import Any
 
 from research import sequential_empirical as empirical
 from research.datafeed_empirical import PAIR_TO_SYMBOL, _execution_valid_rows, _market_bars, load_feed_bars
 from research.enriched_conditional_experiment import TargetRecord, assign_global_split
 from research.execution import ExecutionAssumptions, net_move
-from research.fresh_discovery_cycle import discovery_result_is_admissible
 from research.multiple_testing import holm_bonferroni
 from research.similarity import DEFAULT_FEATURES, SimilarityIndex
 from research.statistics import hac_mean_pvalue
 from research.non_live_evaluation import block_bootstrap_means, bootstrap_means, profit_factor
 from research.pipeline import state_from_bar_window
-from research.types import State
+from research.types import Bar, State
 
 PAIR_PIP = {
     "EUR/USD": 0.0001,
@@ -56,7 +56,7 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _is_contiguous_window(bars: list, start: int, end: int) -> bool:
+def _is_contiguous_window(bars: list[Bar], start: int, end: int) -> bool:
     if start < 0 or end >= len(bars) or start > end:
         return False
     return all(
@@ -265,7 +265,7 @@ def _analyze_pair(
 
 
 def empirical_outcome(
-    bars: list,
+    bars: list[Bar],
     index: int,
     horizon: int,
     direction: str,
