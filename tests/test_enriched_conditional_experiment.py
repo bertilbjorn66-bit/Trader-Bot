@@ -67,9 +67,9 @@ def test_global_split_requires_complete_outcome_before_cutoff() -> None:
             "global_split": "",
         })
     cutoff = assign_global_split(records)
-    assert cutoff == (base + timedelta(minutes=50)).isoformat()
-    assert all(record["global_split"] == "discovery" for record in records[:4])
-    assert all(record["global_split"] == "confirmation" for record in records[4:])
+    assert cutoff == (base + timedelta(minutes=60)).isoformat()
+    assert all(record["global_split"] == "discovery" for record in records[:5])
+    assert all(record["global_split"] == "confirmation" for record in records[5:])
 
 
 def test_global_split_purges_target_crossing_cutoff_even_when_start_is_earlier() -> None:
