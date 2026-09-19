@@ -102,7 +102,16 @@ class SimilarityIndex:
         block = self._matrix[start:end]
         distances_squared = np.mean(((block - target_values) / stds) ** 2, axis=1)
         pool_size = min(len(history), max(k + 64, k * 8))
-        ordered_indices = np.argsort(distances_squared, kind="stable")[:pool_size]
+        if pool_size < len(history):
+            boundary = float(np.partition(distances_squared, k - 1)[k - 1])
+            tolerance = max(1e-12, abs(boundary) * 1e-12)
+            near_boundary = np.flatnonzero(distances_squared <= boundary + tolerance)
+            candidate_indices = near_boundary.tolist()
+            if len(candidate_indices) < pool_size:
+                candidate_indices = np.argsort(distances_squared, kind="stable")[:pool_size].tolist()
+        else:
+            candidate_indices = np.arange(len(history)).tolist()
+        ordered_indices = candidate_indices
 
         exact_ranked = [
             (history[int(index)], zscore_distance(target, history[int(index)], scaler, self.features))
