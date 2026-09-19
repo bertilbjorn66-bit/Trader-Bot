@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from research.enriched_conditional_experiment import (
     _is_contiguous_window,
-    evaluate,
     assign_global_split,
+    evaluate,
     wilson_interval,
 )
 
