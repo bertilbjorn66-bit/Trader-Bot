@@ -19,6 +19,7 @@ from research.non_live_evaluation import (
     max_drawdown,
     profit_factor,
 )
+from research.statistics import hac_mean_pvalue
 
 EXPECTED_BAR_INTERVAL = timedelta(minutes=10)
 FOLDS = 12
@@ -31,7 +32,6 @@ BOOTSTRAP_REPS = 2000
 BOOTSTRAP_LOWER_INDEX = 49
 BOOTSTRAP_UPPER_INDEX = -50
 BOOTSTRAP_BLOCK_SIZE = 5
-HAC_LAG = 5
 HOLM_ALPHA = 0.05
 MIN_RECOVERY_RATIO = 1.0
 PARAMETER_PERTURBATIONS = (-0.10, -0.05, 0.05, 0.10)
@@ -185,30 +185,6 @@ def _bootstrap(values: Sequence[float], seed: int) -> dict[str, float]:
         "block_upper_95_mean": block[BOOTSTRAP_UPPER_INDEX],
         "ordinary_probability_positive_mean": mean(value > 0.0 for value in ordinary),
     }
-
-
-def hac_mean_pvalue(values: Sequence[float], max_lag: int = HAC_LAG) -> float:
-    if len(values) < 2:
-        raise ValueError("HAC p-value requires at least two observations")
-    if max_lag < 0 or max_lag >= len(values):
-        raise ValueError("invalid HAC lag")
-    centre = mean(values)
-    centred = [value - centre for value in values]
-    gamma_0 = mean(value * value for value in centred)
-    variance = gamma_0
-    for lag in range(1, max_lag + 1):
-        gamma = mean(
-            centred[index] * centred[index - lag]
-            for index in range(lag, len(values))
-        )
-        weight = 1.0 - lag / (max_lag + 1.0)
-        variance += 2.0 * weight * gamma
-    variance = max(variance, 0.0)
-    standard_error = math.sqrt(variance / len(values))
-    if standard_error == 0.0:
-        return 0.0 if centre > 0.0 else 1.0
-    z = centre / standard_error
-    return 0.5 * math.erfc(z / math.sqrt(2.0))
 
 
 def _execution_values(records: Sequence[Mapping[str, Any]], model: ExecutionCostModel) -> list[float]:
