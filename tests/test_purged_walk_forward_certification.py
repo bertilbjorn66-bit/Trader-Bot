@@ -27,6 +27,8 @@ def _record(ts: datetime, pair: str = "EUR/USD", outcome: float = 2.0, horizon: 
         "agreement": 0.8,
         "outcome_pips": outcome,
         "split": "confirmation",
+        "target_end_timestamp": (ts + timedelta(minutes=horizon * 10)).isoformat(),
+        "global_split": "confirmation",
     }
 
 
@@ -58,6 +60,7 @@ def _discovery() -> dict[str, object]:
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
         },
+        "global_split_cutoff": (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=200)).isoformat(),
         "orchestration_binding": {
             "discovery_head_sha": "a" * 40,
             "discovery_run_id": 123,
@@ -84,6 +87,7 @@ def _confirmation() -> dict[str, object]:
         "state": "PASS",
         "candidate": {**identity, "rank": 1},
         "candidate_fingerprint": _candidate_fingerprint(candidate),
+        "global_split_cutoff": (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=200)).isoformat(),
         "orchestration_binding": {
             "discovery_head_sha": "a" * 40,
             "confirmation_head_sha": "b" * 40,
