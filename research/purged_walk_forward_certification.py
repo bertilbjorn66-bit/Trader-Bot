@@ -11,7 +11,12 @@ from typing import Any, Mapping, Sequence
 
 from research.intelligence_controls import ExecutionCostModel
 from research.multiple_testing import holm_bonferroni
-from research.non_live_evaluation import block_bootstrap_means, bootstrap_means, max_drawdown, profit_factor
+from research.non_live_evaluation import (
+    block_bootstrap_means,
+    bootstrap_means,
+    max_drawdown,
+    profit_factor,
+)
 
 EXPECTED_BAR_INTERVAL = timedelta(minutes=10)
 FOLDS = 4
