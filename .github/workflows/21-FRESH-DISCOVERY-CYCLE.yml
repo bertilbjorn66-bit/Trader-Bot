@@ -5,7 +5,7 @@ on:
     branches: [stage21-fresh-discovery, main]
     paths:
       - ".github/workflows/21-FRESH-DISCOVERY-CYCLE.yml"
-      - "research/fresh_discovery_cycle.py"
+      - "research/**"
       - "tests/test_fresh_discovery_cycle.py"
   workflow_dispatch:
     inputs:
