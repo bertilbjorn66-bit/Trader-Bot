@@ -6,11 +6,11 @@ from research.purged_walk_forward_certification import (
     EXECUTION_MODELS,
     FOLDS,
     MIN_RUN_TRADES,
+    _execution_values,
+    _stats,
     build_purged_folds,
     certify,
     hac_mean_pvalue,
-    _execution_values,
-    _stats,
 )
 
 
@@ -101,8 +101,7 @@ def test_execution_models_are_fixed_and_strictly_increasing() -> None:
     assert len(EXECUTION_MODELS) >= 3
     costs = [model.total_cost_pips() for _, model in EXECUTION_MODELS]
     assert costs == sorted(costs)
-    values = [2.0, -1.0, 1.5]
-    net = [_execution_values([_record(datetime(2026, 1, 1, tzinfo=timezone.utc), outcome=value)], model)[0] for _, model in EXECUTION_MODELS]
+    net = [_execution_values([_record(datetime(2026, 1, 1, tzinfo=timezone.utc), outcome=2.0)], model)[0] for _, model in EXECUTION_MODELS]
     assert net[0] > net[1] > net[2]
 
 
