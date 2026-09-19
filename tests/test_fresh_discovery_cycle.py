@@ -137,3 +137,13 @@ def test_filtered_outcomes_share_evaluator_filter_semantics() -> None:
         {"split": "confirmation", "median_distance": 0.4, "agreement": 0.8, "outcome_pips": -1.0},
     ]
     assert filtered_outcomes(records, distance_max=0.5, agreement_min=0.7, split="discovery") == [2.0]
+
+
+def test_global_discovery_subset_is_not_retrimmed_by_pair_local_split() -> None:
+    from research.enriched_conditional_experiment import filtered_outcomes
+
+    records = [
+        {"split": "confirmation", "global_split": "discovery", "median_distance": 0.5, "agreement": 0.8, "outcome_pips": 2.0},
+    ]
+    assert filtered_outcomes(records, split="all") == [2.0]
+    assert filtered_outcomes(records, split="discovery") == []
