@@ -124,7 +124,8 @@ jobs:
             --input-dir .data/empirical_feed \
             --output artifacts/fresh_discovery_report.json \
             --sample-stride "$SAMPLE_STRIDE" \
-            --history-states "$HISTORY_STATES"
+            --history-states "$HISTORY_STATES" \
+            --parallel-workers 2
       - name: Verify output is discovery-only
         run: |
           python - <<'PY'

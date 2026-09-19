@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -66,27 +67,61 @@ def _candidate_key(candidate: dict[str, Any]) -> tuple[float, float, float, int]
     )
 
 
-def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> dict[str, Any]:
-    if sample_stride <= 0 or history_states <= 0:
-        raise ValueError("sample_stride and history_states must be positive")
+def _analyze_pair_from_feed(
+    pair: str,
+    feed_path: str,
+    sample_stride: int,
+    history_states: int,
+    costs: ExecutionAssumptions,
+) -> tuple[str, list[TargetRecord], dict[str, object]]:
+    records, pair_quality = experiment.analyze_pair(
+        pair,
+        load_feed_bars(Path(feed_path)),
+        sample_stride,
+        history_states,
+        costs,
+    )
+    return pair, records, pair_quality
+
+
+def run_discovery(input_dir: Path, sample_stride: int, history_states: int, parallel_workers: int = 1) -> dict[str, Any]:
+    if sample_stride <= 0 or history_states <= 0 or parallel_workers <= 0:
+        raise ValueError("sample_stride, history_states, and parallel_workers must be positive")
 
     costs = ExecutionAssumptions()
     all_records: list[TargetRecord] = []
     quality: dict[str, Any] = {}
     source_manifest: dict[str, Any] = {}
+    feed_jobs: list[tuple[str, Path]] = []
     for pair in PAIR_TO_SYMBOL:
         feed_path = input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"
         source_manifest[pair] = {
             "path": str(feed_path),
             "sha256": _sha256_file(feed_path),
         }
-        records, pair_quality = experiment.analyze_pair(
-            pair,
-            load_feed_bars(feed_path),
-            sample_stride,
-            history_states,
-            costs,
-        )
+        feed_jobs.append((pair, feed_path))
+
+    if parallel_workers <= 1:
+        results = [
+            _analyze_pair_from_feed(pair, str(feed_path), sample_stride, history_states, costs)
+            for pair, feed_path in feed_jobs
+        ]
+    else:
+        with ProcessPoolExecutor(max_workers=parallel_workers) as executor:
+            results = list(
+                executor.map(
+                    _analyze_pair_from_feed,
+                    [pair for pair, _feed_path in feed_jobs],
+                    [str(feed_path) for _pair, feed_path in feed_jobs],
+                    [sample_stride] * len(feed_jobs),
+                    [history_states] * len(feed_jobs),
+                    [costs] * len(feed_jobs),
+                )
+            )
+
+    by_pair = {pair: (records, pair_quality) for pair, records, pair_quality in results}
+    for pair in PAIR_TO_SYMBOL:
+        records, pair_quality = by_pair[pair]
         all_records.extend(records)
         quality[pair] = pair_quality
 
@@ -184,6 +219,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int) -> d
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
             "time_continuity": "exact 10-minute continuity is enforced in state, analogue, and target windows by the research engine",
+            "parallel_workers": parallel_workers,
         },
         "record_count": len(all_records),
         "source_manifest": source_manifest,
@@ -200,9 +236,10 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--sample-stride", type=int, default=60)
     parser.add_argument("--history-states", type=int, default=10000)
+    parser.add_argument("--parallel-workers", type=int, default=2)
     args = parser.parse_args()
 
-    report = run_discovery(Path(args.input_dir), args.sample_stride, args.history_states)
+    report = run_discovery(Path(args.input_dir), args.sample_stride, args.history_states, args.parallel_workers)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2), encoding="utf-8")
