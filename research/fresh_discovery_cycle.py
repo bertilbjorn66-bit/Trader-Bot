@@ -171,7 +171,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                                     subset,
                                     distance_max,
                                     agreement_min,
-                                    "discovery",
+                                    "all",
                                     with_bootstrap=False,
                                 )
                                 if cheap is None or cheap["n"] < MIN_DISCOVERY_SAMPLES:
@@ -181,7 +181,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                                     subset,
                                     distance_max,
                                     agreement_min,
-                                    "discovery",
+                                    "all",
                                 )
                                 if len(values) != cheap["n"]:
                                     raise RuntimeError("candidate filtering and evaluator sample counts diverged")
@@ -222,7 +222,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                                     subset,
                                     distance_max,
                                     agreement_min,
-                                    "discovery",
+                                    "all",
                                     with_bootstrap=True,
                                 )
                                 bootstrap_screened += 1
