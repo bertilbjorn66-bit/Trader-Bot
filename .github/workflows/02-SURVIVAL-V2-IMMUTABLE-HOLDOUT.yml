@@ -1,12 +1,9 @@
-name: "🧪 SURVIVAL V2 — IMMUTABLE HOLDOUT"
+name: "🧪 SURVIVAL V2 — IMMUTABLE HOLDOUT (LEGACY / MANUAL ONLY)"
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/02-SURVIVAL-V2-IMMUTABLE-HOLDOUT.yml"
-      - "research/survival_v2.py"
+  # Legacy V2 holdout is manual-only. Current research evidence is produced by
+  # the v5 discovery -> confirmation -> purged-certification pipeline.
 
 permissions:
   contents: read

@@ -1,16 +1,7 @@
-name: "🚨 FINAL HOLDOUT VALIDATION — RUN WORKFLOW"
+name: "🚨 FINAL HOLDOUT VALIDATION — RUN WORKFLOW (LEGACY / MANUAL ONLY)"
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/01-SURVIVAL-GATE-DENSE-REUSE.yml"
-      - "research/enriched_conditional_experiment.py"
-      - "research/conditional_robustness.py"
-      - "research/select_holdout_ready_candidates.py"
-      - "research/outcomes.py"
-      - "research/execution.py"
 
 permissions:
   contents: read

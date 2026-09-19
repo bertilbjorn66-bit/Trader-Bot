@@ -1,10 +1,6 @@
-name: "01 — 🚑 RUN THIS — EMPIRICAL RECOVERY — LATEST"
+name: "01 — 🚑 EMPIRICAL RECOVERY — LATEST (MANUAL / EXPLICIT SOURCE ONLY)"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/empirical-recovery.yml"
   workflow_dispatch:
     inputs:
       source_run_id:
