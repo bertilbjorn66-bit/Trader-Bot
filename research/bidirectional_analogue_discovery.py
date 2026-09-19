@@ -14,12 +14,12 @@ from research.cross_section import session_label
 from research.datafeed_empirical import PAIR_TO_SYMBOL, _execution_valid_rows, _market_bars, load_feed_bars
 from research.enriched_conditional_experiment import TargetRecord, assign_global_split
 from research.execution import ExecutionAssumptions, net_move
-from research.regimes import classify_regime
 from research.multiple_testing import holm_bonferroni
-from research.similarity import DEFAULT_FEATURES, SimilarityIndex
-from research.statistics import hac_mean_pvalue
 from research.non_live_evaluation import block_bootstrap_means, bootstrap_means, profit_factor
 from research.pipeline import state_from_bar_window
+from research.regimes import classify_regime
+from research.similarity import DEFAULT_FEATURES, SimilarityIndex
+from research.statistics import hac_mean_pvalue
 from research.types import Bar, State
 
 PAIR_PIP = {
@@ -69,7 +69,6 @@ def _is_contiguous_window(bars: list[Bar], start: int, end: int) -> bool:
 
 def _stats(values: list[float]) -> dict[str, float | int | None]:
     wins = [value for value in values if value > 0.0]
-    losses = [value for value in values if value < 0.0]
     return {
         "n": len(values),
         "expectancy_pips": mean(values) if values else None,
@@ -238,7 +237,15 @@ def _analyze_pair(
                         "timestamp": target.timestamp.isoformat(),
                         "year": target.timestamp.year,
                         "session": session_label(target.timestamp),
-                        "regime": f"regime:{classify_regime(float(target.features.get("trend") or 0.0), float(target.features.get("trend_strength") or 0.0), empirical._volatility_z(target, history), int(target.features.get("breakout") or 0))}",
+                        "regime": (
+                            "regime:"
+                            + classify_regime(
+                                float(target.features.get("trend") or 0.0),
+                                float(target.features.get("trend_strength") or 0.0),
+                                empirical._volatility_z(target, history),
+                                int(target.features.get("breakout") or 0),
+                            )
+                        ),
                         "direction": direction,
                         "horizon": horizon,
                         "k": k,
