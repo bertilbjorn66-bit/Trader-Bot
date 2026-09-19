@@ -1,9 +1,6 @@
 name: "01 — 🚑 EMPIRICAL RECOVERY — LATEST (MANUAL / EXPLICIT SOURCE ONLY)"
 
 on:
-    branches: [main]
-    paths:
-      - ".github/workflows/empirical-recovery.yml"
   workflow_dispatch:
     inputs:
       source_run_id:
