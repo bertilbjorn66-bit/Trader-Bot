@@ -10,6 +10,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any, Mapping, Sequence
 
+from research.fresh_discovery_cycle import DISCOVERY_CONTRACT_VERSION
 from research.intelligence_controls import ExecutionCostModel
 from research.multiple_testing import holm_bonferroni
 from research.non_live_evaluation import (
@@ -357,6 +358,8 @@ def certify(
 ) -> dict[str, Any]:
     if discovery_report.get("status") != "FRESH_DISCOVERY_COMPLETED":
         raise ValueError("discovery report is not a completed fresh discovery")
+    if discovery_report.get("selection_policy", {}).get("contract_version") != DISCOVERY_CONTRACT_VERSION:
+        raise ValueError("discovery report uses an unsupported or stale discovery contract version")
     if discovery_report.get("selection_policy", {}).get("confirmation_used_for_selection") is not False:
         raise ValueError("discovery report does not prove confirmation-free candidate selection")
     if discovery_report.get("selection_policy", {}).get("prior_frozen_confirmation_artifact_read") is not False:
