@@ -85,3 +85,37 @@ def test_discovery_parallel_workers_are_positive_and_reported(monkeypatch) -> No
 
     report = module.run_discovery(Path("."), 60, 10000, parallel_workers=1)
     assert report["selection_policy"]["parallel_workers"] == 1
+
+
+def test_indexed_discovery_subsets_preserve_input_order() -> None:
+    from research.fresh_discovery_cycle import _group_discovery_records
+
+    def record(pair: str, minute: int) -> dict[str, object]:
+        return {
+            "pair": pair,
+            "timestamp": f"2025-01-01T00:{minute:02d}:00+00:00",
+            "year": 2025,
+            "session": "london",
+            "regime": "regime:trend_up",
+            "direction": "long",
+            "horizon": 6,
+            "k": 10,
+            "agreement": 0.8,
+            "median_distance": 0.5,
+            "distance_p10": 0.4,
+            "distance_p90": 0.6,
+            "outcome_pips": 1.0,
+            "split": "discovery",
+        }
+
+    records = [
+        record("EUR/USD", 0),
+        record("GBP/USD", 1),
+        record("USD/JPY", 2),
+        record("EUR/USD", 3),
+    ]
+    grouped = _group_discovery_records(records)
+    all_key = (6, "regime:trend_up", "london", "long", "discovery", "all")
+    jpy_key = (6, "regime:trend_up", "london", "long", "discovery", "JPY")
+    assert [item["pair"] for item in grouped[all_key]] == [item["pair"] for item in records]
+    assert [item["pair"] for item in grouped[jpy_key]] == ["USD/JPY"]

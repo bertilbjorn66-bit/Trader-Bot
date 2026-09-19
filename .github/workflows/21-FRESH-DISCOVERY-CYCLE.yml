@@ -19,6 +19,10 @@ on:
         description: "Historical states used per target"
         required: true
 
+concurrency:
+  group: fresh-discovery-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   actions: read
