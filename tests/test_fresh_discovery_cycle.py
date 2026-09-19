@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-
 from pathlib import Path
 
 from research.fresh_discovery_cycle import (
