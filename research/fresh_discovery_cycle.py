@@ -68,6 +68,26 @@ def _candidate_key(candidate: dict[str, Any]) -> tuple[float, float, float, int]
     )
 
 
+def _group_discovery_records(
+    records: list[TargetRecord],
+) -> dict[tuple[int, str, str, str, str, str], list[TargetRecord]]:
+    grouped: dict[tuple[int, str, str, str, str, str], list[TargetRecord]] = {}
+    for record in records:
+        if record["split"] != "discovery":
+            continue
+        base_key = (
+            int(record["horizon"]),
+            str(record["regime"]),
+            str(record["session"]),
+            str(record["direction"]),
+            "discovery",
+        )
+        grouped.setdefault((*base_key, "all"), []).append(record)
+        if record["pair"].endswith("/JPY"):
+            grouped.setdefault((*base_key, "JPY"), []).append(record)
+    return grouped
+
+
 def _analyze_pair_from_feed(
     pair: str,
     feed_path: str,
@@ -131,20 +151,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
     bootstrap_screened = 0
     discovery_search_started = time.perf_counter()
 
-    grouped_records: dict[tuple[int, str, str, str, str, str], list[TargetRecord]] = {}
-    for record in all_records:
-        if record["split"] != "discovery":
-            continue
-        base_key = (
-            int(record["horizon"]),
-            str(record["regime"]),
-            str(record["session"]),
-            str(record["direction"]),
-            "discovery",
-        )
-        grouped_records.setdefault((*base_key, "all"), []).append(record)
-        if record["pair"].endswith("/JPY"):
-            grouped_records.setdefault((*base_key, "JPY"), []).append(record)
+    grouped_records = _group_discovery_records(all_records)
 
     for horizon in DEFAULT_HORIZONS:
         for agreement_min in AGREEMENT_GRID:
