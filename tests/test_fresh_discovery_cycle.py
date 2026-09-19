@@ -156,7 +156,7 @@ def test_discovery_familywise_holm_gate_blocks_unadjusted_signal(monkeypatch, tm
     base_timestamp = __import__("datetime").datetime(2025, 1, 1, tzinfo=__import__("datetime").timezone.utc)
     for index in range(320):
         timestamp = base_timestamp + __import__("datetime").timedelta(minutes=10 * index)
-        outcome = 1.0 if index < 240 else -0.5
+        outcome = 1.0 if index < 150 else -0.5
         records.append({
             "pair": "EUR/USD",
             "timestamp": timestamp.isoformat(),
