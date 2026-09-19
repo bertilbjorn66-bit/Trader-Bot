@@ -147,3 +147,60 @@ def test_global_discovery_subset_is_not_retrimmed_by_pair_local_split() -> None:
     ]
     assert filtered_outcomes(records, split="all") == [2.0]
     assert filtered_outcomes(records, split="discovery") == []
+
+
+def test_discovery_familywise_holm_gate_blocks_unadjusted_signal(monkeypatch, tmp_path) -> None:
+    import research.fresh_discovery_cycle as module
+
+    records = []
+    base_timestamp = __import__("datetime").datetime(2025, 1, 1, tzinfo=__import__("datetime").timezone.utc)
+    for index in range(320):
+        timestamp = base_timestamp + __import__("datetime").timedelta(minutes=10 * index)
+        outcome = 1.0 if index < 240 else -0.5
+        records.append({
+            "pair": "EUR/USD",
+            "timestamp": timestamp.isoformat(),
+            "target_end_timestamp": (timestamp + __import__("datetime").timedelta(minutes=10)).isoformat(),
+            "year": 2025,
+            "session": "london",
+            "regime": "regime:trend_up",
+            "direction": "long",
+            "horizon": 1,
+            "k": 100,
+            "agreement": 0.8,
+            "median_distance": 0.5,
+            "distance_p10": 0.4,
+            "distance_p90": 0.6,
+            "outcome_pips": outcome,
+            "split": "discovery",
+            "global_split": "",
+        })
+
+    for symbol in module.PAIR_TO_SYMBOL.values():
+        (tmp_path / f"{symbol}.jsonl").write_text("", encoding="utf-8")
+
+    def fake_analyze_pair(pair, feed_path, sample_stride, history_states, costs):
+        pair_records = [dict(record, pair=pair) for record in records]
+        return pair_records, {"pair": pair}
+
+    monkeypatch.setattr(module, "_analyze_pair_from_feed", fake_analyze_pair)
+    monkeypatch.setattr(module, "_sha256_file", lambda _path: "0" * 64)
+    monkeypatch.setattr(module, "DEFAULT_HORIZONS", (1,))
+    monkeypatch.setattr(module, "AGREEMENT_GRID", (0.5,))
+    monkeypatch.setattr(module, "DISTANCE_GRID", (None,))
+    monkeypatch.setattr(module, "REGIMES", ("regime:trend_up",))
+    monkeypatch.setattr(module, "SESSIONS", ("london",))
+    monkeypatch.setattr(module, "PAIRSETS", ("all", "JPY"))
+    monkeypatch.setattr(module, "DIRECTIONS", ("long",))
+    monkeypatch.setattr(module, "hac_mean_pvalue", lambda _values: 0.04)
+
+    report = module.run_discovery(tmp_path, 60, 10000, parallel_workers=1)
+    assert report["selection_policy"]["discovery_family_size"] == 2
+    assert report["candidate_count"] == 0
+    assert report["bootstrap_near_misses"]
+    assert all(item["discovery_family_size"] == 2 for item in report["bootstrap_near_misses"])
+    assert all(
+        item["near_miss_reason"] == "failed discovery-family Holm-adjusted HAC p-value"
+        for item in report["bootstrap_near_misses"]
+        if "near_miss_reason" in item
+    )
