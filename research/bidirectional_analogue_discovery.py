@@ -10,6 +10,8 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Sequence
 
+import research.sequential_empirical as empirical
+
 from research.cross_section import session_label
 from research.datafeed_empirical import PAIR_TO_SYMBOL, _execution_valid_rows, _market_bars, load_feed_bars
 from research.enriched_conditional_experiment import TargetRecord, assign_global_split
@@ -21,7 +23,6 @@ from research.regimes import classify_regime
 from research.similarity import DEFAULT_FEATURES, SimilarityIndex
 from research.statistics import hac_mean_pvalue
 from research.types import Bar, State
-from research import sequential_empirical as empirical
 
 PAIR_PIP = {
     "EUR/USD": 0.0001,
