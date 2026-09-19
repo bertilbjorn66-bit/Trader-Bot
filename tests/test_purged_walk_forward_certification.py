@@ -143,3 +143,10 @@ def test_certification_never_uses_an_alternate_candidate() -> None:
 def test_run_trade_contract_is_explicit() -> None:
     assert MIN_RUN_TRADES == 500
     assert FOLDS == 4
+
+
+def test_certification_rejects_candidate_fingerprint_mismatch() -> None:
+    confirmation = _confirmation()
+    confirmation["candidate_fingerprint"] = "0" * 64
+    with pytest.raises(ValueError, match="fingerprint"):
+        certify(_discovery(), confirmation, [])
