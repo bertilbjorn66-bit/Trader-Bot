@@ -390,11 +390,13 @@ def certify(
     confirmation_binding = confirmation_report.get('orchestration_binding')
     if not isinstance(discovery_binding, Mapping) or not isinstance(confirmation_binding, Mapping):
         raise ValueError('discovery and confirmation artifacts require immutable orchestration bindings')
-    for key in ('discovery_head_sha', 'source_run_id', 'sample_stride', 'history_states'):
+    for key in ('discovery_head_sha', 'discovery_run_id', 'source_run_id', 'sample_stride', 'history_states'):
         if discovery_binding.get(key) != confirmation_binding.get(key):
             raise ValueError(f'orchestration binding mismatch for {key}')
     if not confirmation_binding.get('confirmation_head_sha'):
         raise ValueError('confirmation artifact is missing confirmation_head_sha binding')
+    if not confirmation_binding.get('confirmation_run_id'):
+        raise ValueError('confirmation artifact is missing confirmation_run_id binding')
     if discovery_report.get("global_split_cutoff") != confirmation_report.get("global_split_cutoff"):
         raise ValueError("global split cutoff mismatch between discovery and confirmation evidence")
     if 'discovery_run_id' in discovery_binding and confirmation_binding.get('discovery_run_id') != discovery_binding.get('discovery_run_id'):
