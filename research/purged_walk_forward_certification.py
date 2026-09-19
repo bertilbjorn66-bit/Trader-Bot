@@ -380,9 +380,11 @@ def certify(
     confirmation_binding = confirmation_report.get('orchestration_binding')
     if not isinstance(discovery_binding, Mapping) or not isinstance(confirmation_binding, Mapping):
         raise ValueError('discovery and confirmation artifacts require immutable orchestration bindings')
-    for key in ('discovery_head_sha', 'source_run_id', 'sample_stride', 'history_states', 'confirmation_head_sha'):
+    for key in ('discovery_head_sha', 'source_run_id', 'sample_stride', 'history_states'):
         if discovery_binding.get(key) != confirmation_binding.get(key):
             raise ValueError(f'orchestration binding mismatch for {key}')
+    if not confirmation_binding.get('confirmation_head_sha'):
+        raise ValueError('confirmation artifact is missing confirmation_head_sha binding')
     if 'discovery_run_id' in discovery_binding and confirmation_binding.get('discovery_run_id') != discovery_binding.get('discovery_run_id'):
         raise ValueError('orchestration binding mismatch for discovery_run_id')
     expected_fingerprint = _candidate_fingerprint(candidate)
