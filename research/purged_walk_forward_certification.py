@@ -20,7 +20,7 @@ from research.non_live_evaluation import (
 )
 
 EXPECTED_BAR_INTERVAL = timedelta(minutes=10)
-FOLDS = 4
+FOLDS = 12
 MIN_RUN_TRADES = 500
 MIN_SERIES_TRADES = 20
 MIN_SERIES = 3
