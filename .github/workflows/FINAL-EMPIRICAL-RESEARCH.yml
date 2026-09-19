@@ -1,7 +1,6 @@
 name: "🏁 FINAL EMPIRICAL RESEARCH — REUSE VERIFIED RESULT — NO REDOWNLOAD (LEGACY / MANUAL ONLY)"
 
 on:
-on:
   workflow_dispatch:
 
 permissions:
