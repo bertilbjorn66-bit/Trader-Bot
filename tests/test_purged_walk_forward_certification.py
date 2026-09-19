@@ -94,7 +94,6 @@ def _confirmation() -> dict[str, object]:
             "discovery_head_sha": "a" * 40,
             "confirmation_run_id": 789,
             "confirmation_head_sha": "b" * 40,
-            "discovery_run_id": 123,
             "source_run_id": 456,
             "sample_stride": 60,
             "history_states": 10000,
