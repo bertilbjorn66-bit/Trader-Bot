@@ -173,9 +173,12 @@ jobs:
           records = source.get('target_records')
           if not isinstance(records, list):
               raise SystemExit('rebuild did not contain target_records')
-          confirmation = [record for record in records if record.get('split') == 'confirmation']
+          confirmation = [record for record in records if record.get('global_split') == 'confirmation']
           if not confirmation:
-              raise SystemExit('no confirmation records were rebuilt')
+              raise SystemExit('no globally-confirmation records were rebuilt')
+          cutoff = source.get('global_split_cutoff')
+          if not cutoff:
+              raise SystemExit('rebuild is missing global_split_cutoff')
           Path('artifacts/confirmation/confirmation_records.json').write_text(json.dumps(confirmation), encoding='utf-8')
           print('CONFIRMATION_RECORD_COUNT=', len(confirmation))
           PY
