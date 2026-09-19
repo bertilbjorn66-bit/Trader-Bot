@@ -13,13 +13,13 @@ from typing import Any, Mapping, Sequence
 from research.fresh_discovery_cycle import DISCOVERY_CONTRACT_VERSION
 from research.intelligence_controls import ExecutionCostModel
 from research.multiple_testing import holm_bonferroni
-from research.statistics import hac_mean_pvalue
 from research.non_live_evaluation import (
     block_bootstrap_means,
     bootstrap_means,
     max_drawdown,
     profit_factor,
 )
+from research.statistics import hac_mean_pvalue
 
 EXPECTED_BAR_INTERVAL = timedelta(minutes=10)
 FOLDS = 12
