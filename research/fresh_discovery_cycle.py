@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -128,6 +129,23 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
     candidates: list[dict[str, Any]] = []
     bootstrap_near_misses: list[dict[str, Any]] = []
     bootstrap_screened = 0
+    discovery_search_started = time.perf_counter()
+
+    grouped_records: dict[tuple[int, str, str, str, str, str], list[TargetRecord]] = {}
+    for record in all_records:
+        if record["split"] != "discovery":
+            continue
+        pairset_key = "JPY" if record["pair"].endswith("/JPY") else "non_JPY"
+        key = (
+            int(record["horizon"]),
+            str(record["regime"]),
+            str(record["session"]),
+            str(record["direction"]),
+            "discovery",
+            pairset_key,
+        )
+        grouped_records.setdefault(key, []).append(record)
+
     for horizon in DEFAULT_HORIZONS:
         for agreement_min in AGREEMENT_GRID:
             for distance_max in DISTANCE_GRID:
@@ -135,16 +153,22 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
                     for session in SESSIONS:
                         for pairset in PAIRSETS:
                             for direction in DIRECTIONS:
-                                subset: list[TargetRecord] = [
-                                    record
-                                    for record in all_records
-                                    if record["horizon"] == horizon
-                                    and record["split"] == "discovery"
-                                    and record["regime"] == regime
-                                    and record["session"] == session
-                                    and record["direction"] == direction
-                                    and (pairset == "all" or record["pair"].endswith("/JPY"))
-                                ]
+                                if pairset == "all":
+                                    subset = (
+                                        grouped_records.get(
+                                            (horizon, regime, session, direction, "discovery", "non_JPY"),
+                                            [],
+                                        )
+                                        + grouped_records.get(
+                                            (horizon, regime, session, direction, "discovery", "JPY"),
+                                            [],
+                                        )
+                                    )
+                                else:
+                                    subset = grouped_records.get(
+                                        (horizon, regime, session, direction, "discovery", "JPY"),
+                                        [],
+                                    )
                                 cheap = experiment.evaluate(
                                     subset,
                                     distance_max,
@@ -220,6 +244,8 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
             "prior_frozen_confirmation_artifact_read": False,
             "time_continuity": "exact 10-minute continuity is enforced in state, analogue, and target windows by the research engine",
             "parallel_workers": parallel_workers,
+            "discovery_search_seconds": time.perf_counter() - discovery_search_started,
+            "grouped_record_key": "(horizon, regime, session, direction, split, pairset-subset)",
         },
         "record_count": len(all_records),
         "source_manifest": source_manifest,
