@@ -16,7 +16,7 @@ from .execution import ExecutionAssumptions, net_move
 from .outcomes import future_outcome
 from .pipeline import state_from_bar_window
 from .regimes import classify_regime
-from .similarity import DEFAULT_FEATURES, SimilarityIndex, fit_scaler, nearest_states
+from .similarity import DEFAULT_FEATURES, SimilarityIndex
 from .types import Bar, State
 
 PAIR_PIP = {
