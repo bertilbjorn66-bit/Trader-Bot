@@ -79,11 +79,12 @@ def _confirmation() -> dict[str, object]:
 def test_purged_folds_remove_start_and_cross_boundary_records() -> None:
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
     records = [_record(base + timedelta(minutes=10 * index)) for index in range(40)]
-    folds = build_purged_folds(records, horizon=6, folds=4)
+    folds = build_purged_folds(records, horizon=6, folds=12)
 
-    assert len(folds) == 4
+    assert len(folds) == 12
     assert all(fold.purged_at_start >= 1 for fold in folds[1:])
     for fold in folds[:-1]:
+        assert fold.end is not None
         assert all(
             datetime.fromisoformat(str(record["timestamp"])) + timedelta(minutes=60)
             < fold.end
@@ -142,7 +143,7 @@ def test_certification_never_uses_an_alternate_candidate() -> None:
 
 def test_run_trade_contract_is_explicit() -> None:
     assert MIN_RUN_TRADES == 500
-    assert FOLDS == 4
+    assert FOLDS == 12
 
 
 def test_certification_rejects_candidate_fingerprint_mismatch() -> None:
@@ -150,3 +151,20 @@ def test_certification_rejects_candidate_fingerprint_mismatch() -> None:
     confirmation["candidate_fingerprint"] = "0" * 64
     with pytest.raises(ValueError, match="fingerprint"):
         certify(_discovery(), confirmation, [])
+
+
+def test_fold_boundaries_can_be_anchored_to_full_confirmation_timeline() -> None:
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    timeline = [_record(base + timedelta(minutes=10 * index)) for index in range(120)]
+    sparse = timeline[::7]
+    folds = build_purged_folds(sparse, horizon=6, folds=12, timeline_records=timeline)
+    assert len(folds) == 12
+    assert folds[0].start == base
+    assert folds[-1].end is None
+    for fold in folds[:-1]:
+        assert fold.end is not None
+        assert all(
+            datetime.fromisoformat(str(record["timestamp"])) + timedelta(minutes=60)
+            < fold.end
+            for record in fold.records
+        )
