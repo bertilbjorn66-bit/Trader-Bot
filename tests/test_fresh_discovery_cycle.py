@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from research.fresh_discovery_cycle import (
@@ -41,6 +42,7 @@ def test_discovery_report_is_structurally_one_way(monkeypatch) -> None:
     import research.fresh_discovery_cycle as module
 
     monkeypatch.setattr(module, "load_feed_bars", fake_load_feed_bars)
+    monkeypatch.setattr(module, "_sha256_file", lambda _path: "0" * 64)
     monkeypatch.setattr(module.experiment, "analyze_pair", fake_analyze_pair)
 
     report = run_discovery(Path("."), 60, 10000)
@@ -50,3 +52,12 @@ def test_discovery_report_is_structurally_one_way(monkeypatch) -> None:
     assert report["selection_policy"]["prior_frozen_confirmation_artifact_read"] is False
     assert report["selection_policy"]["minimum_discovery_profit_factor"] == 1.10
     assert report["selection_policy"]["minimum_discovery_bootstrap_lower_expectancy_pips"] == 0.0
+
+
+def test_sha256_file_is_deterministic(tmp_path) -> None:
+    from research.fresh_discovery_cycle import _sha256_file
+
+    path = tmp_path / "feed.jsonl"
+    payload = b'{"timestamp":1,"bid_open":1,"bid_high":1,"bid_low":1,"bid_close":1,"ask_open":1,"ask_high":1,"ask_low":1,"ask_close":1}\n'
+    path.write_bytes(payload)
+    assert _sha256_file(path) == hashlib.sha256(payload).hexdigest()
