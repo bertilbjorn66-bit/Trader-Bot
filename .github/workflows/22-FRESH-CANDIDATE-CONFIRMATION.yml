@@ -12,18 +12,6 @@ on:
       discovery_head_sha:
         description: "Exact commit SHA used by the completed discovery run"
         required: true
-      source_run_id:
-        description: "Completed recovery run containing the nine verified pair artifacts"
-        required: true
-        default: "32874819018"
-      sample_stride:
-        description: "Target stride in 10m bars"
-        required: true
-        default: "60"
-      history_states:
-        description: "Historical states used per target"
-        required: true
-        default: "10000"
 
 permissions:
   contents: read
@@ -32,9 +20,6 @@ permissions:
 env:
   DISCOVERY_RUN_ID: ${{ github.event.workflow_run.id || inputs.discovery_run_id }}
   DISCOVERY_HEAD_SHA: ${{ github.event.workflow_run.head_sha || inputs.discovery_head_sha || github.sha }}
-  SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
-  SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
-  HISTORY_STATES: ${{ inputs.history_states || '10000' }}
 
 jobs:
   validate:
@@ -111,12 +96,34 @@ jobs:
           print('DISCOVERY_RUN_ID=', '${{ env.DISCOVERY_RUN_ID }}')
           print('DISCOVERY_HEAD_SHA=', '${{ env.DISCOVERY_HEAD_SHA }}')
           PY
+      - name: Read immutable discovery orchestration binding
+        id: discovery_binding
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from os import environ
+          report = json.loads(Path('artifacts/discovery/fresh_discovery_report.json').read_text(encoding='utf-8'))
+          binding = report.get('orchestration_binding')
+          if not isinstance(binding, dict):
+              raise SystemExit('discovery artifact has no immutable orchestration binding')
+          for key in ('discovery_head_sha', 'source_run_id', 'sample_stride', 'history_states'):
+              if key not in binding:
+                  raise SystemExit(f'missing discovery binding field: {key}')
+          if binding['discovery_head_sha'] != environ['DISCOVERY_HEAD_SHA']:
+              raise SystemExit('discovery artifact head SHA does not match requested revision')
+          with open(environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              print(f"source_run_id={int(binding['source_run_id'])}", file=output)
+              print(f"sample_stride={int(binding['sample_stride'])}", file=output)
+              print(f"history_states={int(binding['history_states'])}", file=output)
+          PY
       - name: Download reused six-pair artifact bundle
         uses: actions/download-artifact@v8
         with:
           name: empirical-recovery-reused-artifacts
           repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
+          run-id: ${{ steps.discovery_binding.outputs.source_run_id }}
           github-token: ${{ github.token }}
           path: .data/empirical_feed
       - name: Download EUR/USD repaired artifact
@@ -164,8 +171,8 @@ jobs:
             --input-dir .data/empirical_feed \
             --discovery-report artifacts/discovery/fresh_discovery_report.json \
             --output artifacts/fresh_candidate_confirmation.json \
-            --sample-stride "$SAMPLE_STRIDE" \
-            --history-states "$HISTORY_STATES"
+            --sample-stride "${{ steps.discovery_binding.outputs.sample_stride }}" \
+            --history-states "${{ steps.discovery_binding.outputs.history_states }}"
       - name: Verify promotion remains denied
         run: |
           python - <<'PY'
@@ -198,9 +205,9 @@ jobs:
           result['orchestration_binding'] = {
               'discovery_run_id': int('${{ env.DISCOVERY_RUN_ID }}'),
               'discovery_head_sha': '${{ env.DISCOVERY_HEAD_SHA }}',
-              'source_run_id': int('${{ env.SOURCE_RUN_ID }}'),
-              'sample_stride': int('${{ env.SAMPLE_STRIDE }}'),
-              'history_states': int('${{ env.HISTORY_STATES }}'),
+              'source_run_id': int('${{ steps.discovery_binding.outputs.source_run_id }}'),
+              'sample_stride': int('${{ steps.discovery_binding.outputs.sample_stride }}'),
+              'history_states': int('${{ steps.discovery_binding.outputs.history_states }}'),
           }
           path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding='utf-8')
           PY
