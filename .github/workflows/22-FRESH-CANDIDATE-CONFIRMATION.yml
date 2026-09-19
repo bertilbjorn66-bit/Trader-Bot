@@ -9,7 +9,9 @@ on:
       discovery_run_id:
         description: "Completed fresh-discovery run containing the FRESH-DISCOVERY-CYCLE-RESULT artifact"
         required: true
-        default: "32892555632"
+      discovery_head_sha:
+        description: "Exact commit SHA used by the completed discovery run"
+        required: true
       source_run_id:
         description: "Completed recovery run containing the nine verified pair artifacts"
         required: true
@@ -29,7 +31,7 @@ permissions:
 
 env:
   DISCOVERY_RUN_ID: ${{ github.event.workflow_run.id || inputs.discovery_run_id }}
-  DISCOVERY_HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  DISCOVERY_HEAD_SHA: ${{ github.event.workflow_run.head_sha || inputs.discovery_head_sha || github.sha }}
   SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
   SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
   HISTORY_STATES: ${{ inputs.history_states || '10000' }}
