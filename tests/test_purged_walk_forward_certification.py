@@ -37,6 +37,7 @@ def _candidate() -> dict[str, object]:
         "regime": "regime:trend_up",
         "session": "london",
         "pairset": "all",
+        "direction": "long",
         "discovery": {
             "n": 200,
             "expectancy_pips": 1.0,
