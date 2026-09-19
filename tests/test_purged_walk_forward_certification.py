@@ -22,6 +22,7 @@ def _record(ts: datetime, pair: str = "EUR/USD", outcome: float = 2.0, horizon: 
         "horizon": horizon,
         "regime": "regime:trend_up",
         "session": "london",
+        "direction": "long",
         "median_distance": 0.5,
         "agreement": 0.8,
         "outcome_pips": outcome,
@@ -37,6 +38,7 @@ def _candidate() -> dict[str, object]:
         "regime": "regime:trend_up",
         "session": "london",
         "pairset": "all",
+        "direction": "long",
         "discovery": {
             "n": 200,
             "expectancy_pips": 1.0,
@@ -76,6 +78,7 @@ def _confirmation() -> dict[str, object]:
         "regime": candidate["regime"],
         "session": candidate["session"],
         "pairset": candidate["pairset"],
+        "direction": candidate["direction"],
     }
     return {
         "state": "PASS",
