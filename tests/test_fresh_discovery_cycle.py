@@ -106,6 +106,7 @@ def test_indexed_discovery_subsets_preserve_input_order() -> None:
             "distance_p90": 0.6,
             "outcome_pips": 1.0,
             "split": "discovery",
+            "global_split": "discovery",
         }
 
     records = [

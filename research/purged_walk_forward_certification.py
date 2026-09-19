@@ -83,7 +83,7 @@ def _matches(record: Mapping[str, Any], candidate: Mapping[str, Any]) -> bool:
             or float(record["median_distance"]) <= float(candidate["distance_max"])
         )
         and float(record["agreement"]) >= float(candidate["agreement_min"])
-        and str(record["split"]) == "confirmation"
+        and str(record["global_split"]) == "confirmation"
     )
 
 
@@ -392,6 +392,8 @@ def certify(
             raise ValueError(f'orchestration binding mismatch for {key}')
     if not confirmation_binding.get('confirmation_head_sha'):
         raise ValueError('confirmation artifact is missing confirmation_head_sha binding')
+    if discovery_report.get("global_split_cutoff") != confirmation_report.get("global_split_cutoff"):
+        raise ValueError("global split cutoff mismatch between discovery and confirmation evidence")
     if 'discovery_run_id' in discovery_binding and confirmation_binding.get('discovery_run_id') != discovery_binding.get('discovery_run_id'):
         raise ValueError('orchestration binding mismatch for discovery_run_id')
     expected_fingerprint = _candidate_fingerprint(candidate)

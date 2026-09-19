@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from research.enriched_conditional_experiment import (
     _is_contiguous_window,
+    assign_global_split,
     evaluate,
     wilson_interval,
 )
@@ -52,3 +53,37 @@ def test_continuity_rejects_weekend_or_missing_bar_gaps() -> None:
     gapped = [contiguous[0], contiguous[1], BarStub(base + timedelta(minutes=40)), contiguous[3]]
     assert _is_contiguous_window(contiguous, 0, 3)
     assert not _is_contiguous_window(gapped, 0, 3)
+
+
+def test_global_split_requires_complete_outcome_before_cutoff() -> None:
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    records = []
+    for index in range(10):
+        start = base + timedelta(minutes=10 * index)
+        end = start + timedelta(minutes=10)
+        records.append({
+            "timestamp": start.isoformat(),
+            "target_end_timestamp": end.isoformat(),
+            "global_split": "",
+        })
+    cutoff = assign_global_split(records)
+    assert cutoff == (base + timedelta(minutes=60)).isoformat()
+    assert all(record["global_split"] == "discovery" for record in records[:5])
+    assert all(record["global_split"] == "confirmation" for record in records[5:])
+
+
+def test_global_split_purges_target_crossing_cutoff_even_when_start_is_earlier() -> None:
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    records = []
+    for index in range(10):
+        start = base + timedelta(minutes=10 * index)
+        end = start + timedelta(minutes=40 if index == 4 else 10)
+        records.append({
+            "timestamp": start.isoformat(),
+            "target_end_timestamp": end.isoformat(),
+            "global_split": "",
+        })
+    cutoff = assign_global_split(records)
+    assert cutoff == (base + timedelta(minutes=60)).isoformat()
+    assert records[4]["global_split"] == "confirmation"
+    assert records[3]["global_split"] == "discovery"
