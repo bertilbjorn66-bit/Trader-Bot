@@ -91,6 +91,7 @@ jobs:
           assert report['selection_policy']['confirmation_used_for_selection'] is False
           assert report['selection_policy']['prior_frozen_confirmation_artifact_read'] is False
           assert report['top_candidates']
+          assert report.get('global_split_cutoff') is not None
           assert 'confirmation' not in report['top_candidates'][0]
           print('DISCOVERY_ARTIFACT_BOUNDARY_OK=true')
           print('DISCOVERY_RUN_ID=', '${{ env.DISCOVERY_RUN_ID }}')
@@ -185,6 +186,7 @@ jobs:
           from pathlib import Path
           result = json.loads(Path('artifacts/fresh_candidate_confirmation.json').read_text(encoding='utf-8'))
           assert result['candidate']['rank'] == 1
+          assert result.get('global_split_cutoff') is not None
           assert result['candidate_selection_rule'].startswith('rank-1 discovery candidate only')
           assert result['promotion_authorized'] is False
           assert result['live_execution_authorized'] is False
