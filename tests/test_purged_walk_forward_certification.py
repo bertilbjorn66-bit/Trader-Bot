@@ -58,7 +58,6 @@ def _discovery() -> dict[str, object]:
         },
         "orchestration_binding": {
             "discovery_head_sha": "a" * 40,
-            "confirmation_head_sha": "b" * 40,
             "discovery_run_id": 123,
             "source_run_id": 456,
             "sample_stride": 60,
@@ -84,6 +83,7 @@ def _confirmation() -> dict[str, object]:
         "candidate_fingerprint": _candidate_fingerprint(candidate),
         "orchestration_binding": {
             "discovery_head_sha": "a" * 40,
+            "confirmation_head_sha": "b" * 40,
             "discovery_run_id": 123,
             "source_run_id": 456,
             "sample_stride": 60,
