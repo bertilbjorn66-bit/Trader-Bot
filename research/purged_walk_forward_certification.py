@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -55,6 +56,11 @@ def _timestamp(record: Mapping[str, Any]) -> datetime:
     if value.tzinfo is None:
         raise ValueError("record timestamps must be timezone-aware")
     return value
+
+
+def _candidate_fingerprint(candidate: Mapping[str, Any]) -> str:
+    payload = json.dumps(_candidate_identity(candidate), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _candidate_identity(candidate: Mapping[str, Any]) -> dict[str, Any]:
@@ -342,6 +348,9 @@ def certify(
     confirmed = _candidate_identity(confirmation_report["candidate"])
     if selected != confirmed:
         raise ValueError("confirmation candidate does not match discovery rank-1 candidate")
+    expected_fingerprint = _candidate_fingerprint(candidate)
+    if confirmation_report.get("candidate_fingerprint") != expected_fingerprint:
+        raise ValueError("confirmation candidate fingerprint does not match the frozen rank-1 candidate")
 
     candidate_records = [record for record in all_records if _matches(record, candidate)]
     folds = build_purged_folds(candidate_records, int(candidate["horizon"]))
