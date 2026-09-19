@@ -92,7 +92,6 @@ class SimilarityIndex:
         if self._matrix is None or len(active) != len(self.features):
             return nearest_states(target, history, scaler, k=k)
 
-        means = np.asarray([scaler[name][0] for name in self.features], dtype=np.float64)
         stds = np.asarray([scaler[name][1] for name in self.features], dtype=np.float64)
         target_values = np.asarray(
             [float(target.features[name]) for name in self.features],
