@@ -49,6 +49,7 @@ def _report() -> dict[str, object]:
     return {
         "status": "FRESH_DISCOVERY_COMPLETED",
         "selection_policy": {
+            "contract_version": "v4-global-horizon-aware-two-stage-screen",
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
         },
@@ -113,3 +114,10 @@ def test_certification_aligned_minimums_are_not_relaxed() -> None:
 
 def test_pair_concentration_limit_is_explicit() -> None:
     assert 0 < MAX_PAIR_OBSERVATION_SHARE < 1
+
+
+def test_stale_discovery_contract_is_rejected() -> None:
+    report = _report()
+    report["selection_policy"]["contract_version"] = "v3-continuity-hardened-two-stage-screen"
+    with pytest.raises(ValueError, match="unsupported or stale"):
+        evaluate_primary(report, [])
