@@ -45,6 +45,7 @@ def _sha256_file(path: Path) -> str:
             digest.update(chunk)
     return digest.hexdigest()
 
+
 def discovery_result_is_admissible(result: EvalResult | None) -> bool:
     """Apply the discovery-only statistical screen before candidate ranking."""
     if result is None or result["n"] < MIN_DISCOVERY_SAMPLES:
