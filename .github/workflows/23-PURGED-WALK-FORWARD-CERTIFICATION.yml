@@ -9,6 +9,9 @@ on:
       confirmation_run_id:
         description: "Completed fresh candidate confirmation run"
         required: true
+      confirmation_head_sha:
+        description: "Exact commit SHA used by the completed confirmation run"
+        required: true
 
       discovery_run_id:
         description: "Completed fresh discovery run containing the immutable discovery artifact"
@@ -33,7 +36,7 @@ permissions:
 
 env:
   CONFIRMATION_RUN_ID: ${{ github.event.workflow_run.id || inputs.confirmation_run_id }}
-  CONFIRMATION_HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  CONFIRMATION_HEAD_SHA: ${{ github.event.workflow_run.head_sha || inputs.confirmation_head_sha || github.sha }}
   MANUAL_DISCOVERY_RUN_ID: ${{ inputs.discovery_run_id || '' }}
   MANUAL_SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
   SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
