@@ -137,12 +137,13 @@ jobs:
           from pathlib import Path
           report = json.loads(Path('artifacts/fresh_discovery_report.json').read_text(encoding='utf-8'))
           assert report['status'] == 'FRESH_DISCOVERY_COMPLETED'
+          assert report['selection_policy']['contract_version'] == 'v4-global-horizon-aware-two-stage-screen'
           assert report['selection_policy']['confirmation_used_for_selection'] is False
           assert report['selection_policy']['prior_frozen_confirmation_artifact_read'] is False
           assert report['candidate_count'] >= 0
           assert report.get('global_split_cutoff') is not None
           assert report['selection_policy']['split'].startswith('global horizon-aware')
-          assert 'global_split' in report['target_records'][0] if report.get('record_count', 0) else True
+          assert report['selection_policy']['candidate_grid']['directions'] == ['long', 'short']
           for candidate in report['top_candidates']:
               assert 'discovery' in candidate
               assert 'confirmation' not in candidate

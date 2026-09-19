@@ -57,6 +57,7 @@ def _discovery() -> dict[str, object]:
     return {
         "status": "FRESH_DISCOVERY_COMPLETED",
         "selection_policy": {
+            "contract_version": "v4-global-horizon-aware-two-stage-screen",
             "confirmation_used_for_selection": False,
             "prior_frozen_confirmation_artifact_read": False,
         },
@@ -89,9 +90,10 @@ def _confirmation() -> dict[str, object]:
         "candidate_fingerprint": _candidate_fingerprint(candidate),
         "global_split_cutoff": (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=200)).isoformat(),
         "orchestration_binding": {
-            "discovery_head_sha": "a" * 40,
-            "confirmation_head_sha": "b" * 40,
             "discovery_run_id": 123,
+            "discovery_head_sha": "a" * 40,
+            "confirmation_run_id": 789,
+            "confirmation_head_sha": "b" * 40,
             "source_run_id": 456,
             "sample_stride": 60,
             "history_states": 10000,
@@ -234,3 +236,10 @@ def test_certification_boundaries_use_confirmation_timeline_only() -> None:
     assert folds[0].start == datetime.fromisoformat(str(confirmation[0]["timestamp"]))
     assert wrong[0].start == datetime.fromisoformat(str(discovery[0]["timestamp"]))
     assert folds[0].start > wrong[0].start
+
+
+def test_certification_rejects_missing_confirmation_run_identity() -> None:
+    confirmation = _confirmation()
+    del confirmation["orchestration_binding"]["confirmation_run_id"]
+    with pytest.raises(ValueError, match="confirmation_run_id"):
+        certify(_discovery(), confirmation, [])

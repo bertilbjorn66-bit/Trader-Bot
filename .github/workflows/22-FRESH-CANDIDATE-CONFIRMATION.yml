@@ -88,6 +88,7 @@ jobs:
           from pathlib import Path
           report = json.loads(Path('artifacts/discovery/fresh_discovery_report.json').read_text(encoding='utf-8'))
           assert report['status'] == 'FRESH_DISCOVERY_COMPLETED'
+          assert report['selection_policy']['contract_version'] == 'v4-global-horizon-aware-two-stage-screen'
           assert report['selection_policy']['confirmation_used_for_selection'] is False
           assert report['selection_policy']['prior_frozen_confirmation_artifact_read'] is False
           assert report['top_candidates']
@@ -211,6 +212,7 @@ jobs:
           result = json.loads(path.read_text(encoding='utf-8'))
           result['orchestration_binding'] = {
               'discovery_run_id': int('${{ env.DISCOVERY_RUN_ID }}'),
+              'confirmation_run_id': int('${{ github.run_id }}'),
               'confirmation_head_sha': '${{ env.DISCOVERY_HEAD_SHA }}',
               'discovery_head_sha': '${{ env.DISCOVERY_HEAD_SHA }}',
               'source_run_id': int('${{ steps.discovery_binding.outputs.source_run_id }}'),

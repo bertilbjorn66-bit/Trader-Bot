@@ -10,6 +10,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any, Mapping, Sequence
 
+from research.fresh_discovery_cycle import DISCOVERY_CONTRACT_VERSION
 from research.intelligence_controls import ExecutionCostModel
 from research.multiple_testing import holm_bonferroni
 from research.non_live_evaluation import (
@@ -357,6 +358,8 @@ def certify(
 ) -> dict[str, Any]:
     if discovery_report.get("status") != "FRESH_DISCOVERY_COMPLETED":
         raise ValueError("discovery report is not a completed fresh discovery")
+    if discovery_report.get("selection_policy", {}).get("contract_version") != DISCOVERY_CONTRACT_VERSION:
+        raise ValueError("discovery report uses an unsupported or stale discovery contract version")
     if discovery_report.get("selection_policy", {}).get("confirmation_used_for_selection") is not False:
         raise ValueError("discovery report does not prove confirmation-free candidate selection")
     if discovery_report.get("selection_policy", {}).get("prior_frozen_confirmation_artifact_read") is not False:
@@ -387,11 +390,13 @@ def certify(
     confirmation_binding = confirmation_report.get('orchestration_binding')
     if not isinstance(discovery_binding, Mapping) or not isinstance(confirmation_binding, Mapping):
         raise ValueError('discovery and confirmation artifacts require immutable orchestration bindings')
-    for key in ('discovery_head_sha', 'source_run_id', 'sample_stride', 'history_states'):
+    for key in ('discovery_head_sha', 'discovery_run_id', 'source_run_id', 'sample_stride', 'history_states'):
         if discovery_binding.get(key) != confirmation_binding.get(key):
             raise ValueError(f'orchestration binding mismatch for {key}')
     if not confirmation_binding.get('confirmation_head_sha'):
         raise ValueError('confirmation artifact is missing confirmation_head_sha binding')
+    if not confirmation_binding.get('confirmation_run_id'):
+        raise ValueError('confirmation artifact is missing confirmation_run_id binding')
     if discovery_report.get("global_split_cutoff") != confirmation_report.get("global_split_cutoff"):
         raise ValueError("global split cutoff mismatch between discovery and confirmation evidence")
     if 'discovery_run_id' in discovery_binding and confirmation_binding.get('discovery_run_id') != discovery_binding.get('discovery_run_id'):
