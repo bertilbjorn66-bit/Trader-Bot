@@ -25,6 +25,7 @@ MIN_RUN_TRADES = 500
 MIN_SERIES_TRADES = 20
 MIN_SERIES = 3
 MIN_POSITIVE_SERIES = 3
+MAX_PAIR_OBSERVATION_SHARE = 0.80
 BOOTSTRAP_REPS = 2000
 BOOTSTRAP_LOWER_INDEX = 49
 BOOTSTRAP_UPPER_INDEX = -50
@@ -233,11 +234,16 @@ def _run_gates(
         and result["profit_factor"] is not None
         and result["profit_factor"] > 1.0
     }
+    largest_pair_share = max(
+        (result["n"] / len(values) for result in pairs.values()),
+        default=1.0,
+    )
     bootstrap = _bootstrap(values, 2026091901 + len(values))
     return {
         "test_trades_min_500": len(values) >= MIN_RUN_TRADES,
         "series_min_3": len(eligible_series) >= MIN_SERIES,
         "positive_series_min_3": len(positive_series) >= MIN_POSITIVE_SERIES,
+        "pair_observation_concentration_lte_80pct": largest_pair_share <= MAX_PAIR_OBSERVATION_SHARE,
         "expectancy_positive": bool(base["expectancy_pips"] is not None and base["expectancy_pips"] > 0.0),
         "profit_factor_gt_1": bool(base["profit_factor"] is not None and base["profit_factor"] > 1.0),
         "drawdown_recovery_ratio_ge_1": bool(
