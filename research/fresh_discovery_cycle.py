@@ -67,8 +67,6 @@ def _candidate_key(candidate: dict[str, Any]) -> tuple[float, float, float, int]
     )
 
 
-
-
 def _analyze_pair_from_feed(
     pair: str,
     feed_path: str,
