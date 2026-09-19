@@ -44,6 +44,7 @@ def _matches(record: TargetRecord, candidate: dict[str, Any], split: str) -> boo
         and int(record["horizon"]) == int(candidate["horizon"])
         and record["regime"] == candidate["regime"]
         and record["session"] == candidate["session"]
+        and record["direction"] == candidate["direction"]
         and (candidate["pairset"] == "all" or record["pair"].endswith("/JPY"))
         and (
             candidate["distance_max"] is None
@@ -117,7 +118,7 @@ def evaluate_primary(report: dict[str, Any], records: Sequence[TargetRecord]) ->
     if "confirmation" in primary:
         raise ValueError("discovery candidate already contains confirmation results")
     primary["rank"] = 1
-    fingerprint = candidate_fingerprint({key: primary[key] for key in ("horizon", "agreement_min", "distance_max", "regime", "session", "pairset")})
+    fingerprint = candidate_fingerprint({key: primary[key] for key in ("horizon", "agreement_min", "distance_max", "regime", "session", "pairset", "direction")})
 
     confirmation = [record for record in records if _matches(record, primary, "confirmation")]
     values = _ordered_values(confirmation)
