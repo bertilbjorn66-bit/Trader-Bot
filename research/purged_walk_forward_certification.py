@@ -399,12 +399,12 @@ def certify(
         })
 
     adjusted = holm_bonferroni(raw_pvalues)
-    certification_runs: list[dict[str, Any]] = []
+    certification_cells: list[dict[str, Any]] = []
     for payload, adjusted_pvalue in zip(run_payloads, adjusted, strict=True):
         values = payload["values"]
         records = payload["records"]
         gates = _run_gates(records, values, payload["raw_pvalue"], adjusted_pvalue)
-        certification_runs.append({
+        certification_cells.append({
             "fold_id": payload["fold_id"],
             "execution_model": payload["execution_model"],
             "execution_cost_pips": payload["execution_cost_pips"],
@@ -417,8 +417,27 @@ def certify(
         })
 
     stability = evaluate_parameter_stability(candidate, candidate_records, folds, all_records)
+
+    certification_runs: list[dict[str, Any]] = []
+    for fold_id in range(FOLDS):
+        cells = [cell for cell in certification_cells if cell["fold_id"] == fold_id]
+        base_n = cells[0]["statistics"]["n"] if cells else 0
+        run_qualifies = (
+            len(cells) == len(EXECUTION_MODELS)
+            and base_n >= MIN_RUN_TRADES
+            and all(cell["qualifies"] for cell in cells)
+        )
+        certification_runs.append({
+            "run_id": fold_id + 1,
+            "fold_id": fold_id,
+            "test_trade_count": base_n,
+            "execution_model_results": cells,
+            "qualifies": run_qualifies,
+        })
+
     qualifying_runs = sum(run["qualifies"] for run in certification_runs)
-    all_runs_qualify = qualifying_runs == len(certification_runs) == 12
+    all_runs_qualify = qualifying_runs == FOLDS == 12
+
     aggregate_values = [
         value
         for fold in folds
@@ -429,41 +448,64 @@ def certify(
     gates = {
         "exactly_12_qualifying_runs": all_runs_qualify,
         "three_execution_models": len(EXECUTION_MODELS) >= 3,
-        "four_purged_walk_forward_folds": len(folds) == 4,
-        "min_500_trades_per_run": all(run["statistics"]["n"] >= MIN_RUN_TRADES for run in certification_runs),
+        "twelve_purged_walk_forward_runs": len(folds) == 12,
+        "min_500_trades_per_run": all(run["test_trade_count"] >= MIN_RUN_TRADES for run in certification_runs),
         "min_3_series_per_run": all(
-            sum(result["n"] >= MIN_SERIES_TRADES for result in run["series_breakdown"].values()) >= MIN_SERIES
+            all(
+                sum(result["n"] >= MIN_SERIES_TRADES for result in cell["series_breakdown"].values()) >= MIN_SERIES
+                for cell in run["execution_model_results"]
+            )
             for run in certification_runs
         ),
         "min_3_positive_series_per_run": all(
-            sum(
-                result["n"] >= MIN_SERIES_TRADES
-                and result["expectancy_pips"] > 0.0
-                and result["profit_factor"] is not None
-                and result["profit_factor"] > 1.0
-                for result in run["series_breakdown"].values()
-            ) >= MIN_POSITIVE_SERIES
+            all(
+                sum(
+                    result["n"] >= MIN_SERIES_TRADES
+                    and result["expectancy_pips"] > 0.0
+                    and result["profit_factor"] is not None
+                    and result["profit_factor"] > 1.0
+                    for result in cell["series_breakdown"].values()
+                ) >= MIN_POSITIVE_SERIES
+                for cell in run["execution_model_results"]
+            )
             for run in certification_runs
         ),
         "purged_walk_forward_stability": all(
-            run["statistics"]["expectancy_pips"] is not None and run["statistics"]["expectancy_pips"] > 0.0
+            all(
+                cell["statistics"]["expectancy_pips"] is not None
+                and cell["statistics"]["expectancy_pips"] > 0.0
+                for cell in run["execution_model_results"]
+            )
             for run in certification_runs
         ),
         "parameter_stability": bool(stability["all_variants_pass"]),
         "drawdown_recovery": all(
-            run["statistics"]["recovery_ratio"] is not None
-            and run["statistics"]["recovery_ratio"] >= MIN_RECOVERY_RATIO
+            all(
+                cell["statistics"]["recovery_ratio"] is not None
+                and cell["statistics"]["recovery_ratio"] >= MIN_RECOVERY_RATIO
+                for cell in run["execution_model_results"]
+            )
             for run in certification_runs
         ),
         "bootstrap_robustness": all(
-            run["gates"]["ordinary_bootstrap_lower_positive"]
-            and run["gates"]["block_bootstrap_lower_positive"]
-            and run["gates"]["bootstrap_probability_positive_ge_95pct"]
+            all(
+                cell["gates"]["ordinary_bootstrap_lower_positive"]
+                and cell["gates"]["block_bootstrap_lower_positive"]
+                and cell["gates"]["bootstrap_probability_positive_ge_95pct"]
+                for cell in run["execution_model_results"]
+            )
             for run in certification_runs
         ),
-        "multiple_testing_holm": all(run["gates"]["holm_adjusted_p_le_005"] for run in certification_runs),
+        "multiple_testing_holm": all(
+            all(cell["gates"]["holm_adjusted_p_le_005"] for cell in run["execution_model_results"])
+            for run in certification_runs
+        ),
         "execution_cost_robustness": all(
-            run["statistics"]["expectancy_pips"] is not None and run["statistics"]["expectancy_pips"] > 0.0
+            all(
+                cell["statistics"]["expectancy_pips"] is not None
+                and cell["statistics"]["expectancy_pips"] > 0.0
+                for cell in run["execution_model_results"]
+            )
             for run in certification_runs
         ),
         "aggregate_realistic_model_positive": aggregate_stats["expectancy_pips"] > 0.0,
@@ -479,9 +521,10 @@ def certify(
         "candidate_selection_rule": "rank-1 fresh discovery candidate is frozen; certification never selects an alternate candidate",
         "fold_contract": {
             "fold_count": FOLDS,
+            "run_count": FOLDS,
             "purge_bars": int(candidate["horizon"]),
             "purge_interval": str(int(candidate["horizon"]) * 10) + " minutes",
-            "boundary_rule": "test observations must begin after the fold-start purge and their complete target outcome must finish strictly before the next fold boundary",
+            "boundary_rule": "12 predeclared chronological test runs; each run begins after a horizon purge and every target outcome must finish strictly before the next run boundary",
         },
         "execution_models": {
             name: {
