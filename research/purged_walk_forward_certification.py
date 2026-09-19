@@ -89,16 +89,21 @@ def build_purged_folds(
     records: Sequence[Mapping[str, Any]],
     horizon: int,
     folds: int = FOLDS,
+    timeline_records: Sequence[Mapping[str, Any]] | None = None,
 ) -> list[PurgedFold]:
     if folds <= 1:
         raise ValueError("folds must be greater than one")
     ordered = sorted((dict(record) for record in records), key=_timestamp)
-    timestamps = sorted({_timestamp(record) for record in ordered})
-    if len(timestamps) < folds:
+    timeline = list(timeline_records) if timeline_records is not None else ordered
+    timeline_timestamps = sorted({_timestamp(record) for record in timeline})
+    if len(timeline_timestamps) < folds:
         return []
 
-    boundaries = [timestamps[(len(timestamps) * index) // folds] for index in range(folds)]
-    boundaries.append(timestamps[-1] + EXPECTED_BAR_INTERVAL)
+    boundaries = [
+        timeline_timestamps[(len(timeline_timestamps) * index) // folds]
+        for index in range(folds)
+    ]
+    boundaries.append(timeline_timestamps[-1] + EXPECTED_BAR_INTERVAL)
     purge = horizon * EXPECTED_BAR_INTERVAL
     result: list[PurgedFold] = []
 
@@ -267,6 +272,7 @@ def evaluate_parameter_stability(
     candidate: Mapping[str, Any],
     records: Sequence[Mapping[str, Any]],
     folds: Sequence[PurgedFold],
+    timeline_records: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     variants = _parameter_variants(candidate)
     if not variants:
@@ -279,7 +285,12 @@ def evaluate_parameter_stability(
     variant_results: list[dict[str, Any]] = []
     for index, variant in enumerate(variants):
         matched = [record for record in records if _matches(record, variant)]
-        variant_folds = build_purged_folds(matched, int(variant["horizon"]), len(folds))
+        variant_folds = build_purged_folds(
+            matched,
+            int(variant["horizon"]),
+            len(folds),
+            timeline_records=timeline_records,
+        )
         fold_expectancies: list[float] = []
         fold_pfs: list[float | None] = []
         for fold in variant_folds:
@@ -353,11 +364,16 @@ def certify(
         raise ValueError("confirmation candidate fingerprint does not match the frozen rank-1 candidate")
 
     candidate_records = [record for record in all_records if _matches(record, candidate)]
-    folds = build_purged_folds(candidate_records, int(candidate["horizon"]))
+    folds = build_purged_folds(
+        candidate_records,
+        int(candidate["horizon"]),
+        FOLDS,
+        timeline_records=all_records,
+    )
     if len(folds) != FOLDS:
         return {
             "state": "INCOMPLETE",
-            "reason": "confirmation evidence cannot form the required four purged chronological folds",
+            "reason": "confirmation evidence cannot form the required twelve purged chronological runs",
             "candidate": candidate,
             "fold_count": len(folds),
             "promotion_authorized": False,
@@ -400,7 +416,7 @@ def certify(
             "qualifies": all(gates.values()),
         })
 
-    stability = evaluate_parameter_stability(candidate, candidate_records, folds)
+    stability = evaluate_parameter_stability(candidate, candidate_records, folds, all_records)
     qualifying_runs = sum(run["qualifies"] for run in certification_runs)
     all_runs_qualify = qualifying_runs == len(certification_runs) == 12
     aggregate_values = [
