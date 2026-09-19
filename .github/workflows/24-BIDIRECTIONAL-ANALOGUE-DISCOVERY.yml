@@ -26,7 +26,7 @@ on:
         default: "10000"
 
 concurrency:
-  group: bidirectional-analogue-\${{ github.ref }}
+  group: bidirectional-analogue-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -34,9 +34,9 @@ permissions:
   actions: read
 
 env:
-  SOURCE_RUN_ID: \${{ inputs.source_run_id || '32874819018' }}
-  SAMPLE_STRIDE: \${{ inputs.sample_stride || '60' }}
-  HISTORY_STATES: \${{ inputs.history_states || '10000' }}
+  SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
+  SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
+  HISTORY_STATES: ${{ inputs.history_states || '10000' }}
 
 jobs:
   validate:
@@ -94,36 +94,36 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: empirical-recovery-reused-artifacts
-          repository: \${{ github.repository }}
-          run-id: \${{ env.SOURCE_RUN_ID }}
-          github-token: \${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
           path: .data/empirical_feed
 
       - name: Download EUR/USD repaired artifact
         uses: actions/download-artifact@v8
         with:
           name: empirical-recovery-eurusd
-          repository: \${{ github.repository }}
-          run-id: \${{ env.SOURCE_RUN_ID }}
-          github-token: \${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
           path: /tmp/repaired/eurusd
 
       - name: Download GBP/USD repaired artifact
         uses: actions/download-artifact@v8
         with:
           name: empirical-recovery-gbpusd
-          repository: \${{ github.repository }}
-          run-id: \${{ env.SOURCE_RUN_ID }}
-          github-token: \${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
           path: /tmp/repaired/gbpusd
 
       - name: Download USD/JPY repaired artifact
         uses: actions/download-artifact@v8
         with:
           name: empirical-recovery-usdjpy
-          repository: \${{ github.repository }}
-          run-id: \${{ env.SOURCE_RUN_ID }}
-          github-token: \${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
           path: /tmp/repaired/usdjpy
 
       - name: Place repaired pair files
@@ -185,11 +185,11 @@ jobs:
           path = Path("artifacts/bidirectional_discovery_report.json")
           report = json.loads(path.read_text())
           report["orchestration_binding"] = {
-              "discovery_head_sha": "\${{ github.sha }}",
-              "discovery_run_id": int("\${{ github.run_id }}"),
-              "source_run_id": int("\${{ env.SOURCE_RUN_ID }}"),
-              "sample_stride": int("\${{ env.SAMPLE_STRIDE }}"),
-              "history_states": int("\${{ env.HISTORY_STATES }}"),
+              "discovery_head_sha": "${{ github.sha }}",
+              "discovery_run_id": int("${{ github.run_id }}"),
+              "source_run_id": int("${{ env.SOURCE_RUN_ID }}"),
+              "sample_stride": int("${{ env.SAMPLE_STRIDE }}"),
+              "history_states": int("${{ env.HISTORY_STATES }}"),
           }
           path.write_text(json.dumps(report, indent=2, sort_keys=True))
           PY
