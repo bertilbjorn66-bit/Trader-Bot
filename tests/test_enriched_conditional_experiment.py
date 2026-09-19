@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from research.enriched_conditional_experiment import (
     _is_contiguous_window,
     evaluate,
+    assign_global_split,
     wilson_interval,
 )
 
@@ -52,3 +53,20 @@ def test_continuity_rejects_weekend_or_missing_bar_gaps() -> None:
     gapped = [contiguous[0], contiguous[1], BarStub(base + timedelta(minutes=40)), contiguous[3]]
     assert _is_contiguous_window(contiguous, 0, 3)
     assert not _is_contiguous_window(gapped, 0, 3)
+
+
+def test_global_split_requires_complete_outcome_before_cutoff() -> None:
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    records = []
+    for index in range(10):
+        start = base + timedelta(minutes=10 * index)
+        end = start + timedelta(minutes=10)
+        records.append({
+            "timestamp": start.isoformat(),
+            "target_end_timestamp": end.isoformat(),
+            "global_split": "",
+        })
+    cutoff = assign_global_split(records)
+    assert cutoff == (base + timedelta(minutes=50)).isoformat()
+    assert all(record["global_split"] == "discovery" for record in records[:4])
+    assert all(record["global_split"] == "confirmation" for record in records[4:])
