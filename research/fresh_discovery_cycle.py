@@ -17,7 +17,7 @@ from research.sequential_empirical import DEFAULT_HORIZONS
 
 
 # Stage 21 is intentionally discovery-only: confirmation remains a separate frozen gate.
-DISCOVERY_CONTRACT_VERSION = "v4-global-horizon-aware-two-stage-screen"
+DISCOVERY_CONTRACT_VERSION = "v5-global-horizon-aware-familywise-screen"
 AGREEMENT_GRID = (0.50, 0.55, 0.60, 0.65, 0.70, 0.75)
 DISTANCE_GRID: tuple[float | None, ...] = (None, 0.5, 1.0, 1.5, 2.0)
 REGIMES = (
@@ -290,7 +290,7 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
             "discovery_family_size": len(family_hypotheses),
             "two_stage_screen": "sample/PF evaluated first; HAC family p-value computed for every selectable hypothesis; bootstrap lower-tail computed only for PF and raw-p<=alpha survivors; final selection also requires Holm-adjusted HAC p<=alpha; no threshold relaxed",
             "bootstrap_screened_candidate_count": bootstrap_screened,
-            "bootstrap_near_miss_count": len(bootstrap_near_misses),
+            "selection_rejection_diagnostic_count": len(bootstrap_near_misses),
             "bootstrap_near_miss_policy": "diagnostic only; near-misses never enter candidate selection or confirmation",
             "bootstrap_near_miss_reasons": "failed bootstrap lower-tail admission and/or discovery-family Holm-adjusted HAC p-value",
             "confirmation_used_for_selection": False,
