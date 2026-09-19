@@ -233,6 +233,9 @@ def run_discovery(input_dir: Path, sample_stride: int, history_states: int, para
     family_adjusted_pvalues = holm_bonferroni(
         [float(item["raw_hac_one_sided_pvalue"]) for item in family_hypotheses]
     )
+    for near_miss in bootstrap_near_misses:
+        near_miss["discovery_family_size"] = len(family_hypotheses)
+
     candidates: list[dict[str, Any]] = []
     for item, adjusted_pvalue in zip(family_hypotheses, family_adjusted_pvalues, strict=True):
         candidate = dict(item["candidate"])
