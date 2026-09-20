@@ -229,9 +229,7 @@ def _analyze_pair(
                 decision = decide_direction(long_values, short_values, k)
                 if decision is None:
                     continue
-                direction, predicted, decision_margin = decision
-                long_mean = mean(long_values[:k])
-                short_mean = mean(short_values[:k])
+                direction = decision[0]
 
                 target_outcome = empirical_outcome(
                     bars,
