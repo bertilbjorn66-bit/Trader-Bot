@@ -18,6 +18,7 @@ from research.multiple_testing import holm_bonferroni
 from research.non_live_evaluation import block_bootstrap_means, bootstrap_means, profit_factor
 from research.pipeline import state_from_bar_window
 from research.regimes import classify_regime
+import research.sequential_empirical as empirical
 from research.similarity import DEFAULT_FEATURES, SimilarityIndex
 from research.statistics import hac_mean_pvalue
 from research.types import Bar, State
