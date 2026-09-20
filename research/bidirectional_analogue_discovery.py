@@ -10,6 +10,8 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Sequence
 
+import research.sequential_empirical as empirical
+
 from research.cross_section import session_label
 from research.datafeed_empirical import PAIR_TO_SYMBOL, _execution_valid_rows, _market_bars, load_feed_bars
 from research.enriched_conditional_experiment import TargetRecord, assign_global_split
@@ -18,7 +20,6 @@ from research.multiple_testing import holm_bonferroni
 from research.non_live_evaluation import block_bootstrap_means, bootstrap_means, profit_factor
 from research.pipeline import state_from_bar_window
 from research.regimes import classify_regime
-import research.sequential_empirical as empirical
 from research.similarity import DEFAULT_FEATURES, SimilarityIndex
 from research.statistics import hac_mean_pvalue
 from research.types import Bar, State
@@ -267,16 +268,6 @@ def _analyze_pair(
                     }
                 )
 
-    timestamps = sorted(
-        datetime.fromisoformat(record["timestamp"])
-        for record in targets
-    )
-    local_cutoff = timestamps[int(len(timestamps) * 0.60)] if timestamps else None
-    for record in targets:
-        timestamp = datetime.fromisoformat(record["timestamp"])
-        record["split"] = (
-            "discovery" if local_cutoff and timestamp < local_cutoff else "confirmation"
-        )
     return targets, quality
 
 
@@ -307,11 +298,16 @@ def decide_direction(
     return ("long" if long_mean > short_mean else "short", predicted, margin)
 
 
-def _candidate_identity(horizon: int, k: int) -> dict[str, int]:
-    return {"horizon": horizon, "k": k}
+def _candidate_identity(horizon: int, k: int) -> dict[str, object]:
+    return {
+        "direction": "bidirectional",
+        "direction_policy": "pre_target_analogue_mean_argmax",
+        "horizon": horizon,
+        "k": k,
+    }
 
 
-def candidate_fingerprint(candidate: dict[str, int]) -> str:
+def candidate_fingerprint(candidate: dict[str, object]) -> str:
     payload = json.dumps(candidate, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -383,6 +379,8 @@ def run_discovery(
         quality[pair] = pair_quality
 
     global_split_cutoff = assign_global_split(all_records)
+    for record in all_records:
+        record["split"] = record["global_split"]
     family: list[dict[str, Any]] = []
 
     for horizon in HORIZONS:
@@ -403,9 +401,10 @@ def run_discovery(
             values = [float(record["outcome_pips"]) for record in records]
             raw_pvalue = hac_mean_pvalue(values)
             pair_robust = _robust_discovery_record_set(records)
+            candidate_identity = _candidate_identity(horizon, k)
             item: dict[str, Any] = {
-                "candidate": _candidate_identity(horizon, k),
-                "candidate_fingerprint": candidate_fingerprint(_candidate_identity(horizon, k)),
+                "candidate": candidate_identity,
+                "candidate_fingerprint": candidate_fingerprint(candidate_identity),
                 "n": int(stats["n"]),
                 "statistics": stats,
                 "raw_hac_one_sided_pvalue": raw_pvalue,
@@ -465,7 +464,7 @@ def run_discovery(
             "contract_version": CONTRACT_VERSION,
             "source": "verified nine-pair historical BID/ASK feeds",
             "split": "global horizon-aware chronological discovery segment across all nine pairs",
-            "candidate_family": "horizon x k only; direction is learned from pre-target analogue outcomes and is never a searched hyperparameter",
+            "candidate_family": "horizon x k only; candidate direction is explicitly bidirectional and actual trade direction is learned from pre-target analogue outcomes",
             "horizons": list(HORIZONS),
             "k_values": list(K_VALUES),
             "minimum_discovery_samples": MIN_DISCOVERY_SAMPLES,
