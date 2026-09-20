@@ -332,12 +332,12 @@ def _analyze_pair_from_path(
     )
 
 
-def run_discovery(
+def rebuild_target_records(
     input_dir: Path,
     sample_stride: int,
     history_states: int,
     parallel_workers: int = 1,
-) -> dict[str, object]:
+) -> tuple[list[TargetRecord], dict[str, object], dict[str, object], str | None]:
     if sample_stride <= 0 or history_states <= 0 or parallel_workers <= 0:
         raise ValueError("sample_stride, history_states, and parallel_workers must be positive")
 
@@ -346,21 +346,16 @@ def run_discovery(
     jobs: list[tuple[str, Path]] = []
     for pair in PAIR_TO_SYMBOL:
         path = input_dir / f"{PAIR_TO_SYMBOL[pair]}.jsonl"
+        if not path.is_file():
+            raise FileNotFoundError(f"missing verified feed for {pair}: {path}")
         source_manifest[pair] = {"path": str(path), "sha256": _sha256_file(path)}
         jobs.append((pair, path))
 
-    results: list[tuple[list[TargetRecord], dict[str, object]]] = []
     if parallel_workers == 1:
-        for pair, path in jobs:
-            results.append(
-                _analyze_pair_from_path(
-                    pair,
-                    path,
-                    sample_stride,
-                    history_states,
-                    costs,
-                )
-            )
+        results = [
+            _analyze_pair_from_path(pair, path, sample_stride, history_states, costs)
+            for pair, path in jobs
+        ]
     else:
         from concurrent.futures import ProcessPoolExecutor
 
@@ -385,6 +380,21 @@ def run_discovery(
     global_split_cutoff = assign_global_split(all_records)
     for record in all_records:
         record["split"] = record["global_split"]
+    return all_records, source_manifest, quality, global_split_cutoff
+
+
+def run_discovery(
+    input_dir: Path,
+    sample_stride: int,
+    history_states: int,
+    parallel_workers: int = 1,
+) -> dict[str, object]:
+    all_records, source_manifest, quality, global_split_cutoff = rebuild_target_records(
+        input_dir,
+        sample_stride,
+        history_states,
+        parallel_workers,
+    )
     family: list[dict[str, Any]] = []
 
     for horizon in HORIZONS:
