@@ -10,8 +10,6 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Sequence
 
-import research.sequential_empirical as empirical
-
 from research.cross_section import session_label
 from research.datafeed_empirical import PAIR_TO_SYMBOL, _execution_valid_rows, _market_bars, load_feed_bars
 from research.enriched_conditional_experiment import TargetRecord, assign_global_split
@@ -110,8 +108,10 @@ def _robust_discovery_record_set(records: Sequence[Mapping[str, object]]) -> boo
         for pair, result in eligible.items()
         if result["expectancy_pips"] is not None
         and result["expectancy_pips"] > 0.0
-        and result["profit_factor"] is not None
-        and result["profit_factor"] > 1.0
+        and (
+            result["profit_factor"] is None
+            or result["profit_factor"] > 1.0
+        )
     }
     largest_share = max(
         (int(result["n"]) / len(records) for result in pairs.values()),
