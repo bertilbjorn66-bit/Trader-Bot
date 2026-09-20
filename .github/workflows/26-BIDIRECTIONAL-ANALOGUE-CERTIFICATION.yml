@@ -166,7 +166,14 @@ jobs:
           echo "MARKET_DATA_DOWNLOADER_USED=false"
       - name: Run strict bidirectional certification
         run: |
-          python -m research.bidirectional_analogue_certification             --input-dir .data/empirical_feed             --discovery-report artifacts/confirmation/bidirectional_confirmation_report.json             --confirmation-report artifacts/confirmation/bidirectional_confirmation_report.json             --output artifacts/certification/bidirectional_certification_report.json             --sample-stride "${{ steps.binding.outputs.sample_stride }}"             --history-states "${{ steps.binding.outputs.history_states }}"             --parallel-workers 4
+          python -m research.bidirectional_analogue_certification \
+            --input-dir .data/empirical_feed \
+            --discovery-report artifacts/discovery/bidirectional_discovery_report.json \
+            --confirmation-report artifacts/confirmation/bidirectional_confirmation_report.json \
+            --output artifacts/certification/bidirectional_certification_report.json \
+            --sample-stride "${{ steps.binding.outputs.sample_stride }}" \
+            --history-states "${{ steps.binding.outputs.history_states }}" \
+            --parallel-workers 4
       - name: Upload immutable certification evidence
         uses: actions/upload-artifact@v7
         with:
