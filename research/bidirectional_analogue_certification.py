@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 from datetime import datetime, timedelta
@@ -485,14 +484,6 @@ def certify(
     for cell in cells:
         adjusted_pvalue = adjusted[index]
         index += 1
-        gates = _run_gates(
-            [
-                record
-                for record in folds[cell["fold_id"]].records
-            ],
-            [],
-            adjusted_pvalue,
-        )
         values = _execution_values(
             list(folds[cell["fold_id"]].records),
             next(
