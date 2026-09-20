@@ -214,8 +214,10 @@ jobs:
       - name: Verify bidirectional discovery-only output
         run: |
           python - <<'PY'
+          import hashlib
           import json
           from pathlib import Path
+
           report = json.loads(Path("artifacts/bidirectional_discovery_report.json").read_text())
           assert report["status"] == "BIDIRECTIONAL_ANALOGUE_DISCOVERY_COMPLETED"
           assert report["selection_policy"]["contract_version"] == "v1-bidirectional-analogue-familywise"
@@ -225,8 +227,31 @@ jobs:
           assert report["global_split_cutoff"]
           assert len(report["source_manifest"]) == 9
           assert len(report["discovery_family"]) <= 12
+          for item in report["discovery_family"]:
+              candidate = item["candidate"]
+              assert candidate["direction"] == "bidirectional"
+              assert candidate["direction_policy"] == "pre_target_analogue_mean_argmax"
+              assert candidate["horizon"] in report["selection_policy"]["horizons"]
+              assert candidate["k"] in report["selection_policy"]["k_values"]
+              canonical = {
+                  "direction": candidate["direction"],
+                  "direction_policy": candidate["direction_policy"],
+                  "horizon": int(candidate["horizon"]),
+                  "k": int(candidate["k"]),
+              }
+              expected = hashlib.sha256(
+                  json.dumps(
+                      canonical,
+                      sort_keys=True,
+                      separators=(",", ":"),
+                      ensure_ascii=True,
+                  ).encode("utf-8")
+              ).hexdigest()
+              assert item["candidate_fingerprint"] == expected
           for candidate in report["top_candidates"]:
               assert "confirmation" not in candidate
+              assert candidate["direction"] == "bidirectional"
+              assert candidate["direction_policy"] == "pre_target_analogue_mean_argmax"
               assert candidate["candidate_fingerprint"]
           print("BIDIRECTIONAL_DISCOVERY_VERIFIED=true")
           print("CANDIDATE_COUNT=", report["candidate_count"])
