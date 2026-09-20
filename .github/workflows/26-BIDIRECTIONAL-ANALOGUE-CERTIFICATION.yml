@@ -1,0 +1,191 @@
+name: "26 — BIDIRECTIONAL ANALOGUE CERTIFICATION — STRICT NON-LIVE"
+
+on:
+  workflow_run:
+    workflows: ["25 — BIDIRECTIONAL ANALOGUE CONFIRMATION — NON-LIVE"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      confirmation_run_id:
+        description: "Completed bidirectional confirmation run"
+        required: true
+      confirmation_head_sha:
+        description: "Exact source revision used by the confirmation run"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CONFIRMATION_RUN_ID: ${{ github.event.workflow_run.id || inputs.confirmation_run_id }}
+  CONFIRMATION_HEAD_SHA: ${{ github.event.workflow_run.head_sha || inputs.confirmation_head_sha || github.sha }}
+
+jobs:
+  validate:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    name: "Validate bidirectional certification engine"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact confirmation source revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CONFIRMATION_HEAD_SHA }}
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check research/bidirectional_analogue_discovery.py research/bidirectional_analogue_confirmation.py research/bidirectional_analogue_certification.py tests/test_bidirectional_analogue_discovery.py tests/test_bidirectional_analogue_confirmation.py tests/test_bidirectional_analogue_certification.py
+          mypy research/bidirectional_analogue_discovery.py research/bidirectional_analogue_confirmation.py research/bidirectional_analogue_certification.py
+      - name: Certification boundary tests
+        run: pytest -q tests/test_bidirectional_analogue_discovery.py tests/test_bidirectional_analogue_confirmation.py tests/test_bidirectional_analogue_certification.py
+      - name: Assert certification is non-live and never promotes
+        run: |
+          set -euo pipefail
+          ! grep -q 'ExecutionGateway' research/bidirectional_analogue_certification.py
+          ! grep -q 'broker' research/bidirectional_analogue_certification.py
+          ! grep -q 'live_execution_enabled' research/bidirectional_analogue_certification.py
+          echo "BIDIRECTIONAL_CERTIFICATION_NON_LIVE=true"
+
+  certify:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    name: "Run strict 12-run × 3-model certification"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout exact confirmation source revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CONFIRMATION_HEAD_SHA }}
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Create input directory
+        run: mkdir -p .data/empirical_feed artifacts/confirmation artifacts/certification
+      - name: Download immutable confirmation evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: BIDIRECTIONAL-ANALOGUE-CONFIRMATION-RESULT
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CONFIRMATION_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: artifacts/confirmation
+      - name: Read immutable confirmation binding
+        id: binding
+        run: |
+          set -euo pipefail
+          test -s artifacts/confirmation/bidirectional_confirmation_report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from os import environ
+
+          result = json.loads(Path("artifacts/confirmation/bidirectional_confirmation_report.json").read_text(encoding="utf-8"))
+          if result.get("state") != "PASS":
+              raise SystemExit("confirmation evidence did not pass; certification is not permitted")
+          if result.get("promotion_authorized") is not False or result.get("live_execution_authorized") is not False:
+              raise SystemExit("confirmation evidence contains an invalid authorization state")
+          binding = result.get("orchestration_binding")
+          if not isinstance(binding, dict):
+              raise SystemExit("confirmation evidence has no immutable orchestration binding")
+          if int(binding.get("confirmation_run_id", -1)) != int(environ["CONFIRMATION_RUN_ID"]):
+              raise SystemExit("confirmation run ID does not match requested workflow run")
+          if str(binding.get("confirmation_head_sha")) != environ["CONFIRMATION_HEAD_SHA"]:
+              raise SystemExit("confirmation head SHA does not match requested revision")
+          for key in ("discovery_run_id", "discovery_head_sha", "source_run_id", "sample_stride", "history_states"):
+              if key not in binding:
+                  raise SystemExit(f"missing confirmation binding field: {key}")
+          with open(environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"discovery_run_id={int(binding['discovery_run_id'])}", file=output)
+              print(f"discovery_head_sha={binding['discovery_head_sha']}", file=output)
+              print(f"source_run_id={int(binding['source_run_id'])}", file=output)
+              print(f"sample_stride={int(binding['sample_stride'])}", file=output)
+              print(f"history_states={int(binding['history_states'])}", file=output)
+          PY
+      - name: Download the exact nine source feeds
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-reused-artifacts
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: .data/empirical_feed
+      - name: Download repaired EUR/USD feed
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-eurusd
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/eurusd
+      - name: Download repaired GBP/USD feed
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-gbpusd
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/gbpusd
+      - name: Download repaired USD/JPY feed
+        uses: actions/download-artifact@v8
+        with:
+          name: empirical-recovery-usdjpy
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/repaired/usdjpy
+      - name: Place repaired files and verify all nine feeds
+        run: |
+          set -euo pipefail
+          for slug in eurusd gbpusd usdjpy; do
+            test -s "/tmp/repaired/$slug/$slug.jsonl"
+            cp "/tmp/repaired/$slug/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
+          done
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/$slug.jsonl" || { echo "Missing $slug.jsonl"; exit 1; }
+          done
+          echo "ALL_NINE_CERTIFICATION_FEEDS_VERIFIED=true"
+          echo "MARKET_DATA_DOWNLOADER_USED=false"
+      - name: Run strict bidirectional certification
+        run: |
+          python -m research.bidirectional_analogue_certification             --input-dir .data/empirical_feed             --discovery-report artifacts/confirmation/bidirectional_confirmation_report.json             --confirmation-report artifacts/confirmation/bidirectional_confirmation_report.json             --output artifacts/certification/bidirectional_certification_report.json             --sample-stride "${{ steps.binding.outputs.sample_stride }}"             --history-states "${{ steps.binding.outputs.history_states }}"             --parallel-workers 4
+      - name: Upload immutable certification evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: BIDIRECTIONAL-ANALOGUE-CERTIFICATION-RESULT
+          path: artifacts/certification/bidirectional_certification_report.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Verify certification boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("artifacts/certification/bidirectional_certification_report.json").read_text(encoding="utf-8"))
+          assert result["state"] in {"PASS", "FAIL", "INCOMPLETE"}
+          assert result["promotion_authorized"] is False
+          assert result["live_execution_authorized"] is False
+          if result["state"] == "PASS":
+              assert result["qualifying_run_count"] == 12
+              assert len(result["certification_runs"]) == 12
+              assert all(run["qualifies"] for run in result["certification_runs"])
+          print("BIDIRECTIONAL_CERTIFICATION_VERIFIED=true")
+          print("STATE=", result["state"])
+          print("QUALIFYING_RUN_COUNT=", result.get("qualifying_run_count", 0))
+          print("PROMOTION_AUTHORIZED=false")
+          print("LIVE_EXECUTION_AUTHORIZED=false")
+          PY
+      - name: Stop unless certification actually passed
+        run: |
+          test "$(python -c 'import json; print(json.load(open("artifacts/certification/bidirectional_certification_report.json", encoding="utf-8"))["state"])')" = "PASS"
