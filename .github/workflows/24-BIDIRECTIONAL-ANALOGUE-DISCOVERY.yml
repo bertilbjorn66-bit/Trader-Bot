@@ -127,7 +127,7 @@ jobs:
               "empirical-recovery-usdjpy",
           }
           present = {item["name"]: item for item in artifacts}
-          missing = sorted(required - present)
+          missing = sorted(required - set(present))
           if missing:
               raise SystemExit(f"required source artifacts are missing: {missing}")
           now = datetime.now(timezone.utc)
