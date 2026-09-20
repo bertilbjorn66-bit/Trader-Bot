@@ -22,6 +22,7 @@ from research.enriched_conditional_experiment import TargetRecord, assign_global
 from research.execution import ExecutionAssumptions, net_move
 from research.multiple_testing import holm_bonferroni
 from research.non_live_evaluation import block_bootstrap_means, bootstrap_means, profit_factor
+from research.outcomes import future_outcome
 from research.pipeline import state_from_bar_window
 from research.regimes import classify_regime
 from research.similarity import DEFAULT_FEATURES, SimilarityIndex
@@ -278,7 +279,7 @@ def empirical_outcome(
     horizon: int,
     direction: str,
 ) -> Outcome:
-    return empirical.future_outcome(bars, index, horizon, direction)
+    return future_outcome(bars, index, horizon, direction)
 
 
 def decide_direction(
