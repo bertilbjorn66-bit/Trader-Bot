@@ -4,6 +4,7 @@ import pytest
 
 from research.bidirectional_analogue_discovery import (
     _robust_discovery_record_set,
+    candidate_fingerprint,
     decide_direction,
 )
 
@@ -60,3 +61,23 @@ def test_discovery_pair_diversification_gate_rejects_one_pair_dominance() -> Non
             for value in values
         )
     assert _robust_discovery_record_set(records) is False
+
+
+def test_candidate_fingerprint_binds_bidirectional_identity() -> None:
+    forward = candidate_fingerprint(
+        {
+            "direction": "bidirectional",
+            "direction_policy": "pre_target_analogue_mean_argmax",
+            "horizon": 3,
+            "k": 25,
+        }
+    )
+    long_only = candidate_fingerprint(
+        {
+            "direction": "long",
+            "direction_policy": "pre_target_analogue_mean_argmax",
+            "horizon": 3,
+            "k": 25,
+        }
+    )
+    assert forward != long_only
