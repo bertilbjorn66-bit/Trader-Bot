@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 from datetime import datetime
-from math import inf
 from pathlib import Path
 from statistics import mean
 from typing import Any, Mapping, Sequence
