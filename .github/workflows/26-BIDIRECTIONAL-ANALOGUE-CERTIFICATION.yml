@@ -112,6 +112,14 @@ jobs:
               print(f"sample_stride={int(binding['sample_stride'])}", file=output)
               print(f"history_states={int(binding['history_states'])}", file=output)
           PY
+      - name: Download immutable discovery evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: BIDIRECTIONAL-ANALOGUE-DISCOVERY-RESULT
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.binding.outputs.discovery_run_id }}
+          github-token: ${{ github.token }}
+          path: artifacts/discovery
       - name: Download the exact nine source feeds
         uses: actions/download-artifact@v8
         with:
