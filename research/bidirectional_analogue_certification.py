@@ -292,7 +292,10 @@ def _variant_values(
         and int(record["k"]) == k
         and str(record["direction"]) in {"long", "short"}
     ]
-    return sorted(matched, key=lambda record: (_timestamp(record), str(record["pair"])))
+    return sorted(
+        [dict(record) for record in matched],
+        key=lambda record: (_timestamp(record), str(record["pair"])),
+    )
 
 
 def evaluate_parameter_stability(
