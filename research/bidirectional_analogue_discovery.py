@@ -26,7 +26,7 @@ from research.pipeline import state_from_bar_window
 from research.regimes import classify_regime
 from research.similarity import DEFAULT_FEATURES, SimilarityIndex
 from research.statistics import hac_mean_pvalue
-from research.types import Bar, State
+from research.types import Bar, Outcome, State
 
 PAIR_PIP = {
     "EUR/USD": 0.0001,
@@ -98,7 +98,10 @@ def _max_drawdown(values: list[float]) -> float:
 def _pair_breakdown(records: Sequence[Mapping[str, object]]) -> dict[str, dict[str, float | int | None]]:
     grouped: dict[str, list[float]] = {}
     for record in records:
-        grouped.setdefault(str(record["pair"]), []).append(float(record["outcome_pips"]))
+        outcome = record.get("outcome_pips")
+        if not isinstance(outcome, (int, float)):
+            raise ValueError("record outcome_pips must be numeric")
+        grouped.setdefault(str(record["pair"]), []).append(float(outcome))
     return {pair: _stats(values) for pair, values in sorted(grouped.items())}
 
 
@@ -107,7 +110,7 @@ def _robust_discovery_record_set(records: Sequence[Mapping[str, object]]) -> boo
     eligible = {
         pair: result
         for pair, result in pairs.items()
-        if int(result["n"]) >= MIN_PAIR_SAMPLES
+        if int(result["n"] or 0) >= MIN_PAIR_SAMPLES
     }
     positive = {
         pair: result
@@ -120,7 +123,7 @@ def _robust_discovery_record_set(records: Sequence[Mapping[str, object]]) -> boo
         )
     }
     largest_share = max(
-        (int(result["n"]) / len(records) for result in pairs.values()),
+        (int(result["n"] or 0) / len(records) for result in pairs.values()),
         default=1.0,
     )
     return (
@@ -265,10 +268,6 @@ def _analyze_pair(
                         "split": "",
                         "target_end_timestamp": bars[target_end_index].timestamp.isoformat(),
                         "global_split": "",
-                        "predicted_direction_mean_pips": predicted,
-                        "long_direction_mean_pips": long_mean,
-                        "short_direction_mean_pips": short_mean,
-                        "decision_margin_pips": decision_margin,
                     }
                 )
 
@@ -280,7 +279,7 @@ def empirical_outcome(
     index: int,
     horizon: int,
     direction: str,
-):
+) -> Outcome:
     return empirical.future_outcome(bars, index, horizon, direction)
 
 
@@ -410,7 +409,7 @@ def run_discovery(
                 key=lambda record: (record["timestamp"], record["pair"]),
             )
             stats = _stats([float(record["outcome_pips"]) for record in records])
-            if int(stats["n"]) < MIN_DISCOVERY_SAMPLES:
+            if int(stats["n"] or 0) < MIN_DISCOVERY_SAMPLES:
                 continue
             values = [float(record["outcome_pips"]) for record in records]
             raw_pvalue = hac_mean_pvalue(values)
@@ -419,7 +418,7 @@ def run_discovery(
             item: dict[str, Any] = {
                 "candidate": candidate_identity,
                 "candidate_fingerprint": candidate_fingerprint(candidate_identity),
-                "n": int(stats["n"]),
+                "n": int(stats["n"] or 0),
                 "statistics": stats,
                 "raw_hac_one_sided_pvalue": raw_pvalue,
                 "pair_robust": pair_robust,
@@ -510,7 +509,10 @@ def _near_miss_reason(item: dict[str, object], adjusted_pvalue: float) -> str:
     if not bool(item["pair_robust"]):
         return "failed discovery pair-diversity/concentration gate"
     statistics = item["statistics"]
-    if statistics["profit_factor"] is None or float(statistics["profit_factor"]) < MIN_DISCOVERY_PF:
+    if not isinstance(statistics, Mapping):
+        raise ValueError("discovery item statistics must be a mapping")
+    profit_factor_value = statistics.get("profit_factor")
+    if profit_factor_value is None or float(profit_factor_value) < MIN_DISCOVERY_PF:
         return "failed discovery profit-factor gate"
     if adjusted_pvalue > HOLM_ALPHA:
         return "failed discovery-family Holm-adjusted HAC p-value"
