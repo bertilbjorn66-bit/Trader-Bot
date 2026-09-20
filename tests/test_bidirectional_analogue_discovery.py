@@ -48,7 +48,7 @@ def test_discovery_pair_diversification_gate_requires_three_positive_pairs() -> 
 def test_discovery_pair_diversification_gate_rejects_one_pair_dominance() -> None:
     records = []
     for pair, values in {
-        "EUR/USD": [2.0] * 90,
+        "EUR/USD": [2.0] * 180,
         "GBP/USD": [1.0] * 20,
         "USD/JPY": [1.0] * 20,
     }.items():
