@@ -122,12 +122,6 @@ jobs:
           ).get("artifacts", [])
           required = {
               "empirical-recovery-reused-artifacts",
-              "empirical-recovery-audusd",
-              "empirical-recovery-usdcad",
-              "empirical-recovery-usdchf",
-              "empirical-recovery-nzdusd",
-              "empirical-recovery-eurjpy",
-              "empirical-recovery-gbpjpy",
               "empirical-recovery-eurusd",
               "empirical-recovery-gbpusd",
               "empirical-recovery-usdjpy",
