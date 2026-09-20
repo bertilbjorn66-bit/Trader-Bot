@@ -186,6 +186,10 @@ def evaluate_confirmation(
     if not required.issubset(candidate):
         raise ValueError("rank-1 bidirectional candidate is missing frozen identity fields")
     frozen_identity = candidate_identity(candidate)
+    if frozen_identity["direction"] != "bidirectional":
+        raise ValueError("rank-1 candidate is not bidirectional")
+    if frozen_identity["direction_policy"] != "pre_target_analogue_mean_argmax":
+        raise ValueError("rank-1 candidate uses an unsupported direction policy")
     frozen_fingerprint = candidate_fingerprint(candidate)
     if candidate["candidate_fingerprint"] != frozen_fingerprint:
         raise ValueError("rank-1 bidirectional candidate fingerprint is internally inconsistent")
