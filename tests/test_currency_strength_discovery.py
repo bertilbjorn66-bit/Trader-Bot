@@ -7,13 +7,13 @@ import numpy as np
 from research.currency_strength_discovery import (
     CONTRACT_VERSION,
     Feed,
+    Trade,
     _rolling_std,
     _trade_for_signal,
     assign_global_split,
     candidate_fingerprint,
     family_hypotheses,
     holm_adjust,
-    Trade,
 )
 
 
