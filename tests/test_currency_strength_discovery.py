@@ -13,8 +13,8 @@ from research.currency_strength_discovery import (
     candidate_fingerprint,
     family_hypotheses,
     holm_adjust,
+    Trade,
 )
-from research.currency_strength_discovery import Trade
 
 
 BASE = datetime(2026, 1, 1, tzinfo=timezone.utc)
