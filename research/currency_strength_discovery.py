@@ -13,9 +13,8 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 
-from research.cross_section import session_label
 from research.datafeed_empirical import PAIR_TO_SYMBOL, _execution_valid_rows, load_feed_bars
-from research.non_live_evaluation import block_bootstrap_means, bootstrap_means, max_drawdown, profit_factor
+from research.non_live_evaluation import bootstrap_means, profit_factor
 from research.statistics import hac_mean_pvalue
 
 
@@ -130,8 +129,12 @@ def _rolling_std(values: np.ndarray, window: int) -> np.ndarray:
         total_sq
         - np.where(count > 0, total * total / np.maximum(count, 1), 0.0)
     ) / np.maximum(count - 1, 1)
-    result[window - 1 :] = np.sqrt(np.maximum(variance, 0.0))
-    result[~(count if len(result) == len(count) else np.ones(0, dtype=bool))] = np.nan
+    valid_windows = count == window
+    result[window - 1 :] = np.where(
+        valid_windows,
+        np.sqrt(np.maximum(variance, 0.0)),
+        np.nan,
+    )
     return result
 
 
@@ -346,21 +349,56 @@ def _clustered_block_lower(
 
 
 def _candidate_metrics(
-    trades: Sequence[Trade],
+    feeds: Mapping[str, Feed],
+    target_positions: Mapping[str, Sequence[int]],
+    signal_index: Mapping[tuple[int, int, str, str], float],
+    cutoff_ms: int,
     hypothesis: Mapping[str, Any],
 ) -> dict[str, Any]:
-    selected = [
-        trade
-        for trade in trades
-        if trade.lookback == int(hypothesis["lookback"])
-        and trade.horizon == int(hypothesis["horizon"])
-        and trade.mode == str(hypothesis["mode"])
-        and trade.orientation == str(hypothesis["orientation"])
-        and trade.threshold == float(hypothesis["threshold"])
-        and trade.split == "discovery"
-    ]
-    values = [trade.outcome_pips - DISCOVERY_COST_PIPS for trade in selected]
-    if not values:
+    selected_values: list[float] = []
+    by_pair: dict[str, list[float]] = defaultdict(list)
+    by_timestamp: dict[int, list[float]] = defaultdict(list)
+    feed_cost = DISCOVERY_COST_PIPS
+
+    lookback = int(hypothesis["lookback"])
+    horizon = int(hypothesis["horizon"])
+    mode = str(hypothesis["mode"])
+    orientation = str(hypothesis["orientation"])
+    threshold = float(hypothesis["threshold"])
+
+    for pair, positions in target_positions.items():
+        feed = feeds[pair]
+        for position in positions:
+            timestamp_ms = int(feed.timestamps[position])
+            signal = signal_index.get((timestamp_ms, lookback, pair, mode))
+            if signal is None or not math.isfinite(signal) or abs(signal) < threshold:
+                continue
+            end_position = position + horizon
+            if end_position >= len(feed.timestamps):
+                continue
+            target_end_ms = int(feed.timestamps[end_position])
+            if target_end_ms >= cutoff_ms:
+                continue
+            if not _contiguous(feed.timestamps, position, end_position):
+                continue
+
+            direction = 1 if signal > 0.0 else -1
+            if orientation == "reversion":
+                direction *= -1
+            if direction > 0:
+                movement = (
+                    feed.bid_close[end_position] - feed.ask_close[position]
+                ) / PAIR_PIP[pair]
+            else:
+                movement = (
+                    feed.bid_close[position] - feed.ask_close[end_position]
+                ) / PAIR_PIP[pair]
+            value = float(movement) - feed_cost
+            selected_values.append(value)
+            by_pair[pair].append(value)
+            by_timestamp.setdefault(timestamp_ms, []).append(value)
+
+    if not selected_values:
         return {
             **hypothesis,
             "n": 0,
@@ -373,69 +411,71 @@ def _candidate_metrics(
             "positive_pair_count": 0,
             "largest_pair_observation_share": 1.0,
             "passes_pre_holm": False,
+            "stress": {},
         }
 
-    by_pair: dict[str, list[float]] = defaultdict(list)
-    by_timestamp: dict[int, list[float]] = defaultdict(list)
-    for trade, value in zip(selected, values, strict=True):
-        by_pair[trade.pair].append(value)
-        by_timestamp[trade.timestamp_ms].append(value)
-
-    positive_pairs = 0
-    for pair_values in by_pair.values():
-        if len(pair_values) < MIN_PAIR_TRADES:
-            continue
-        pair_pf = _pf(pair_values)
-        if mean(pair_values) > MIN_EXPECTANCY_PIPS and pair_pf is not None and pair_pf > 1.0:
-            positive_pairs += 1
-
-    timestamp_means = [mean(pair_values) for _, pair_values in sorted(by_timestamp.items())]
-    hac = hac_mean_pvalue(timestamp_means)
-    ordinary = bootstrap_means(values, reps=BOOTSTRAP_REPS, seed=20260921 + int(hypothesis["lookback"]))
-    ordinary_lower = float(ordinary[BOOTSTRAP_LOWER_INDEX])
+    timestamp_means = [
+        mean(values)
+        for _, values in sorted(by_timestamp.items())
+    ]
+    ordinary = bootstrap_means(
+        selected_values,
+        reps=BOOTSTRAP_REPS,
+        seed=20260921 + lookback * 101 + horizon * 7,
+    )
     cluster_lower = _clustered_block_lower(
         by_timestamp,
         reps=BOOTSTRAP_REPS,
-        seed=20260921 + int(hypothesis["horizon"]) * 17,
+        seed=20260921 + lookback * 101 + horizon * 7 + 1,
     )
+
+    positive_pairs = sum(
+        1
+        for pair_values in by_pair.values()
+        if len(pair_values) >= MIN_PAIR_TRADES
+        and mean(pair_values) > MIN_EXPECTANCY_PIPS
+        and (
+            (pair_pf := profit_factor(pair_values)) is not None
+            and float(pair_pf) > 1.0
+        )
+    )
+    concentration = max(
+        (len(pair_values) / len(selected_values) for pair_values in by_pair.values()),
+        default=1.0,
+    )
+    expectancy = mean(selected_values)
+    pf_value = profit_factor(selected_values)
 
     return {
         **hypothesis,
-        "n": len(values),
+        "n": len(selected_values),
         "unique_timestamps": len(by_timestamp),
-        "expectancy_pips": mean(values),
-        "profit_factor": _pf(values),
-        "hac_one_sided_pvalue": hac,
-        "ordinary_bootstrap_lower": ordinary_lower,
+        "expectancy_pips": expectancy,
+        "profit_factor": pf_value,
+        "hac_one_sided_pvalue": hac_mean_pvalue(timestamp_means),
+        "ordinary_bootstrap_lower": float(ordinary[BOOTSTRAP_LOWER_INDEX]),
         "cluster_block_bootstrap_lower": cluster_lower,
         "positive_pair_count": positive_pairs,
-        "largest_pair_observation_share": max(
-            (len(pair_values) / len(values) for pair_values in by_pair.values()),
-            default=1.0,
-        ),
+        "largest_pair_observation_share": concentration,
         "stress": {
             str(cost): {
-                "expectancy_pips": mean(value - cost for value in values),
-                "profit_factor": _pf([value - cost for value in values]),
+                "expectancy_pips": mean(value - cost for value in selected_values),
+                "profit_factor": profit_factor([value - cost for value in selected_values]),
             }
             for cost in STRESS_COSTS_PIPS
         },
         "passes_pre_holm": (
-            len(values) >= MIN_DISCOVERY_TRADES
+            len(selected_values) >= MIN_DISCOVERY_TRADES
             and len(by_timestamp) >= MIN_TIMESTAMP_OBS
-            and mean(values) > MIN_EXPECTANCY_PIPS
-            and _pf(values) is not None
-            and float(_pf(values)) >= MIN_PROFIT_FACTOR
+            and expectancy > MIN_EXPECTANCY_PIPS
+            and pf_value is not None
+            and float(pf_value) >= MIN_PROFIT_FACTOR
             and positive_pairs >= MIN_POSITIVE_PAIRS
-            and max(
-                (len(pair_values) / len(values) for pair_values in by_pair.values()),
-                default=1.0,
-            ) <= MAX_PAIR_CONCENTRATION
-            and ordinary_lower > 0.0
+            and concentration <= MAX_PAIR_CONCENTRATION
+            and float(ordinary[BOOTSTRAP_LOWER_INDEX]) > 0.0
             and cluster_lower > 0.0
         ),
     }
-
 
 def holm_adjust(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ordered = sorted(results, key=lambda item: float(item["hac_one_sided_pvalue"]))
@@ -473,11 +513,17 @@ def run_discovery(
     if sample_stride <= 0:
         raise ValueError("sample_stride must be positive")
     feeds, source_manifest = load_feeds(input_dir)
-    target_timestamps = []
+
     target_positions: dict[str, list[int]] = {}
+    target_timestamps: set[int] = set()
+    target_end_timestamps: set[int] = set()
     for pair, feed in feeds.items():
         positions: list[int] = []
-        for position in range(max(LOOKBACKS), len(feed.timestamps) - max(HORIZONS), sample_stride):
+        for position in range(
+            max(LOOKBACKS),
+            len(feed.timestamps) - max(HORIZONS),
+            sample_stride,
+        ):
             if not math.isfinite(float(feed.rolling_vol[position])):
                 continue
             if not all(
@@ -487,68 +533,34 @@ def run_discovery(
             ):
                 continue
             positions.append(position)
-            target_timestamps.append(int(feed.timestamps[position]))
+            timestamp_ms = int(feed.timestamps[position])
+            target_timestamps.add(timestamp_ms)
+            target_end_timestamps.update(
+                timestamp_ms + horizon * 600_000
+                for horizon in HORIZONS
+            )
         target_positions[pair] = positions
 
-    signal_index = build_signal_index(feeds, target_timestamps)
-    trades_by_hypothesis: dict[tuple[Any, ...], list[Trade]] = {
-        (
-            hypothesis["lookback"],
-            hypothesis["horizon"],
-            hypothesis["mode"],
-            hypothesis["orientation"],
-            hypothesis["threshold"],
-        ): []
-        for hypothesis in family_hypotheses()
-    }
+    if not target_end_timestamps:
+        raise ValueError("no valid target observations remain after continuity checks")
+    cutoff_ms = sorted(target_end_timestamps)[
+        int(len(target_end_timestamps) * DISCOVERY_FRACTION)
+    ]
 
-    for pair, positions in target_positions.items():
-        feed = feeds[pair]
-        for position in positions:
-            timestamp_ms = int(feed.timestamps[position])
-            for hypothesis in family_hypotheses():
-                signal = signal_index.get(
-                    (
-                        timestamp_ms,
-                        int(hypothesis["lookback"]),
-                        pair,
-                        str(hypothesis["mode"]),
-                    )
-                )
-                if signal is None or not math.isfinite(signal):
-                    continue
-                trade = _trade_for_signal(
-                    feed,
-                    position,
-                    int(hypothesis["horizon"]),
-                    str(hypothesis["mode"]),
-                    str(hypothesis["orientation"]),
-                    float(hypothesis["threshold"]),
-                    float(signal),
-                    int(hypothesis["lookback"]),
-                )
-                if trade is not None:
-                    key = (
-                        hypothesis["lookback"],
-                        hypothesis["horizon"],
-                        hypothesis["mode"],
-                        hypothesis["orientation"],
-                        hypothesis["threshold"],
-                    )
-                    trades_by_hypothesis[key].append(trade)
-
-    all_trades: list[Trade] = []
-    for trades in trades_by_hypothesis.values():
-        all_trades.extend(trades)
-    all_trades, cutoff = assign_global_split(all_trades)
-
-    results: list[dict[str, Any]] = []
-    for hypothesis in family_hypotheses():
-        result = _candidate_metrics(all_trades, hypothesis)
-        result["candidate_fingerprint"] = candidate_fingerprint(hypothesis)
-        results.append(result)
-
+    signal_index = build_signal_index(feeds, sorted(target_timestamps))
+    hypotheses = family_hypotheses()
+    results = [
+        _candidate_metrics(
+            feeds,
+            target_positions,
+            signal_index,
+            cutoff_ms,
+            hypothesis,
+        )
+        for hypothesis in hypotheses
+    ]
     results = holm_adjust(results)
+
     survivors = [
         result
         for result in results
@@ -560,7 +572,6 @@ def run_discovery(
             -float(item["expectancy_pips"] or -math.inf),
         )
     )
-
     top_candidates = [
         {
             **candidate,
@@ -568,10 +579,9 @@ def run_discovery(
         }
         for candidate in survivors[:10]
     ]
-
     status = (
         "CURRENCY_STRENGTH_DISCOVERY_COMPLETED"
-        if survivors or results
+        if results
         else "CURRENCY_STRENGTH_DISCOVERY_FAILED"
     )
     return {
@@ -589,13 +599,13 @@ def run_discovery(
         "discovery_family_size": len(results),
         "candidate_count": len(survivors),
         "candidate_selection_rule": "only a discovery-family result with all predefined robustness gates and family-wise Holm p <= 0.05 can become a candidate",
-        "global_split_cutoff": (
-            datetime.fromtimestamp(cutoff / 1000.0, tz=timezone.utc).isoformat()
-            if cutoff is not None
-            else None
-        ),
+        "global_split_cutoff": datetime.fromtimestamp(
+            cutoff_ms / 1000.0,
+            tz=timezone.utc,
+        ).isoformat(),
         "source_manifest": source_manifest,
-        "target_record_count": len(all_trades),
+        "target_timestamp_count": len(target_timestamps),
+        "target_record_count": sum(len(values) for values in target_positions.values()),
         "top_candidates": top_candidates,
         "family_results": results,
         "selection_policy": {
@@ -613,10 +623,9 @@ def run_discovery(
             "ordinary_bootstrap_repetitions": BOOTSTRAP_REPS,
             "cluster_block_bootstrap_repetitions": BOOTSTRAP_REPS,
             "stress_costs_pips": STRESS_COSTS_PIPS,
-            "target_outcome_mechanics": "exact BID/ASK executable entry and exit; no next-bar direction leakage",
+            "target_outcome_mechanics": "exact BID/ASK executable entry and exit; signal uses only prices available at the target close; complete target outcomes crossing the global split are excluded from discovery",
         },
     }
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(
