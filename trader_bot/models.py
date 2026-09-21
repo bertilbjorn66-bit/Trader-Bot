@@ -14,6 +14,7 @@ class OfferSide(StrEnum):
 
 class Timeframe(StrEnum):
     TEN_SECONDS = "10sec"
+    ONE_SECOND = "1sec"
     ONE_MINUTE = "1min"
     FIVE_MINUTES = "5min"
     TEN_MINUTES = "10m"
@@ -26,6 +27,7 @@ class Timeframe(StrEnum):
 
 
 PROVIDER_TIMEFRAMES = {
+    Timeframe.ONE_SECOND,
     Timeframe.TEN_SECONDS,
     Timeframe.ONE_MINUTE,
     Timeframe.TEN_MINUTES,
@@ -57,6 +59,7 @@ class MarketBar(BaseModel):
     low: Decimal
     close: Decimal
     volume: Decimal | None = None
+    trade_count: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_ohlc(self) -> MarketBar:
