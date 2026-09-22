@@ -8,15 +8,6 @@ on:
       - "research/currency_strength_discovery.py"
       - "tests/test_currency_strength_discovery.py"
   workflow_dispatch:
-    inputs:
-      source_run_id:
-        description: "Completed recovery run containing the nine verified pair artifacts"
-        required: true
-        default: "32874819018"
-      sample_stride:
-        description: "Target stride in 10m bars"
-        required: true
-        default: "60"
 
 permissions:
   contents: read
@@ -27,8 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
-  SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
+  SOURCE_RUN_ID: "32874819018"
+  SAMPLE_STRIDE: "60"
 
 jobs:
   validate:
@@ -101,11 +92,14 @@ jobs:
           run = get(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}")
           if run.get("conclusion") != "success":
               raise SystemExit(f"source recovery run {run_id} is not successful")
+          if run.get("head_branch") != "main":
+              raise SystemExit(f"source recovery run {run_id} is not the frozen main-branch recovery run")
           artifacts = get(
               f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100"
           ).get("artifacts", [])
           present = {item["name"]: item for item in artifacts}
           required = {
+              "VERIFIED-EMPIRICAL-RECOVERY-REPORT",
               "empirical-recovery-reused-artifacts",
               "empirical-recovery-eurusd",
               "empirical-recovery-gbpusd",
@@ -183,6 +177,8 @@ jobs:
           assert report["status"] == "CURRENCY_STRENGTH_DISCOVERY_COMPLETED"
           assert report["contract_version"] == "v1-currency-strength-familywise"
           assert report["discovery_family_size"] == 144
+          assert len(report["family_results"]) == 144
+          assert report["selection_policy"]["holms_scope"] == 144
           assert report["selection_policy"]["whole_family_holm"] is True
           assert report["selection_policy"]["confirmation_used_for_selection"] is False
           assert report["live_execution_authorized"] is False
@@ -193,6 +189,7 @@ jobs:
               item for item in report["family_results"] if item["passes_familywise"]
           ]
           assert report["candidate_count"] == len(familywise_items)
+          fingerprints = set()
           for item in report["family_results"]:
               c = item["candidate"]
               canonical = {
@@ -213,6 +210,8 @@ jobs:
               ).hexdigest()
               assert item["candidate_fingerprint"] == expected
               assert item["candidate"] == canonical | {"contract_version": report["contract_version"]}
+              fingerprints.add(item["candidate_fingerprint"])
+          assert len(fingerprints) == 144
           print("CURRENCY_STRENGTH_DISCOVERY_VERIFIED=true")
           print("DISCOVERY_FAMILY_SIZE=", report["discovery_family_size"])
           print("CANDIDATE_COUNT=", report["candidate_count"])
