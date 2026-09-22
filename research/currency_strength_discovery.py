@@ -370,6 +370,7 @@ def _candidate_metrics(
     orientation = str(hypothesis["orientation"])
     threshold = float(hypothesis["threshold"])
     candidate = {
+        "contract_version": CONTRACT_VERSION,
         "lookback": lookback,
         "horizon": horizon,
         "mode": mode,
