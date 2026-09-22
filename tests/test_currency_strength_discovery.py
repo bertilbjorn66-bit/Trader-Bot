@@ -11,6 +11,7 @@ from research.currency_strength_discovery import (
     _rolling_std,
     _trade_for_signal,
     _candidate_metrics,
+    _currency_components,
     assign_global_split,
     candidate_fingerprint,
     family_hypotheses,
@@ -44,6 +45,12 @@ def test_family_size_is_frozen() -> None:
     assert len(family_hypotheses()) == 144
 
 
+def test_discovery_stride_is_frozen() -> None:
+    from research.currency_strength_discovery import FIXED_SAMPLE_STRIDE
+
+    assert FIXED_SAMPLE_STRIDE == 60
+
+
 def test_candidate_fingerprint_binds_every_search_dimension() -> None:
     base = family_hypotheses()[0]
     assert candidate_fingerprint(base) != candidate_fingerprint({**base, "threshold": 1.0})
@@ -68,6 +75,37 @@ def test_rolling_std_requires_complete_windows() -> None:
     result = _rolling_std(values, 4)
     assert np.isnan(result[:3]).all()
     assert np.isfinite(result[3:]).all()
+
+
+def test_currency_components_require_complete_nine_pair_cross_section() -> None:
+    base_feed = _feed()
+    partial = {"USD/JPY": base_feed}
+    timestamp = int(base_feed.timestamps[-1])
+    raw, normalized, dispersion = _currency_components(partial, timestamp, 6)
+    assert raw == {}
+    assert normalized == {}
+    assert np.isnan(dispersion)
+
+    full = {
+        pair: Feed(
+            pair=pair,
+            timestamps=base_feed.timestamps,
+            bid_close=base_feed.bid_close,
+            ask_close=base_feed.ask_close,
+            mid_close=base_feed.mid_close,
+            rolling_vol=base_feed.rolling_vol,
+            timestamp_index=base_feed.timestamp_index,
+            quality={},
+        )
+        for pair in (
+            "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD",
+            "USD/CHF", "NZD/USD", "EUR/JPY", "GBP/JPY",
+        )
+    }
+    raw, normalized, dispersion = _currency_components(full, timestamp, 6)
+    assert raw
+    assert normalized
+    assert np.isfinite(dispersion)
 
 
 def test_trade_uses_exact_bid_ask_directional_pnl() -> None:
