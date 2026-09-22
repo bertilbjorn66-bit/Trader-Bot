@@ -369,6 +369,14 @@ def _candidate_metrics(
     mode = str(hypothesis["mode"])
     orientation = str(hypothesis["orientation"])
     threshold = float(hypothesis["threshold"])
+    candidate = {
+        "lookback": lookback,
+        "horizon": horizon,
+        "mode": mode,
+        "orientation": orientation,
+        "threshold": threshold,
+    }
+    candidate_fp = candidate_fingerprint(candidate)
 
     for pair, positions in target_positions.items():
         feed = feeds[pair]
@@ -405,6 +413,8 @@ def _candidate_metrics(
     if not selected_values:
         return {
             **hypothesis,
+            "candidate": candidate,
+            "candidate_fingerprint": candidate_fp,
             "n": 0,
             "unique_timestamps": 0,
             "expectancy_pips": None,
@@ -452,6 +462,8 @@ def _candidate_metrics(
 
     return {
         **hypothesis,
+        "candidate": candidate,
+        "candidate_fingerprint": candidate_fp,
         "n": len(selected_values),
         "unique_timestamps": len(by_timestamp),
         "expectancy_pips": expectancy,
