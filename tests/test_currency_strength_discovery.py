@@ -10,6 +10,7 @@ from research.currency_strength_discovery import (
     Trade,
     _rolling_std,
     _trade_for_signal,
+    _candidate_metrics,
     assign_global_split,
     candidate_fingerprint,
     family_hypotheses,
@@ -48,6 +49,18 @@ def test_candidate_fingerprint_binds_every_search_dimension() -> None:
     assert candidate_fingerprint(base) != candidate_fingerprint({**base, "threshold": 1.0})
     assert candidate_fingerprint(base) != candidate_fingerprint({**base, "lookback": 48})
     assert CONTRACT_VERSION.startswith("v1-")
+
+
+def test_candidate_record_contains_contract_and_fingerprint_without_trades() -> None:
+    result = _candidate_metrics(
+        {"USD/JPY": _feed()},
+        {"USD/JPY": []},
+        {},
+        int((BASE + timedelta(days=1)).timestamp() * 1000),
+        family_hypotheses()[0],
+    )
+    assert result["candidate"]["contract_version"] == CONTRACT_VERSION
+    assert result["candidate_fingerprint"] == candidate_fingerprint(result["candidate"])
 
 
 def test_rolling_std_requires_complete_windows() -> None:
