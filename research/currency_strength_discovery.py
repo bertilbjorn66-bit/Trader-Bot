@@ -69,6 +69,8 @@ FAMILY_ALPHA = 0.05
 DISCOVERY_FRACTION = 0.60
 DISCOVERY_COST_PIPS = 0.0
 STRESS_COSTS_PIPS = (0.5, 1.0, 1.5)
+FIXED_SAMPLE_STRIDE = 60
+REQUIRED_CROSS_SECTION_PAIRS = len(PAIR_CURRENCY)
 
 CONTRACT_VERSION = "v1-currency-strength-familywise"
 
@@ -187,6 +189,7 @@ def _currency_components(
     raw: dict[str, list[float]] = defaultdict(list)
     normalized: dict[str, list[float]] = defaultdict(list)
     absolute_returns: list[float] = []
+    valid_pairs = 0
 
     lag_ms = lookback * 600_000
     for pair, (base, quote) in PAIR_CURRENCY.items():
@@ -200,6 +203,7 @@ def _currency_components(
         ret = math.log(feed.mid_close[end_index] / feed.mid_close[start_index])
         if not math.isfinite(ret):
             continue
+        valid_pairs += 1
         raw[base].append(ret)
         raw[quote].append(-ret)
         absolute_returns.append(abs(ret))
@@ -208,6 +212,9 @@ def _currency_components(
             normalized_return = ret / vol
             normalized[base].append(normalized_return)
             normalized[quote].append(-normalized_return)
+
+    if valid_pairs != REQUIRED_CROSS_SECTION_PAIRS:
+        return {}, {}, math.nan
 
     raw_strength = {
         currency: mean(values)
@@ -527,8 +534,8 @@ def run_discovery(
     input_dir: Path,
     sample_stride: int,
 ) -> dict[str, Any]:
-    if sample_stride <= 0:
-        raise ValueError("sample_stride must be positive")
+    if sample_stride != FIXED_SAMPLE_STRIDE:
+        raise ValueError(f"sample_stride must equal the frozen discovery value {FIXED_SAMPLE_STRIDE}")
     feeds, source_manifest = load_feeds(input_dir)
 
     target_positions: dict[str, list[int]] = {}
