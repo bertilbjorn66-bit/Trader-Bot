@@ -189,6 +189,10 @@ jobs:
           assert report["promotion_authorized"] is False
           assert len(report["source_manifest"]) == 9
           assert report["target_record_count"] > 0
+          familywise_items = [
+              item for item in report["family_results"] if item["passes_familywise"]
+          ]
+          assert report["candidate_count"] == len(familywise_items)
           for item in report["family_results"]:
               c = item["candidate"]
               canonical = {
@@ -208,6 +212,7 @@ jobs:
                   ).encode("utf-8")
               ).hexdigest()
               assert item["candidate_fingerprint"] == expected
+              assert item["candidate"] == canonical | {"contract_version": report["contract_version"]}
           print("CURRENCY_STRENGTH_DISCOVERY_VERIFIED=true")
           print("DISCOVERY_FAMILY_SIZE=", report["discovery_family_size"])
           print("CANDIDATE_COUNT=", report["candidate_count"])
