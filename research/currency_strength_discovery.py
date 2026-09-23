@@ -70,9 +70,10 @@ DISCOVERY_FRACTION = 0.60
 DISCOVERY_COST_PIPS = 0.0
 STRESS_COSTS_PIPS = (0.5, 1.0, 1.5)
 FIXED_SAMPLE_STRIDE = 60
+ENTRY_DELAY_BARS = 1
 REQUIRED_CROSS_SECTION_PAIRS = len(PAIR_CURRENCY)
 
-CONTRACT_VERSION = "v1-currency-strength-familywise"
+CONTRACT_VERSION = "v2-currency-strength-familywise-next-open"
 
 
 @dataclass(frozen=True)
@@ -264,7 +265,8 @@ def _trade_for_signal(
     lookback: int,
 ) -> Trade | None:
     timestamp_ms = int(feed.timestamps[position])
-    end_position = position + horizon
+    entry_position = position + ENTRY_DELAY_BARS
+    end_position = entry_position + horizon
     if end_position >= len(feed.timestamps):
         return None
     if not _contiguous(feed.timestamps, position, end_position):
@@ -275,9 +277,13 @@ def _trade_for_signal(
     if abs(signal) < threshold:
         return None
     if direction > 0:
-        movement = (feed.bid_close[end_position] - feed.ask_close[position]) / PAIR_PIP[feed.pair]
+        movement = (
+            feed.bid_close[end_position] - feed.ask_open[entry_position]
+        ) / PAIR_PIP[feed.pair]
     else:
-        movement = (feed.bid_close[position] - feed.ask_close[end_position]) / PAIR_PIP[feed.pair]
+        movement = (
+            feed.bid_open[entry_position] - feed.ask_close[end_position]
+        ) / PAIR_PIP[feed.pair]
     return Trade(
         timestamp_ms=timestamp_ms,
         target_end_ms=int(feed.timestamps[end_position]),
@@ -393,7 +399,8 @@ def _candidate_metrics(
             signal = signal_index.get((timestamp_ms, lookback, pair, mode))
             if signal is None or not math.isfinite(signal) or abs(signal) < threshold:
                 continue
-            end_position = position + horizon
+            entry_position = position + ENTRY_DELAY_BARS
+            end_position = entry_position + horizon
             if end_position >= len(feed.timestamps):
                 continue
             target_end_ms = int(feed.timestamps[end_position])
@@ -407,11 +414,11 @@ def _candidate_metrics(
                 direction *= -1
             if direction > 0:
                 movement = (
-                    feed.bid_close[end_position] - feed.ask_close[position]
+                    feed.bid_close[end_position] - feed.ask_open[entry_position]
                 ) / PAIR_PIP[pair]
             else:
                 movement = (
-                    feed.bid_close[position] - feed.ask_close[end_position]
+                    feed.bid_open[entry_position] - feed.ask_close[end_position]
                 ) / PAIR_PIP[pair]
             value = float(movement) - feed_cost
             selected_values.append(value)
@@ -538,32 +545,43 @@ def run_discovery(
         raise ValueError(f"sample_stride must equal the frozen discovery value {FIXED_SAMPLE_STRIDE}")
     feeds, source_manifest = load_feeds(input_dir)
 
-    target_positions: dict[str, list[int]] = {}
-    target_timestamps: set[int] = set()
-    target_end_timestamps: set[int] = set()
-    for pair, feed in feeds.items():
-        positions: list[int] = []
-        for position in range(
-            max(LOOKBACKS),
-            len(feed.timestamps) - max(HORIZONS),
-            sample_stride,
-        ):
+    common_timestamps = sorted(
+        set.intersection(*(set(feed.timestamps) for feed in feeds.values()))
+    )
+    eligible_timestamps: list[int] = []
+    for timestamp_ms in common_timestamps:
+        eligible = True
+        for feed in feeds.values():
+            position = feed.timestamp_index[timestamp_ms]
+            end_position = position + ENTRY_DELAY_BARS + max(HORIZONS)
+            if position < max(LOOKBACKS) or end_position >= len(feed.timestamps):
+                eligible = False
+                break
             if not math.isfinite(float(feed.rolling_vol[position])):
-                continue
-            if not all(
-                position + horizon < len(feed.timestamps)
-                and _contiguous(feed.timestamps, position, position + horizon)
-                for horizon in HORIZONS
-            ):
-                continue
-            positions.append(position)
-            timestamp_ms = int(feed.timestamps[position])
-            target_timestamps.add(timestamp_ms)
-            target_end_timestamps.update(
-                timestamp_ms + horizon * 600_000
-                for horizon in HORIZONS
+                eligible = False
+                break
+            if not _contiguous(feed.timestamps, position - max(LOOKBACKS), end_position):
+                eligible = False
+                break
+        if eligible:
+            eligible_timestamps.append(timestamp_ms)
+
+    target_timestamps = set(eligible_timestamps[::sample_stride])
+    target_positions: dict[str, list[int]] = {
+        pair: [feeds[pair].timestamp_index[ts] for ts in sorted(target_timestamps)]
+        for pair in feeds
+    }
+    target_end_timestamps: set[int] = set()
+    anchor_feed = next(iter(feeds.values()))
+    for timestamp_ms in sorted(target_timestamps):
+        anchor_position = anchor_feed.timestamp_index[timestamp_ms]
+        for horizon in HORIZONS:
+            target_end_timestamps.add(
+                int(anchor_feed.timestamps[anchor_position + ENTRY_DELAY_BARS + horizon])
             )
-        target_positions[pair] = positions
+
+    if not target_end_timestamps:
+        raise ValueError("no valid common cross-sectional target observations remain after continuity checks")
 
     if not target_end_timestamps:
         raise ValueError("no valid target observations remain after continuity checks")
@@ -647,7 +665,9 @@ def run_discovery(
             "ordinary_bootstrap_repetitions": BOOTSTRAP_REPS,
             "cluster_block_bootstrap_repetitions": BOOTSTRAP_REPS,
             "stress_costs_pips": STRESS_COSTS_PIPS,
-            "target_outcome_mechanics": "exact BID/ASK executable entry and exit; signal uses only prices available at the target close; complete target outcomes crossing the global split are excluded from discovery",
+            "entry_delay_bars": ENTRY_DELAY_BARS,
+        "execution_model": "signal is computed at bar close t; entry occurs at next bar t+1 open using ASK for longs or BID for shorts; exit occurs at the target bar close using BID for longs or ASK for shorts",
+        "target_outcome_mechanics": "exact BID/ASK executable entry and exit with one-bar decision-to-entry delay; complete target outcomes crossing the global split are excluded from discovery",
         },
     }
 
