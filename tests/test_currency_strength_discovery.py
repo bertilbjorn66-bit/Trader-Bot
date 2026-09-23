@@ -19,7 +19,6 @@ from research.currency_strength_discovery import (
     holm_adjust,
 )
 
-
 BASE = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 

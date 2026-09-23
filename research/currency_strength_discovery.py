@@ -21,7 +21,6 @@ from research.datafeed_empirical import (
 from research.non_live_evaluation import bootstrap_means, profit_factor
 from research.statistics import hac_mean_pvalue
 
-
 PAIR_CURRENCY = {
     "EUR/USD": ("EUR", "USD"),
     "GBP/USD": ("GBP", "USD"),
