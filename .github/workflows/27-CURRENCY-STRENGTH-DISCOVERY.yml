@@ -175,11 +175,12 @@ jobs:
               Path("artifacts/discovery/currency_strength_discovery_report.json").read_text(encoding="utf-8")
           )
           assert report["status"] == "CURRENCY_STRENGTH_DISCOVERY_COMPLETED"
-          assert report["contract_version"] == "v2-currency-strength-familywise-next-open"
+          assert report["contract_version"] == "v3-currency-strength-familywise-next-open-signal-horizon"
           assert report["discovery_family_size"] == 144
           assert report["sample_stride"] == 60
           assert report["selection_policy"]["entry_delay_bars"] == 1
           assert report["selection_policy"]["execution_model"].startswith("signal is computed at bar close t; entry occurs at next bar t+1 open")
+          assert report["selection_policy"]["inference_unit"].startswith("per-timestamp cross-sectional mean outcome")
           assert len(report["family_results"]) == 144
           assert report["selection_policy"]["holms_scope"] == 144
           assert report["selection_policy"]["whole_family_holm"] is True

@@ -73,7 +73,7 @@ FIXED_SAMPLE_STRIDE = 60
 ENTRY_DELAY_BARS = 1
 REQUIRED_CROSS_SECTION_PAIRS = len(PAIR_CURRENCY)
 
-CONTRACT_VERSION = "v2-currency-strength-familywise-next-open"
+CONTRACT_VERSION = "v3-currency-strength-familywise-next-open-signal-horizon"
 
 
 @dataclass(frozen=True)
@@ -272,7 +272,7 @@ def _trade_for_signal(
 ) -> Trade | None:
     timestamp_ms = int(feed.timestamps[position])
     entry_position = position + ENTRY_DELAY_BARS
-    end_position = entry_position + horizon
+    end_position = position + horizon
     if end_position >= len(feed.timestamps):
         return None
     if not _contiguous(feed.timestamps, position, end_position):
@@ -343,13 +343,13 @@ def _pf(values: Sequence[float]) -> float | None:
 
 
 def _clustered_block_lower(
-    timestamp_values: Mapping[int, Sequence[float]],
+    timestamp_means: Mapping[int, float],
     reps: int,
     seed: int,
 ) -> float:
-    if len(timestamp_values) < 2:
+    if len(timestamp_means) < 2:
         return math.nan
-    ordered = sorted(timestamp_values)
+    ordered = sorted(timestamp_means)
     blocks = [
         ordered[index : index + BOOTSTRAP_BLOCK_SIZE]
         for index in range(0, len(ordered), BOOTSTRAP_BLOCK_SIZE)
@@ -358,15 +358,11 @@ def _clustered_block_lower(
     means: list[float] = []
     sample_size = len(ordered)
     for _ in range(reps):
-        sampled: list[float] = []
+        sampled: list[int] = []
         while len(sampled) < sample_size:
             block = blocks[int(rng.integers(0, len(blocks)))]
             sampled.extend(block)
-        values = [
-            value
-            for timestamp in sampled[:sample_size]
-            for value in timestamp_values[timestamp]
-        ]
+        values = [timestamp_means[timestamp] for timestamp in sampled[:sample_size]]
         means.append(mean(values))
     return float(np.quantile(np.asarray(means), 0.025))
 
@@ -449,17 +445,17 @@ def _candidate_metrics(
             "stress": {},
         }
 
-    timestamp_means = [
-        mean(values)
-        for _, values in sorted(by_timestamp.items())
-    ]
+    timestamp_means = {
+        timestamp: mean(values)
+        for timestamp, values in sorted(by_timestamp.items())
+    }
     ordinary = bootstrap_means(
-        selected_values,
+        list(timestamp_means.values()),
         reps=BOOTSTRAP_REPS,
         seed=20260921 + lookback * 101 + horizon * 7,
     )
     cluster_lower = _clustered_block_lower(
-        by_timestamp,
+        timestamp_means,
         reps=BOOTSTRAP_REPS,
         seed=20260921 + lookback * 101 + horizon * 7 + 1,
     )
@@ -489,7 +485,7 @@ def _candidate_metrics(
         "unique_timestamps": len(by_timestamp),
         "expectancy_pips": expectancy,
         "profit_factor": pf_value,
-        "hac_one_sided_pvalue": hac_mean_pvalue(timestamp_means),
+        "hac_one_sided_pvalue": hac_mean_pvalue(list(timestamp_means.values())),
         "ordinary_bootstrap_lower": float(ordinary[BOOTSTRAP_LOWER_INDEX]),
         "cluster_block_bootstrap_lower": cluster_lower,
         "positive_pair_count": positive_pairs,
@@ -559,7 +555,7 @@ def run_discovery(
         eligible = True
         for feed in feeds.values():
             position = feed.timestamp_index[timestamp_ms]
-            end_position = position + ENTRY_DELAY_BARS + max(HORIZONS)
+            end_position = position + max(HORIZONS)
             if position < max(LOOKBACKS) or end_position >= len(feed.timestamps):
                 eligible = False
                 break
@@ -583,7 +579,7 @@ def run_discovery(
         anchor_position = anchor_feed.timestamp_index[timestamp_ms]
         for horizon in HORIZONS:
             target_end_timestamps.add(
-                int(anchor_feed.timestamps[anchor_position + ENTRY_DELAY_BARS + horizon])
+                int(anchor_feed.timestamps[anchor_position + horizon])
             )
 
     if not target_end_timestamps:
@@ -669,8 +665,9 @@ def run_discovery(
             "cluster_block_bootstrap_repetitions": BOOTSTRAP_REPS,
             "stress_costs_pips": STRESS_COSTS_PIPS,
             "entry_delay_bars": ENTRY_DELAY_BARS,
-            "execution_model": "signal is computed at bar close t; entry occurs at next bar t+1 open using ASK for longs or BID for shorts; exit occurs at the target bar close using BID for longs or ASK for shorts",
-            "target_outcome_mechanics": "exact BID/ASK executable entry and exit with one-bar decision-to-entry delay; complete target outcomes crossing the global split are excluded from discovery",
+            "inference_unit": "per-timestamp cross-sectional mean outcome; bootstrap and HAC inference operate on timestamp clusters",
+            "execution_model": "signal is computed at bar close t; entry occurs at next bar t+1 open using ASK for longs or BID for shorts; target horizon h ends at bar close t+h using BID for longs or ASK for shorts",
+            "target_outcome_mechanics": "exact BID/ASK executable entry and exit with one-bar decision-to-entry delay; horizons are measured from the signal timestamp; complete target outcomes crossing the global split are excluded from discovery",
         },
     }
 
