@@ -404,7 +404,7 @@ def _candidate_metrics(
             if signal is None or not math.isfinite(signal) or abs(signal) < threshold:
                 continue
             entry_position = position + ENTRY_DELAY_BARS
-            end_position = entry_position + horizon
+            end_position = position + horizon
             if end_position >= len(feed.timestamps):
                 continue
             target_end_ms = int(feed.timestamps[end_position])

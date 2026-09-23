@@ -130,6 +130,26 @@ def test_currency_components_require_complete_nine_pair_cross_section() -> None:
     assert np.isfinite(dispersion)
 
 
+def test_candidate_metrics_measure_horizon_from_signal_timestamp() -> None:
+    feed = _feed()
+    timestamps = [int(value) for value in feed.timestamps]
+    timestamp_a = timestamps[2]
+    timestamp_b = timestamps[3]
+    signal_index = {
+        (timestamp_a, 6, "USD/JPY", "raw_strength"): 1.0,
+        (timestamp_b, 6, "USD/JPY", "raw_strength"): 1.0,
+    }
+    result = _candidate_metrics(
+        {"USD/JPY": feed},
+        {"USD/JPY": [2, 3]},
+        signal_index,
+        int(feed.timestamps[-1]) + 600_000,
+        {"lookback": 6, "horizon": 3, "mode": "raw_strength", "orientation": "momentum", "threshold": 0.5},
+    )
+    assert result["n"] == 2
+    assert result["expectancy_pips"] == 190.0
+
+
 def test_trade_uses_exact_bid_ask_directional_pnl() -> None:
     feed = _feed()
     trade_long = _trade_for_signal(
