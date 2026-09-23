@@ -13,10 +13,10 @@ BASE = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 def _feed() -> discovery.Feed:
     timestamps = np.asarray(
-        [int((BASE + timedelta(minutes=10 * index)).timestamp() * 1000) for index in range(16)],
+        [int((BASE + timedelta(minutes=10 * index)).timestamp() * 1000) for index in range(32)],
         dtype=np.int64,
     )
-    bid_close = np.asarray([100.0 + index for index in range(16)], dtype=np.float64)
+    bid_close = np.asarray([100.0 + index for index in range(32)], dtype=np.float64)
     ask_close = bid_close + 0.2
     return discovery.Feed(
         pair="USD/JPY",
@@ -26,7 +26,7 @@ def _feed() -> discovery.Feed:
         bid_close=bid_close,
         ask_close=ask_close,
         mid_close=(bid_close + ask_close) / 2.0,
-        rolling_vol=np.ones(16, dtype=np.float64),
+        rolling_vol=np.ones(32, dtype=np.float64),
         timestamp_index={int(value): index for index, value in enumerate(timestamps)},
         quality={},
     )
