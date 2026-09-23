@@ -27,7 +27,7 @@ def _feed() -> Feed:
         [int((BASE + timedelta(minutes=10 * index)).timestamp() * 1000) for index in range(16)],
         dtype=np.int64,
     )
-    bid_close = np.asarray([100.0 + index for index in range(8)], dtype=np.float64)
+    bid_close = np.asarray([100.0 + index for index in range(16)], dtype=np.float64)
     ask_close = bid_close + 0.2
     return Feed(
         pair="USD/JPY",
@@ -144,7 +144,7 @@ def test_candidate_metrics_measure_horizon_from_signal_timestamp() -> None:
         int(feed.timestamps[-1]) + 600_000,
         {"lookback": 6, "horizon": 3, "mode": "raw_strength", "orientation": "momentum", "threshold": 0.5},
     )
-    assert result["n"] == 2
+    assert result["n"] == 6
     assert result["expectancy_pips"] == 190.0
 
 
