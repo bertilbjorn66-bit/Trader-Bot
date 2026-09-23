@@ -24,7 +24,7 @@ BASE = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 def _feed() -> Feed:
     timestamps = np.asarray(
-        [int((BASE + timedelta(minutes=10 * index)).timestamp() * 1000) for index in range(8)],
+        [int((BASE + timedelta(minutes=10 * index)).timestamp() * 1000) for index in range(16)],
         dtype=np.int64,
     )
     bid_close = np.asarray([100.0 + index for index in range(8)], dtype=np.float64)
@@ -37,7 +37,7 @@ def _feed() -> Feed:
         bid_close=bid_close,
         ask_close=ask_close,
         mid_close=(bid_close + ask_close) / 2.0,
-        rolling_vol=np.ones(8, dtype=np.float64),
+        rolling_vol=np.ones(16, dtype=np.float64),
         timestamp_index={int(value): index for index, value in enumerate(timestamps)},
         quality={},
     )
@@ -133,15 +133,13 @@ def test_currency_components_require_complete_nine_pair_cross_section() -> None:
 def test_candidate_metrics_measure_horizon_from_signal_timestamp() -> None:
     feed = _feed()
     timestamps = [int(value) for value in feed.timestamps]
-    timestamp_a = timestamps[2]
-    timestamp_b = timestamps[3]
     signal_index = {
-        (timestamp_a, 6, "USD/JPY", "raw_strength"): 1.0,
-        (timestamp_b, 6, "USD/JPY", "raw_strength"): 1.0,
+        (timestamps[index], 6, "USD/JPY", "raw_strength"): 1.0
+        for index in range(2, 8)
     }
     result = _candidate_metrics(
         {"USD/JPY": feed},
-        {"USD/JPY": [2, 3]},
+        {"USD/JPY": [2, 3, 4, 5, 6, 7]},
         signal_index,
         int(feed.timestamps[-1]) + 600_000,
         {"lookback": 6, "horizon": 3, "mode": "raw_strength", "orientation": "momentum", "threshold": 0.5},
