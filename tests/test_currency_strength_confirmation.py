@@ -7,7 +7,6 @@ import numpy as np
 import research.currency_strength_confirmation as confirmation
 import research.currency_strength_discovery as discovery
 
-
 BASE = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
