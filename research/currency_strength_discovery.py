@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence, cast
 
 import numpy as np
 
@@ -157,11 +157,11 @@ def load_feeds(input_dir: Path) -> tuple[dict[str, Feed], dict[str, dict[str, ob
         valid_rows, quality = _execution_valid_rows(rows, pair)
         if len(valid_rows) < 1000:
             raise ValueError(f"insufficient valid rows for {pair}: {len(valid_rows)}")
-        timestamps = np.asarray([int(row["timestamp"]) for row in valid_rows], dtype=np.int64)
-        bid_open = np.asarray([float(row["bid_open"]) for row in valid_rows], dtype=np.float64)
-        ask_open = np.asarray([float(row["ask_open"]) for row in valid_rows], dtype=np.float64)
-        bid_close = np.asarray([float(row["bid_close"]) for row in valid_rows], dtype=np.float64)
-        ask_close = np.asarray([float(row["ask_close"]) for row in valid_rows], dtype=np.float64)
+        timestamps = np.asarray([int(cast(float, row["timestamp"])) for row in valid_rows], dtype=np.int64)
+        bid_open = np.asarray([float(cast(float, row["bid_open"])) for row in valid_rows], dtype=np.float64)
+        ask_open = np.asarray([float(cast(float, row["ask_open"])) for row in valid_rows], dtype=np.float64)
+        bid_close = np.asarray([float(cast(float, row["bid_close"])) for row in valid_rows], dtype=np.float64)
+        ask_close = np.asarray([float(cast(float, row["ask_close"])) for row in valid_rows], dtype=np.float64)
         mid_close = (bid_close + ask_close) / 2.0
         one_bar = np.full_like(mid_close, np.nan)
         one_bar[1:] = np.log(mid_close[1:] / mid_close[:-1])
