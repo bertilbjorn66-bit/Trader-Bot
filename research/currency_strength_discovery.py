@@ -80,6 +80,8 @@ CONTRACT_VERSION = "v2-currency-strength-familywise-next-open"
 class Feed:
     pair: str
     timestamps: np.ndarray
+    bid_open: np.ndarray
+    ask_open: np.ndarray
     bid_close: np.ndarray
     ask_close: np.ndarray
     mid_close: np.ndarray
@@ -157,6 +159,8 @@ def load_feeds(input_dir: Path) -> tuple[dict[str, Feed], dict[str, dict[str, ob
         if len(valid_rows) < 1000:
             raise ValueError(f"insufficient valid rows for {pair}: {len(valid_rows)}")
         timestamps = np.asarray([int(row["timestamp"]) for row in valid_rows], dtype=np.int64)
+        bid_open = np.asarray([float(row["bid_open"]) for row in valid_rows], dtype=np.float64)
+        ask_open = np.asarray([float(row["ask_open"]) for row in valid_rows], dtype=np.float64)
         bid_close = np.asarray([float(row["bid_close"]) for row in valid_rows], dtype=np.float64)
         ask_close = np.asarray([float(row["ask_close"]) for row in valid_rows], dtype=np.float64)
         mid_close = (bid_close + ask_close) / 2.0
@@ -166,6 +170,8 @@ def load_feeds(input_dir: Path) -> tuple[dict[str, Feed], dict[str, dict[str, ob
         feeds[pair] = Feed(
             pair=pair,
             timestamps=timestamps,
+            bid_open=bid_open,
+            ask_open=ask_open,
             bid_close=bid_close,
             ask_close=ask_close,
             mid_close=mid_close,
@@ -582,9 +588,6 @@ def run_discovery(
 
     if not target_end_timestamps:
         raise ValueError("no valid common cross-sectional target observations remain after continuity checks")
-
-    if not target_end_timestamps:
-        raise ValueError("no valid target observations remain after continuity checks")
     cutoff_ms = sorted(target_end_timestamps)[
         int(len(target_end_timestamps) * DISCOVERY_FRACTION)
     ]
@@ -666,8 +669,8 @@ def run_discovery(
             "cluster_block_bootstrap_repetitions": BOOTSTRAP_REPS,
             "stress_costs_pips": STRESS_COSTS_PIPS,
             "entry_delay_bars": ENTRY_DELAY_BARS,
-        "execution_model": "signal is computed at bar close t; entry occurs at next bar t+1 open using ASK for longs or BID for shorts; exit occurs at the target bar close using BID for longs or ASK for shorts",
-        "target_outcome_mechanics": "exact BID/ASK executable entry and exit with one-bar decision-to-entry delay; complete target outcomes crossing the global split are excluded from discovery",
+            "execution_model": "signal is computed at bar close t; entry occurs at next bar t+1 open using ASK for longs or BID for shorts; exit occurs at the target bar close using BID for longs or ASK for shorts",
+            "target_outcome_mechanics": "exact BID/ASK executable entry and exit with one-bar decision-to-entry delay; complete target outcomes crossing the global split are excluded from discovery",
         },
     }
 
