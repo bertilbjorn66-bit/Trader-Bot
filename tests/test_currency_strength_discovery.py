@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
+import pytest
 
 from research.currency_strength_discovery import (
     CONTRACT_VERSION,
@@ -145,7 +146,7 @@ def test_candidate_metrics_measure_horizon_from_signal_timestamp() -> None:
         {"lookback": 6, "horizon": 3, "mode": "raw_strength", "orientation": "momentum", "threshold": 0.5},
     )
     assert result["n"] == 6
-    assert result["expectancy_pips"] == 190.0
+    assert result["expectancy_pips"] == pytest.approx(190.0, abs=1e-9)
 
 
 def test_trade_uses_exact_bid_ask_directional_pnl() -> None:
