@@ -8,8 +8,8 @@ import pytest
 from research.currency_strength_discovery import (
     CONTRACT_VERSION,
     ENTRY_DELAY_BARS,
-    Feed,
     PAIR_CURRENCY,
+    Feed,
     Trade,
     _candidate_metrics,
     _currency_components,
