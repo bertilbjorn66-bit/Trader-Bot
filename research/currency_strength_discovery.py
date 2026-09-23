@@ -197,6 +197,9 @@ def _currency_components(
     absolute_returns: list[float] = []
     valid_pairs = 0
 
+    if any(pair not in feeds for pair in PAIR_CURRENCY):
+        return {}, {}, math.nan
+
     lag_ms = lookback * 600_000
     for pair, (base, quote) in PAIR_CURRENCY.items():
         feed = feeds[pair]

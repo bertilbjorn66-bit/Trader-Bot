@@ -92,6 +92,20 @@ def test_currency_components_require_complete_nine_pair_cross_section() -> None:
     assert normalized == {}
     assert np.isnan(dispersion)
 
+    missing_middle = {
+        pair: base_feed
+        for pair in (
+            "EUR/USD", "GBP/USD", "AUD/USD", "USD/CAD", "USD/CHF",
+            "NZD/USD", "EUR/JPY", "GBP/JPY",
+        )
+    }
+    raw, normalized, dispersion = _currency_components(
+        missing_middle, timestamp, 6
+    )
+    assert raw == {}
+    assert normalized == {}
+    assert np.isnan(dispersion)
+
     full = {
         pair: Feed(
             pair=pair,
