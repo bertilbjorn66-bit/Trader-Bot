@@ -66,7 +66,7 @@ jobs:
 
           report = json.loads(Path("artifacts/discovery/currency_strength_discovery_report.json").read_text(encoding="utf-8"))
           assert report["status"] == "CURRENCY_STRENGTH_DISCOVERY_COMPLETED"
-          assert report["contract_version"] == "v3-currency-strength-familywise-next-open-signal-horizon"
+          assert report["contract_version"] == "v4-currency-strength-familywise-next-open-signal-horizon-leave-one-pair-out"
           assert report["candidate_count"] >= 1
           assert report["selection_policy"]["confirmation_used_for_selection"] is False
           assert report["live_execution_authorized"] is False
