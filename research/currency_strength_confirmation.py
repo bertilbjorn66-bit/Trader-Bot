@@ -241,7 +241,7 @@ def run_confirmation(input_dir: Path, discovery_report_path: Path) -> dict[str, 
     report = json.loads(discovery_report_path.read_text(encoding="utf-8"))
     if report.get("status") != "CURRENCY_STRENGTH_DISCOVERY_COMPLETED":
         raise ValueError("discovery report is not a completed currency-strength discovery")
-    if report.get("contract_version") != "v3-currency-strength-familywise-next-open-signal-horizon":
+    if report.get("contract_version") != "v4-currency-strength-familywise-next-open-signal-horizon-leave-one-pair-out":
         raise ValueError("discovery report contract version is not the frozen v3 family")
     if report.get("discovery_family_size") != 144:
         raise ValueError("discovery family size is not 144")

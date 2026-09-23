@@ -12,6 +12,7 @@ from research.currency_strength_discovery import (
     Trade,
     _candidate_metrics,
     _currency_components,
+    build_signal_index,
     _rolling_std,
     _trade_for_signal,
     assign_global_split,
@@ -62,7 +63,32 @@ def test_candidate_fingerprint_binds_every_search_dimension() -> None:
     base = family_hypotheses()[0]
     assert candidate_fingerprint(base) != candidate_fingerprint({**base, "threshold": 1.0})
     assert candidate_fingerprint(base) != candidate_fingerprint({**base, "lookback": 48})
-    assert CONTRACT_VERSION.startswith("v3-")
+    assert CONTRACT_VERSION.startswith("v4-")
+
+
+def test_target_pair_is_excluded_from_its_own_cross_sectional_signal() -> None:
+    base_feed = _feed()
+    feeds = {
+        pair: Feed(
+            pair=pair,
+            timestamps=base_feed.timestamps,
+            bid_open=base_feed.bid_open,
+            ask_open=base_feed.ask_open,
+            bid_close=base_feed.bid_close,
+            ask_close=base_feed.ask_close,
+            mid_close=base_feed.mid_close,
+            rolling_vol=base_feed.rolling_vol,
+            timestamp_index=base_feed.timestamp_index,
+            quality={},
+        )
+        for pair in PAIR_CURRENCY
+    }
+    timestamp = int(base_feed.timestamps[-1])
+    signals = build_signal_index(feeds, [timestamp])
+    assert (timestamp, 6, "AUD/USD", "raw_strength") not in signals
+    assert (timestamp, 6, "USD/CAD", "raw_strength") not in signals
+    assert (timestamp, 6, "EUR/USD", "raw_strength") in signals
+    assert (timestamp, 6, "GBP/USD", "raw_strength") in signals
 
 
 def test_candidate_record_contains_contract_and_fingerprint_without_trades() -> None:

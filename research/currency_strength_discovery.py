@@ -72,7 +72,7 @@ FIXED_SAMPLE_STRIDE = 60
 ENTRY_DELAY_BARS = 1
 REQUIRED_CROSS_SECTION_PAIRS = len(PAIR_CURRENCY)
 
-CONTRACT_VERSION = "v3-currency-strength-familywise-next-open-signal-horizon"
+CONTRACT_VERSION = "v4-currency-strength-familywise-next-open-signal-horizon-leave-one-pair-out"
 
 
 @dataclass(frozen=True)
@@ -187,22 +187,19 @@ def load_feeds(input_dir: Path) -> tuple[dict[str, Feed], dict[str, dict[str, ob
     return feeds, manifest
 
 
-def _currency_components(
+def _pair_return_components(
     feeds: Mapping[str, Feed],
     timestamp_ms: int,
     lookback: int,
-) -> tuple[dict[str, float], dict[str, float], float]:
-    raw: dict[str, list[float]] = defaultdict(list)
-    normalized: dict[str, list[float]] = defaultdict(list)
-    absolute_returns: list[float] = []
-    valid_pairs = 0
-
-    if any(pair not in feeds for pair in PAIR_CURRENCY):
-        return {}, {}, math.nan
-
+) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
+    raw_returns: dict[str, float] = {}
+    normalized_returns: dict[str, float] = {}
+    absolute_returns: dict[str, float] = {}
     lag_ms = lookback * 600_000
-    for pair, (base, quote) in PAIR_CURRENCY.items():
-        feed = feeds[pair]
+
+    for pair, feed in feeds.items():
+        if pair not in PAIR_CURRENCY:
+            continue
         end_index = feed.timestamp_index.get(timestamp_ms)
         start_index = feed.timestamp_index.get(timestamp_ms - lag_ms)
         if end_index is None or start_index is None:
@@ -212,30 +209,74 @@ def _currency_components(
         ret = math.log(feed.mid_close[end_index] / feed.mid_close[start_index])
         if not math.isfinite(ret):
             continue
-        valid_pairs += 1
-        raw[base].append(ret)
-        raw[quote].append(-ret)
-        absolute_returns.append(abs(ret))
+        raw_returns[pair] = ret
+        absolute_returns[pair] = abs(ret)
         vol = float(feed.rolling_vol[end_index])
         if math.isfinite(vol) and vol > 0.0:
-            normalized_return = ret / vol
-            normalized[base].append(normalized_return)
-            normalized[quote].append(-normalized_return)
+            normalized_returns[pair] = ret / vol
 
-    if valid_pairs != REQUIRED_CROSS_SECTION_PAIRS:
+    return raw_returns, normalized_returns, absolute_returns
+
+
+def _currency_components(
+    feeds: Mapping[str, Feed],
+    timestamp_ms: int,
+    lookback: int,
+    exclude_pair: str | None = None,
+) -> tuple[dict[str, float], dict[str, float], float]:
+    if any(pair not in feeds for pair in PAIR_CURRENCY):
         return {}, {}, math.nan
 
+    raw_returns, normalized_returns, absolute_returns = _pair_return_components(
+        feeds, timestamp_ms, lookback
+    )
+    if len(raw_returns) != REQUIRED_CROSS_SECTION_PAIRS:
+        return {}, {}, math.nan
+
+    excluded = {exclude_pair} if exclude_pair is not None else set()
+
+    raw_sum: dict[str, float] = defaultdict(float)
+    raw_count: dict[str, int] = defaultdict(int)
+    for pair, ret in raw_returns.items():
+        if pair in excluded:
+            continue
+        base, quote = PAIR_CURRENCY[pair]
+        raw_sum[base] += ret
+        raw_count[base] += 1
+        raw_sum[quote] -= ret
+        raw_count[quote] += 1
+
+    normalized_sum: dict[str, float] = defaultdict(float)
+    normalized_count: dict[str, int] = defaultdict(int)
+    for pair, normalized_return in normalized_returns.items():
+        if pair in excluded:
+            continue
+        base, quote = PAIR_CURRENCY[pair]
+        normalized_sum[base] += normalized_return
+        normalized_count[base] += 1
+        normalized_sum[quote] -= normalized_return
+        normalized_count[quote] += 1
+
     raw_strength = {
-        currency: mean(values)
-        for currency, values in raw.items()
-        if values
+        currency: raw_sum[currency] / raw_count[currency]
+        for currency in raw_sum
+        if raw_count[currency] > 0
     }
     normalized_strength = {
-        currency: mean(values)
-        for currency, values in normalized.items()
-        if values
+        currency: normalized_sum[currency] / normalized_count[currency]
+        for currency in normalized_sum
+        if normalized_count[currency] > 0
     }
-    dispersion = float(np.median(np.asarray(absolute_returns, dtype=np.float64))) if absolute_returns else math.nan
+
+    usable_abs = [
+        value for pair, value in absolute_returns.items()
+        if pair not in excluded
+    ]
+    dispersion = (
+        float(np.median(np.asarray(usable_abs, dtype=np.float64)))
+        if usable_abs
+        else math.nan
+    )
     return raw_strength, normalized_strength, dispersion
 
 
@@ -245,20 +286,92 @@ def build_signal_index(
 ) -> dict[tuple[int, int, str, str], float]:
     result: dict[tuple[int, int, str, str], float] = {}
     unique_timestamps = sorted(set(timestamps))
+    if any(pair not in feeds for pair in PAIR_CURRENCY):
+        return result
+
     for timestamp_ms in unique_timestamps:
         for lookback in LOOKBACKS:
-            raw, normalized, dispersion = _currency_components(
-                feeds,
-                timestamp_ms,
-                lookback,
+            raw_returns, normalized_returns, absolute_returns = _pair_return_components(
+                feeds, timestamp_ms, lookback
             )
+            if len(raw_returns) != REQUIRED_CROSS_SECTION_PAIRS:
+                continue
+
+            raw_sum: dict[str, float] = defaultdict(float)
+            raw_count: dict[str, int] = defaultdict(int)
+            for pair, ret in raw_returns.items():
+                base, quote = PAIR_CURRENCY[pair]
+                raw_sum[base] += ret
+                raw_count[base] += 1
+                raw_sum[quote] -= ret
+                raw_count[quote] += 1
+
+            normalized_sum: dict[str, float] = defaultdict(float)
+            normalized_count: dict[str, int] = defaultdict(int)
+            for pair, normalized_return in normalized_returns.items():
+                base, quote = PAIR_CURRENCY[pair]
+                normalized_sum[base] += normalized_return
+                normalized_count[base] += 1
+                normalized_sum[quote] -= normalized_return
+                normalized_count[quote] += 1
+
             for pair, (base, quote) in PAIR_CURRENCY.items():
-                raw_score = raw.get(base, math.nan) - raw.get(quote, math.nan)
-                norm_score = normalized.get(base, math.nan) - normalized.get(quote, math.nan)
-                if math.isfinite(raw_score) and math.isfinite(dispersion) and dispersion > 0.0:
-                    result[(timestamp_ms, lookback, pair, "raw_strength")] = raw_score / dispersion
+                target_ret = raw_returns.get(pair)
+                if target_ret is None:
+                    continue
+
+                raw_base_count = raw_count[base] - 1
+                raw_quote_count = raw_count[quote] - 1
+                if raw_base_count <= 0 or raw_quote_count <= 0:
+                    continue
+
+                raw_base_strength = (raw_sum[base] - target_ret) / raw_base_count
+                raw_quote_strength = (raw_sum[quote] + target_ret) / raw_quote_count
+                raw_score = raw_base_strength - raw_quote_strength
+
+                usable_abs = [
+                    value for other_pair, value in absolute_returns.items()
+                    if other_pair != pair
+                ]
+                dispersion = (
+                    float(np.median(np.asarray(usable_abs, dtype=np.float64)))
+                    if usable_abs
+                    else math.nan
+                )
+                if (
+                    math.isfinite(raw_score)
+                    and math.isfinite(dispersion)
+                    and dispersion > 0.0
+                ):
+                    result[(timestamp_ms, lookback, pair, "raw_strength")] = (
+                        raw_score / dispersion
+                    )
+
+                target_normalized = normalized_returns.get(pair)
+                normalized_base_count = normalized_count[base] - (
+                    1 if target_normalized is not None else 0
+                )
+                normalized_quote_count = normalized_count[quote] - (
+                    1 if target_normalized is not None else 0
+                )
+                if normalized_base_count <= 0 or normalized_quote_count <= 0:
+                    continue
+
+                normalized_base_sum = normalized_sum[base] - (
+                    target_normalized if target_normalized is not None else 0.0
+                )
+                normalized_quote_sum = normalized_sum[quote] + (
+                    target_normalized if target_normalized is not None else 0.0
+                )
+                norm_score = (
+                    normalized_base_sum / normalized_base_count
+                    - normalized_quote_sum / normalized_quote_count
+                )
                 if math.isfinite(norm_score):
-                    result[(timestamp_ms, lookback, pair, "volatility_normalized")] = norm_score
+                    result[
+                        (timestamp_ms, lookback, pair, "volatility_normalized")
+                    ] = norm_score
+
     return result
 
 
@@ -669,6 +782,7 @@ def run_discovery(
             "entry_delay_bars": ENTRY_DELAY_BARS,
             "inference_unit": "per-timestamp cross-sectional mean outcome; bootstrap and HAC inference operate on timestamp clusters",
             "execution_model": "signal is computed at bar close t; entry occurs at next bar t+1 open using ASK for longs or BID for shorts; target horizon h ends at bar close t+h using BID for longs or ASK for shorts",
+            "signal_cross_section_policy": "strict leave-one-target-pair-out; the target pair contributes no return to either currency strength or target-pair dispersion",
             "target_outcome_mechanics": "exact BID/ASK executable entry and exit with one-bar decision-to-entry delay; horizons are measured from the signal timestamp; complete target outcomes crossing the global split are excluded from discovery",
         },
     }
