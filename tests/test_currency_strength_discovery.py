@@ -6,6 +6,7 @@ import numpy as np
 
 from research.currency_strength_discovery import (
     CONTRACT_VERSION,
+    ENTRY_DELAY_BARS,
     Feed,
     Trade,
     _rolling_std,
@@ -51,11 +52,15 @@ def test_discovery_stride_is_frozen() -> None:
     assert FIXED_SAMPLE_STRIDE == 60
 
 
+def test_entry_model_is_next_open_not_signal_close() -> None:
+    assert ENTRY_DELAY_BARS == 1
+
+
 def test_candidate_fingerprint_binds_every_search_dimension() -> None:
     base = family_hypotheses()[0]
     assert candidate_fingerprint(base) != candidate_fingerprint({**base, "threshold": 1.0})
     assert candidate_fingerprint(base) != candidate_fingerprint({**base, "lookback": 48})
-    assert CONTRACT_VERSION.startswith("v1-")
+    assert CONTRACT_VERSION.startswith("v2-")
 
 
 def test_candidate_record_contains_contract_and_fingerprint_without_trades() -> None:
@@ -115,14 +120,16 @@ def test_trade_uses_exact_bid_ask_directional_pnl() -> None:
         orientation="momentum", threshold=0.5, signal=1.0, lookback=6,
     )
     assert trade_long is not None
-    assert trade_long.outcome_pips == (feed.bid_close[5] - feed.ask_close[2]) / 0.01
+    assert ENTRY_DELAY_BARS == 1
+    assert trade_long.outcome_pips == (feed.bid_close[6] - feed.ask_open[3]) / 0.01
+    assert trade_long.target_end_ms == int(feed.timestamps[6])
 
     trade_short = _trade_for_signal(
         feed, position=2, horizon=3, mode="raw_strength",
         orientation="momentum", threshold=0.5, signal=-1.0, lookback=6,
     )
     assert trade_short is not None
-    assert trade_short.outcome_pips == (feed.bid_close[2] - feed.ask_close[5]) / 0.01
+    assert trade_short.outcome_pips == (feed.bid_open[3] - feed.ask_close[6]) / 0.01
 
 
 def test_global_split_uses_target_end_time() -> None:
