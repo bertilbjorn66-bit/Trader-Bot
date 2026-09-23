@@ -15,8 +15,8 @@ import numpy as np
 
 from research.datafeed_empirical import (
     PAIR_TO_SYMBOL,
-    load_feed_bars,
     _execution_valid_rows,
+    load_feed_bars,
 )
 from research.non_live_evaluation import bootstrap_means, profit_factor
 from research.statistics import hac_mean_pvalue
