@@ -92,9 +92,25 @@ def assign_global_split(records: list[TargetRecord]) -> str | None:
     timestamps = sorted(datetime.fromisoformat(record["timestamp"]) for record in records)
     cutoff = timestamps[int(len(timestamps) * DISCOVERY_FRACTION)]
     for record in records:
+        target_timestamp = datetime.fromisoformat(record["timestamp"])
         target_end = datetime.fromisoformat(record["target_end_timestamp"])
-        record["global_split"] = "discovery" if target_end < cutoff else "confirmation"
+        if target_timestamp >= cutoff:
+            record["global_split"] = "confirmation"
+        elif target_end < cutoff:
+            record["global_split"] = "discovery"
+        else:
+            record["global_split"] = "purged_boundary"
     return cutoff.isoformat()
+
+
+def _assign_split(target_timestamp: datetime, horizon: int, cutoff: datetime | None) -> str:
+    """Assign a target only when its complete horizon stays on its side of the split."""
+    if cutoff is None:
+        return "confirmation"
+    if target_timestamp >= cutoff:
+        return "confirmation"
+    outcome_end = target_timestamp + horizon * EXPECTED_BAR_INTERVAL
+    return "discovery" if outcome_end < cutoff else "purged_boundary"
 
 
 def percentile(values: list[float], probability: float) -> float | None:
@@ -244,7 +260,11 @@ def analyze_pair(pair: str, rows: list[dict[str, object]], sample_stride: int, h
     timestamps = sorted({datetime.fromisoformat(record["timestamp"]) for record in targets})
     cutoff = timestamps[int(len(timestamps) * DISCOVERY_FRACTION)] if timestamps else None
     for record in targets:
-        record["split"] = "discovery" if cutoff and datetime.fromisoformat(record["timestamp"]) < cutoff else "confirmation"
+        record["split"] = _assign_split(
+            datetime.fromisoformat(record["timestamp"]),
+            int(record["horizon"]),
+            cutoff,
+        )
     return targets, quality
 
 
@@ -330,11 +350,11 @@ def main() -> None:
         "discovery_candidates": candidates[:100],
         "confirmation_finalists": finalists,
         "methodology": {
-            "split": "global horizon-aware 60/40 discovery/confirmation across all nine pairs",
+            "split": "global horizon-aware 60/40 discovery/confirmation across all nine pairs with boundary purging",
             "candidate_search": "finite threshold grid selected only on discovery data, with session included and a structural minimum discovery sample for the 100-observation holdout gate",
             "holdout_min_samples": MIN_HOLDOUT_SAMPLES,
             "analogue_k": 100,
-            "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp; a discovery target is admitted only when its own complete outcome ends strictly before the global split cutoff",
+            "leakage_rule": "an analogue's complete future outcome must end strictly before the target bar timestamp; any target whose complete outcome reaches the split cutoff is purged from both segments",
             "outcome": "directional executable movement using BID/ASK, converted to pair-specific pips",
             "cost_model": "BID/ASK embedded; additional slippage and commission fixed at zero in this research artifact",
             "time_continuity": "state lookbacks, analogue outcomes, and target outcomes require exact 10-minute bar continuity; discontinuous windows are excluded",
