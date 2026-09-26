@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 from research.fresh_discovery_cycle import (
@@ -208,7 +209,6 @@ def test_discovery_familywise_holm_gate_blocks_unadjusted_signal(monkeypatch, tm
 
 def test_session_grid_matches_session_classifier() -> None:
     from research.cross_section import session_label
-    from datetime import datetime, timezone
 
     assert set(session_label(datetime(2026, 1, 1, hour=hour, tzinfo=timezone.utc)) for hour in (3, 9, 15, 22)) == {
         "asia",
