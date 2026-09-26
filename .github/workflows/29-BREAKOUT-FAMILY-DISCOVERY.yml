@@ -54,6 +54,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: ${{ env.SOURCE_ARTIFACT_NAME }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           run-id: ${{ env.SOURCE_RUN_ID }}
           path: /tmp/source
