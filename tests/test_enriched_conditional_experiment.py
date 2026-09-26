@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from research.enriched_conditional_experiment import (
+    _assign_split,
     _is_contiguous_window,
     assign_global_split,
     evaluate,
@@ -69,7 +70,8 @@ def test_global_split_requires_complete_outcome_before_cutoff() -> None:
     cutoff = assign_global_split(records)
     assert cutoff == (base + timedelta(minutes=60)).isoformat()
     assert all(record["global_split"] == "discovery" for record in records[:5])
-    assert all(record["global_split"] == "confirmation" for record in records[5:])
+    assert records[5]["global_split"] == "purged_boundary"
+    assert all(record["global_split"] == "confirmation" for record in records[6:])
 
 
 def test_global_split_purges_target_crossing_cutoff_even_when_start_is_earlier() -> None:
@@ -85,5 +87,14 @@ def test_global_split_purges_target_crossing_cutoff_even_when_start_is_earlier()
         })
     cutoff = assign_global_split(records)
     assert cutoff == (base + timedelta(minutes=60)).isoformat()
-    assert records[4]["global_split"] == "confirmation"
+    assert records[4]["global_split"] == "purged_boundary"
     assert records[3]["global_split"] == "discovery"
+
+
+def test_split_purges_targets_whose_horizon_crosses_cutoff() -> None:
+    cutoff = datetime(2026, 1, 3, 0, 40, tzinfo=timezone.utc)
+    assert _assign_split(cutoff - timedelta(minutes=40), 2, cutoff) == "discovery"
+    assert _assign_split(cutoff - timedelta(minutes=20), 1, cutoff) == "discovery"
+    assert _assign_split(cutoff - timedelta(minutes=20), 2, cutoff) == "purged_boundary"
+    assert _assign_split(cutoff, 1, cutoff) == "confirmation"
+    assert _assign_split(cutoff + timedelta(minutes=10), 6, cutoff) == "confirmation"
