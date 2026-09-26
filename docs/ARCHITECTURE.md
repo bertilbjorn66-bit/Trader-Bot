@@ -13,11 +13,42 @@ The system is divided into independently testable layers:
 7. **Safety Layer** — default-deny authorization for any future execution integration.
 8. **Execution Layer** — intentionally absent until research and validation gates are passed.
 9. **Validation Layer** — walk-forward, out-of-sample and leakage checks.
-10. **Audit Layer** — reproducible logs and decision metadata.
+10. **Audit Layer** — reproducible logs, decision metadata, candidate identity and evidence provenance.
 
 ## Data flow
 
 `Provider -> Integrity -> Context -> Similarity -> Probability/Risk -> Decision -> Safety -> (future Execution)`
+
+## Controlled-operation contract
+
+The model must move through the system in a fixed order:
+
+`observe -> validate -> classify context -> estimate conditional edge -> apply cost filter -> apply risk controls -> decide -> audit`
+
+A strategy component cannot bypass the decision factory or safety boundary. `NO_TRADE` is a valid first-class decision and is preferred whenever evidence, cost, spread, context or expert agreement is insufficient.
+
+During empirical confirmation, the candidate is frozen. Confirmation outcomes must never update the candidate, its learned evidence tables, or analogue labels used by later confirmation decisions. Only information available by the decision timestamp may influence a confirmation decision.
+
+## V5 profitability proof contract
+
+V5 is not considered profitable merely because a backtest has positive returns. The locked candidate is identified by a deterministic candidate fingerprint and must be evaluated on a chronological discovery/confirmation split.
+
+A consolidated non-live profitability verdict requires:
+
+- all four V5 robustness reports to complete successfully
+- identical candidate fingerprint across all four reports
+- empirical data only; synthetic data explicitly false
+- chronological confirmation sample of at least 500 observations
+- positive confirmation expectancy after modeled execution costs
+- confirmation profit factor greater than 1
+- positive expectancy and profit factor greater than 1 under the 1.5-pip severe-cost stress
+- at least three observed confirmation years
+- positive expectancy in at least 67% of observed confirmation years
+- at least two baseline currency pairs with positive confirmation expectancy and profit factor greater than 1
+- leakage controls and frozen-holdout controls all true
+- live execution authorization false
+
+The verdict is evidence of historical robustness under the locked validation contract, not a guarantee of future profits.
 
 ## Storage policy
 
@@ -43,3 +74,5 @@ No live order path is considered available until all of these are independently 
 - walk-forward validation
 - out-of-sample performance evaluation
 - operational recovery testing
+- completed V5 non-live profitability verdict
+- separate paper/shadow evidence after the historical verdict
