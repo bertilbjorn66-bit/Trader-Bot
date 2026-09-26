@@ -15,7 +15,7 @@ permissions:
 env:
   SOURCE_RUN_ID: "34139659497"
   SOURCE_ARTIFACT_NAME: "v5-prepared-nine-pair-feeds"
-  SAMPLE_STRIDE: "60"
+  SAMPLE_STRIDE: "6"
 
 jobs:
   validate:
