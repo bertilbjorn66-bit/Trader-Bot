@@ -1,0 +1,83 @@
+name: "30 — CARRY FACTOR DISCOVERY — NON-LIVE"
+
+on:
+  pull_request:
+    paths:
+      - "research/carry_factor_discovery.py"
+      - "tests/test_carry_factor_discovery.py"
+      - ".github/workflows/30-CARRY-FACTOR-DISCOVERY.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_RUN_ID: "34139659497"
+  SOURCE_ARTIFACT_NAME: "v5-prepared-nine-pair-feeds"
+  SAMPLE_STRIDE: "6"
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+      - name: Ruff
+        run: ruff check research/carry_factor_discovery.py tests/test_carry_factor_discovery.py
+      - name: Mypy
+        run: mypy research/carry_factor_discovery.py
+      - name: Tests
+        run: pytest -q tests/test_carry_factor_discovery.py
+
+  discovery:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install runtime
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Prepare feed directory
+        run: mkdir -p .data/empirical_feed artifacts
+      - name: Download immutable verified nine-pair feed bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-prepared-nine-pair-feeds
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/source
+      - name: Extract verified feeds
+        run: |
+          set -euo pipefail
+          tar -xzf /tmp/source/verified-nine-pair-feeds.tar.gz -C .
+          for pair in eurusd gbpusd usdjpy audusd usdcad usdchf nzdusd eurjpy gbpjpy; do
+            test -s ".data/empirical_feed/${pair}.jsonl"
+          done
+      - name: Run 144-hypothesis carry discovery
+        run: |
+          python -m research.carry_factor_discovery \
+            --input-dir .data/empirical_feed \
+            --sample-stride "$SAMPLE_STRIDE" \
+            --output artifacts/carry_factor_report.json
+      - name: Verify non-live boundary
+        run: >-
+          python -c "import json; from pathlib import Path; r=json.loads(Path(\"artifacts/carry_factor_report.json\").read_text()); assert r[\"status\"]==\"CARRY_FACTOR_DISCOVERY_COMPLETED\"; assert r[\"family_size\"]==144; assert r[\"promotion_authorized\"] is False; assert r[\"live_execution_authorized\"] is False; assert r[\"selection_policy\"][\"confirmation_used_for_selection\"] is False; print(\"CARRY_DISCOVERY_VERIFIED=true\"); print(\"CANDIDATE_COUNT=\",r[\"candidate_count\"]); print(\"RECORD_COUNT=\",r[\"record_count\"]) "
+      - name: Upload immutable carry evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: CARRY-FACTOR-RESEARCH-EVIDENCE
+          path: artifacts/carry_factor_report.json
+          retention-days: 30
