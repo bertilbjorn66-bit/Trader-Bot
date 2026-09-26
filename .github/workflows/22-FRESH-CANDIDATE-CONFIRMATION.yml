@@ -87,6 +87,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          import os
           report = json.loads(Path('artifacts/discovery/fresh_discovery_report.json').read_text(encoding='utf-8'))
           assert report['status'] == 'FRESH_DISCOVERY_COMPLETED'
           assert report['selection_policy']['contract_version'] == 'v5-global-horizon-aware-familywise-screen'
@@ -95,7 +96,7 @@ jobs:
           assert report.get('global_split_cutoff') is not None
           candidate_count = int(report.get('candidate_count', 0))
           has_candidate = bool(candidate_count > 0 and report.get('top_candidates'))
-          with open('${{ github.output }}', 'a', encoding='utf-8') as output:
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write('has_candidate=' + ('true' if has_candidate else 'false') + '\n')
           if has_candidate:
               assert 'confirmation' not in report['top_candidates'][0]
