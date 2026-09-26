@@ -288,29 +288,22 @@ def run_discovery(
             bucket = _vol_bucket(volatility[index], prior_vol)
             trend = float(cast(float, state.features["trend_strength"]))
 
-            for candidate in _grid():
-                threshold = float(candidate["carry_threshold_pp"])
-                if trend < float(candidate["trend_strength_min"]):
-                    continue
-                wanted = str(candidate["volatility_state"])
-                if wanted != "any" and wanted != bucket:
-                    continue
-                if carry >= threshold:
-                    direction = "long"
-                elif carry <= -threshold:
-                    direction = "short"
-                else:
-                    continue
-                horizon = int(candidate["horizon"])
+            if abs(carry) < min(CARRY_THRESHOLDS):
+                continue
+
+            if state.timestamp < cutoff:
+                split = "discovery"
+            else:
+                split = "confirmation"
+
+            for horizon in HORIZONS:
                 end_index = index + horizon
                 if end_index >= len(bars) or not _contiguous(bars, index, end_index):
                     continue
-                if state.timestamp >= cutoff:
-                    split = "confirmation"
-                elif bars[end_index].timestamp < cutoff:
-                    split = "discovery"
-                else:
+                if split == "discovery" and bars[end_index].timestamp >= cutoff:
                     continue
+
+                direction = "long" if carry > 0 else "short"
                 outcome = future_outcome(bars, index, horizon, direction)
                 all_records.append({
                     "pair": pair,
