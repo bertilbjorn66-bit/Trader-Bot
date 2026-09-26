@@ -149,7 +149,7 @@ def test_global_discovery_subset_is_not_retrimmed_by_pair_local_split() -> None:
     assert filtered_outcomes(records, split="discovery") == []
 
 
-def test_discovery_familywise_holm_gate_blocks_unadjusted_signal(monkeypatch, tmp_path) -> None:
+def test_discovery_raw_hac_prefilter_blocks_subalpha_family(monkeypatch, tmp_path) -> None:
     import research.fresh_discovery_cycle as module
 
     records = []
@@ -200,7 +200,7 @@ def test_discovery_familywise_holm_gate_blocks_unadjusted_signal(monkeypatch, tm
     assert report["bootstrap_near_misses"]
     assert all(item["discovery_family_size"] == 1 for item in report["bootstrap_near_misses"])
     assert all(
-        item["near_miss_reason"] == "failed discovery-family Holm-adjusted HAC p-value"
+        item["near_miss_reason"] == "failed raw discovery HAC p-value prefilter"
         for item in report["bootstrap_near_misses"]
         if "near_miss_reason" in item
     )
