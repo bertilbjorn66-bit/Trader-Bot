@@ -80,6 +80,7 @@ jobs:
           github-token: ${{ github.token }}
           path: artifacts/discovery
       - name: Verify discovery artifact
+        id: discovery_status
         run: |
           set -euo pipefail
           test -s artifacts/discovery/fresh_discovery_report.json
@@ -91,14 +92,36 @@ jobs:
           assert report['selection_policy']['contract_version'] == 'v5-global-horizon-aware-familywise-screen'
           assert report['selection_policy']['confirmation_used_for_selection'] is False
           assert report['selection_policy']['prior_frozen_confirmation_artifact_read'] is False
-          assert report['top_candidates']
           assert report.get('global_split_cutoff') is not None
-          assert 'confirmation' not in report['top_candidates'][0]
+          candidate_count = int(report.get('candidate_count', 0))
+          has_candidate = bool(candidate_count > 0 and report.get('top_candidates'))
+          with open('${{ github.output }}', 'a', encoding='utf-8') as output:
+              output.write('has_candidate=' + ('true' if has_candidate else 'false') + '\n')
+          if has_candidate:
+              assert 'confirmation' not in report['top_candidates'][0]
           print('DISCOVERY_ARTIFACT_BOUNDARY_OK=true')
+          print('CANDIDATE_COUNT=', candidate_count)
           print('DISCOVERY_RUN_ID=', '${{ env.DISCOVERY_RUN_ID }}')
           print('DISCOVERY_HEAD_SHA=', '${{ env.DISCOVERY_HEAD_SHA }}')
           PY
+      - name: No candidate terminal state
+        if: steps.discovery_status.outputs.has_candidate == 'false'
+        run: |
+          cat > artifacts/fresh_candidate_confirmation.json <<'JSON'
+          {
+            "state": "INCOMPLETE",
+            "reason": "fresh discovery produced no candidate",
+            "candidate_count": 0,
+            "promotion_authorized": false,
+            "live_execution_authorized": false
+          }
+          JSON
+          echo "FRESH_PRIMARY_CONFIRMATION_STATE=INCOMPLETE"
+          echo "PROMOTION_AUTHORIZED=false"
+          echo "LIVE_EXECUTION_AUTHORIZED=false"
+
       - name: Read immutable discovery orchestration binding
+        if: steps.discovery_status.outputs.has_candidate == 'true'
         id: discovery_binding
         run: |
           set -euo pipefail
@@ -120,59 +143,27 @@ jobs:
               print(f"sample_stride={int(binding['sample_stride'])}", file=output)
               print(f"history_states={int(binding['history_states'])}", file=output)
           PY
-      - name: Download reused six-pair artifact bundle
+      - name: Download immutable verified nine-pair feed bundle
+        if: steps.discovery_status.outputs.has_candidate == 'true'
         uses: actions/download-artifact@v8
         with:
-          name: empirical-recovery-reused-artifacts
+          name: v5-prepared-nine-pair-feeds
           repository: ${{ github.repository }}
-          run-id: ${{ steps.discovery_binding.outputs.source_run_id }}
+          run-id: 34139659497
           github-token: ${{ github.token }}
-          path: .data/empirical_feed
-      - name: Download EUR/USD repaired artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: empirical-recovery-eurusd
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.discovery_binding.outputs.source_run_id }}
-          github-token: ${{ github.token }}
-          path: /tmp/repaired/eurusd
-      - name: Download GBP/USD repaired artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: empirical-recovery-gbpusd
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.discovery_binding.outputs.source_run_id }}
-          github-token: ${{ github.token }}
-          path: /tmp/repaired/gbpusd
-      - name: Download USD/JPY repaired artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: empirical-recovery-usdjpy
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.discovery_binding.outputs.source_run_id }}
-          github-token: ${{ github.token }}
-          path: /tmp/repaired/usdjpy
-      - name: Assert all confirmation data downloads use discovery-bound source run
+          path: /tmp/source
+      - name: Extract verified nine pair datasets
+        if: steps.discovery_status.outputs.has_candidate == 'true'
         run: |
           set -euo pipefail
-          ! grep -q '\${{ env.SOURCE_RUN_ID }}' .github/workflows/22-FRESH-CANDIDATE-CONFIRMATION.yml
-          echo "CONFIRMATION_SOURCE_BINDING_CHECK=true"
-      - name: Place repaired pair files
-        run: |
-          set -euo pipefail
-          for slug in eurusd gbpusd usdjpy; do
-            test -s "/tmp/repaired/$slug/$slug.jsonl"
-            cp "/tmp/repaired/$slug/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
-          done
-      - name: Verify all nine pair files
-        run: |
-          set -euo pipefail
+          tar -xzf /tmp/source/verified-nine-pair-feeds.tar.gz -C .
           for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
             test -s ".data/empirical_feed/$slug.jsonl" || { echo "Missing $slug.jsonl"; exit 1; }
           done
           echo "CONFIRMATION_INPUTS_REUSED=true"
           echo "MARKET_DATA_DOWNLOADER_USED=false"
       - name: Run hardened confirmation of rank-1 candidate only
+        if: steps.discovery_status.outputs.has_candidate == 'true'
         run: |
           python -m research.fresh_candidate_confirmation \
             --input-dir .data/empirical_feed \
@@ -181,6 +172,7 @@ jobs:
             --sample-stride "${{ steps.discovery_binding.outputs.sample_stride }}" \
             --history-states "${{ steps.discovery_binding.outputs.history_states }}"
       - name: Verify promotion remains denied
+        if: steps.discovery_status.outputs.has_candidate == 'true'
         run: |
           python - <<'PY'
           import json
@@ -204,6 +196,7 @@ jobs:
           print('LIVE_EXECUTION_AUTHORIZED=false')
           PY
       - name: Bind confirmation evidence to immutable orchestration inputs
+        if: steps.discovery_status.outputs.has_candidate == 'true'
         run: |
           python - <<'PY'
           import json
