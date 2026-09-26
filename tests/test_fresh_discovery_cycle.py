@@ -192,7 +192,7 @@ def test_discovery_familywise_holm_gate_blocks_unadjusted_signal(monkeypatch, tm
     monkeypatch.setattr(module, "SESSIONS", ("london",))
     monkeypatch.setattr(module, "PAIRSETS", ("all",))
     monkeypatch.setattr(module, "DIRECTIONS", ("long",))
-    monkeypatch.setattr(module, "hac_mean_pvalue", lambda _values: 0.04)
+    monkeypatch.setattr(module, "hac_mean_pvalue", lambda _values: 0.06)
 
     report = module.run_discovery(tmp_path, 60, 10000, parallel_workers=1)
     assert report["selection_policy"]["discovery_family_size"] == 1
