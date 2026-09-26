@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from math import inf
 from pathlib import Path
 from statistics import mean, median
-from typing import Any, Mapping, cast
+from typing import Any, Mapping, TypedDict, cast
 
 import httpx
 
@@ -61,6 +61,13 @@ BOOTSTRAP_REPS = 2000
 BOOTSTRAP_BLOCK_SIZE = 5
 HOLM_ALPHA = 0.05
 CONTRACT_VERSION = "v1-carry-factor-bis-daily-strict-prior"
+
+class Candidate(TypedDict):
+    horizon: int
+    carry_threshold_pp: float
+    trend_strength_min: float
+    volatility_state: str
+
 
 
 def _local(tag: str) -> str:
@@ -159,7 +166,7 @@ def _contiguous(bars: list[Any], start: int, end: int) -> bool:
     )
 
 
-def _grid() -> list[dict[str, object]]:
+def _grid() -> list[Candidate]:
     return [
         {"horizon": h, "carry_threshold_pp": t, "trend_strength_min": s, "volatility_state": v}
         for h in HORIZONS for t in CARRY_THRESHOLDS
