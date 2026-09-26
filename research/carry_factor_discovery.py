@@ -92,9 +92,12 @@ def _parse_sdmx_series(raw: bytes) -> list[tuple[date, float]]:
                     value = value or (child.attrib.get("value") if name == "ObsValue" else None)
             if period is None or value is None:
                 continue
-            parsed = float(value)
+            try:
+                parsed = float(value)
+            except ValueError:
+                continue
             if not math.isfinite(parsed):
-                raise ValueError("non-finite BIS policy-rate value")
+                continue
             rows[date.fromisoformat(period)] = parsed
         if rows:
             candidates.append(sorted(rows.items()))
