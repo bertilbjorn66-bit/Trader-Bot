@@ -80,7 +80,9 @@ def _is_contiguous_window(bars: list[Any], start: int, end: int) -> bool:
 
 
 def _true_range(bar: Any) -> float:
-    return max(bar.bid_high, bar.ask_high) - min(bar.bid_low, bar.ask_low)
+    high = max(float(bar.bid_high), float(bar.ask_high))
+    low = min(float(bar.bid_low), float(bar.ask_low))
+    return high - low
 
 
 def _candidate_key(candidate: Candidate) -> str:
