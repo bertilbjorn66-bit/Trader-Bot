@@ -33,7 +33,7 @@ REGIMES = (
     "regime:range_low_vol",
     "regime:range_normal",
 )
-SESSIONS = ("asia", "london", "new_york", "overlap")
+SESSIONS = ("asia", "london", "new_york", "rollover")
 PAIRSETS = ("all", "JPY")
 DIRECTIONS = ("long", "short")
 MIN_DISCOVERY_SAMPLES = 150
