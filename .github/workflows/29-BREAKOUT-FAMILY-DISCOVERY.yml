@@ -1,0 +1,119 @@
+name: "29 — BREAKOUT FAMILY DISCOVERY — NON-LIVE"
+
+on:
+  pull_request:
+    paths:
+      - "research/breakout_family_discovery.py"
+      - "tests/test_breakout_family_discovery.py"
+      - ".github/workflows/29-BREAKOUT-FAMILY-DISCOVERY.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_RUN_ID: "34139659497"
+  SOURCE_ARTIFACT_NAME: "v5-prepared-nine-pair-feeds"
+  SAMPLE_STRIDE: "60"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+      - name: Ruff
+        run: ruff check research/breakout_family_discovery.py tests/test_breakout_family_discovery.py
+      - name: Mypy
+        run: mypy research/breakout_family_discovery.py
+      - name: Tests
+        run: pytest -q tests/test_breakout_family_discovery.py
+
+  discovery:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install runtime
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Prepare feed directory
+        run: mkdir -p .data/empirical_feed artifacts
+      - name: Download immutable verified nine-pair feed bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: \${{ env.SOURCE_ARTIFACT_NAME }}
+          repository: \${{ github.repository }}
+          run-id: \${{ env.SOURCE_RUN_ID }}
+          path: /tmp/source
+      - name: Extract verified feeds
+        run: |
+          tar -xzf /tmp/source/verified-nine-pair-feeds.tar.gz -C .
+          for pair in eurusd gbpusd usdjpy audusd usdcad usdchf nzdusd eurjpy gbpjpy; do
+            test -f ".data/empirical_feed/\${pair}.jsonl"
+          done
+      - name: Run frozen 48-hypothesis discovery and confirmation gate
+        run: |
+          python -m research.breakout_family_discovery \
+            --input-dir .data/empirical_feed \
+            --sample-stride "$SAMPLE_STRIDE" \
+            --output artifacts/breakout_family_report.json
+      - name: Verify non-live boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("artifacts/breakout_family_report.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          assert report["status"] == "BREAKOUT_FAMILY_DISCOVERY_COMPLETED"
+          assert report["contract_version"] == "v1-breakout-familywise-horizon-purged"
+          assert report["family_size"] == 48
+          assert report["orchestration_binding"]["source_run_id"] == 34139659497
+          assert report["promotion_authorized"] is False
+          assert report["live_execution_authorized"] is False
+
+          print(
+              "state=", report["status"],
+              "candidates=", report["candidate_count"],
+              "confirmation_candidates=",
+              report["confirmation_candidate_count"],
+          )
+          for item in report["near_misses"][:10]:
+              print(
+                  "NEAR",
+                  item["candidate"],
+                  item["statistics"],
+                  item["near_miss_reason"],
+              )
+          for item in report["confirmation_results"]:
+              print(
+                  "CONFIRM",
+                  item["candidate"],
+                  item["statistics"],
+                  "pass=",
+                  item["confirmation_pass"],
+              )
+          print("PROMOTION_AUTHORIZED=false")
+          print("LIVE_EXECUTION_AUTHORIZED=false")
+          PY
+      - name: Upload immutable research evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: BREAKOUT-FAMILY-RESEARCH-EVIDENCE
+          path: artifacts/breakout_family_report.json
+          retention-days: 30
