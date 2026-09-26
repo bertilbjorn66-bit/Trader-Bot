@@ -18,7 +18,7 @@ def test_discovery_grid_is_finite_and_confirmation_free() -> None:
     assert len(DISTANCE_GRID) == 5
     assert len(REGIMES) == 9
     assert DIRECTIONS == ("long", "short")
-    assert PAIRSETS == ("all", "JPY")
+    assert PAIRSETS == ("all",)
 
 
 def test_discovery_screen_requires_sample_pf_and_positive_bootstrap_lower_tail() -> None:
@@ -58,6 +58,7 @@ def test_discovery_report_is_structurally_one_way(monkeypatch) -> None:
     assert report["selection_policy"]["minimum_discovery_profit_factor"] == 1.10
     assert report["selection_policy"]["minimum_discovery_bootstrap_lower_expectancy_pips"] == 0.0
     assert report["selection_policy"]["candidate_grid"]["directions"] == ["long", "short"]
+    assert report["selection_policy"]["candidate_grid"]["pairsets"] == ["all"]
     assert report["selection_policy"]["bootstrap_near_miss_policy"].startswith("diagnostic only")
     assert "bootstrap_near_misses" in report
 
@@ -118,9 +119,7 @@ def test_indexed_discovery_subsets_preserve_input_order() -> None:
     ]
     grouped = _group_discovery_records(records)
     all_key = (6, "regime:trend_up", "london", "long", "discovery", "all")
-    jpy_key = (6, "regime:trend_up", "london", "long", "discovery", "JPY")
     assert [item["pair"] for item in grouped[all_key]] == [item["pair"] for item in records]
-    assert [item["pair"] for item in grouped[jpy_key]] == ["USD/JPY"]
 
 
 def test_discovery_familywise_policy_is_predeclared() -> None:
@@ -150,7 +149,7 @@ def test_global_discovery_subset_is_not_retrimmed_by_pair_local_split() -> None:
     assert filtered_outcomes(records, split="discovery") == []
 
 
-def test_discovery_familywise_holm_gate_blocks_unadjusted_signal(monkeypatch, tmp_path) -> None:
+def test_discovery_raw_hac_prefilter_blocks_subalpha_family(monkeypatch, tmp_path) -> None:
     import research.fresh_discovery_cycle as module
 
     records = []
@@ -191,17 +190,17 @@ def test_discovery_familywise_holm_gate_blocks_unadjusted_signal(monkeypatch, tm
     monkeypatch.setattr(module, "DISTANCE_GRID", (None,))
     monkeypatch.setattr(module, "REGIMES", ("regime:trend_up",))
     monkeypatch.setattr(module, "SESSIONS", ("london",))
-    monkeypatch.setattr(module, "PAIRSETS", ("all", "JPY"))
+    monkeypatch.setattr(module, "PAIRSETS", ("all",))
     monkeypatch.setattr(module, "DIRECTIONS", ("long",))
-    monkeypatch.setattr(module, "hac_mean_pvalue", lambda _values: 0.04)
+    monkeypatch.setattr(module, "hac_mean_pvalue", lambda _values: 0.06)
 
     report = module.run_discovery(tmp_path, 60, 10000, parallel_workers=1)
-    assert report["selection_policy"]["discovery_family_size"] == 2
+    assert report["selection_policy"]["discovery_family_size"] == 1
     assert report["candidate_count"] == 0
     assert report["bootstrap_near_misses"]
-    assert all(item["discovery_family_size"] == 2 for item in report["bootstrap_near_misses"])
+    assert all(item["discovery_family_size"] == 1 for item in report["bootstrap_near_misses"])
     assert all(
-        item["near_miss_reason"] == "failed discovery-family Holm-adjusted HAC p-value"
+        item["near_miss_reason"] == "failed raw discovery HAC p-value prefilter"
         for item in report["bootstrap_near_misses"]
         if "near_miss_reason" in item
     )

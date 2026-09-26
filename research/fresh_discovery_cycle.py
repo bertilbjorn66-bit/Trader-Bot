@@ -34,7 +34,7 @@ REGIMES = (
     "regime:range_normal",
 )
 SESSIONS = ("asia", "london", "new_york", "rollover")
-PAIRSETS = ("all", "JPY")
+PAIRSETS = ("all",)
 DIRECTIONS = ("long", "short")
 MIN_DISCOVERY_SAMPLES = 150
 MIN_DISCOVERY_PF = 1.10
