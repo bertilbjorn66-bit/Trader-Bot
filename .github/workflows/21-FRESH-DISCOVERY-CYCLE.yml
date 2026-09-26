@@ -14,10 +14,12 @@ on:
         required: true
       sample_stride:
         description: "Target stride in 10m bars"
-        required: true
+        required: false
+        default: "60"
       history_states:
         description: "Historical states used per target"
-        required: true
+        required: false
+        default: "10000"
 
 concurrency:
   group: fresh-discovery-${{ github.ref }}
@@ -28,7 +30,7 @@ permissions:
   actions: read
 
 env:
-  SOURCE_RUN_ID: ${{ inputs.source_run_id || '32874819018' }}
+  SOURCE_RUN_ID: ${{ inputs.source_run_id || '34139659497' }}
   SAMPLE_STRIDE: ${{ inputs.sample_stride || '60' }}
   HISTORY_STATES: ${{ inputs.history_states || '10000' }}
 
@@ -76,52 +78,23 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -e .
       - name: Create input directory
         run: mkdir -p .data/empirical_feed artifacts
-      - name: Download reused six-pair artifact bundle
+      - name: Download immutable verified nine-pair feed bundle
         uses: actions/download-artifact@v8
         with:
-          name: empirical-recovery-reused-artifacts
+          name: v5-prepared-nine-pair-feeds
           repository: ${{ github.repository }}
           run-id: ${{ env.SOURCE_RUN_ID }}
           github-token: ${{ github.token }}
-          path: .data/empirical_feed
-      - name: Download EUR/USD repaired artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: empirical-recovery-eurusd
-          repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
-          github-token: ${{ github.token }}
-          path: /tmp/repaired/eurusd
-      - name: Download GBP/USD repaired artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: empirical-recovery-gbpusd
-          repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
-          github-token: ${{ github.token }}
-          path: /tmp/repaired/gbpusd
-      - name: Download USD/JPY repaired artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: empirical-recovery-usdjpy
-          repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
-          github-token: ${{ github.token }}
-          path: /tmp/repaired/usdjpy
-      - name: Place repaired pair files
+          path: /tmp/source
+      - name: Extract and verify all nine pair datasets
         run: |
           set -euo pipefail
-          for slug in eurusd gbpusd usdjpy; do
-            test -s "/tmp/repaired/$slug/$slug.jsonl"
-            cp "/tmp/repaired/$slug/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
-          done
-      - name: Verify all nine pair files
-        run: |
-          set -euo pipefail
+          test -s /tmp/source/verified-nine-pair-feeds.tar.gz
+          tar -xzf /tmp/source/verified-nine-pair-feeds.tar.gz -C .
           for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
             test -s ".data/empirical_feed/$slug.jsonl" || { echo "Missing $slug.jsonl"; exit 1; }
           done
-          echo "All nine verified pair datasets restored; no market-data downloader is invoked."
+          echo "All nine verified pair datasets restored from immutable bundle; no market-data downloader is invoked."
       - name: Run discovery-only search
         env:
           OMP_NUM_THREADS: "1"
