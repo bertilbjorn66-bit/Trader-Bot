@@ -223,6 +223,35 @@ def _bootstrap(values: list[float], seed: int) -> dict[str, float]:
     }
 
 
+
+def _fixed_candidate_filter(records: list[dict[str, Any]], candidate: Candidate, split: str) -> list[dict[str, Any]]:
+    return [
+        row for row in records
+        if row["split"] == split
+        and row["horizon"] == candidate["horizon"]
+        and abs(float(row["carry_diff_pp"])) >= float(candidate["carry_threshold_pp"])
+        and float(row["trend_strength"]) >= float(candidate["trend_strength_min"])
+        and (candidate["volatility_state"] == "any" or row["volatility_state"] == candidate["volatility_state"])
+    ]
+
+
+def _confirmation_result(records: list[dict[str, Any]], candidate: Candidate, seed: int) -> dict[str, Any]:
+    values = [float(row["outcome_pips"]) for row in records]
+    stats = _stats(values)
+    pair_robust, pair_breakdown, concentration = _pair_gate(records)
+    bootstrap = _bootstrap(values, seed) if len(values) >= MIN_DISCOVERY_SAMPLES else None
+    p_value = hac_mean_pvalue(values) if len(values) >= 2 else 1.0
+    return {
+        "candidate": candidate,
+        "statistics": stats,
+        "raw_hac_one_sided_pvalue": p_value,
+        "pair_robust": pair_robust,
+        "pair_breakdown": pair_breakdown,
+        "largest_pair_observation_share": concentration,
+        "bootstrap": bootstrap,
+    }
+
+
 def run_discovery(
     input_dir: Path,
     sample_stride: int = 6,
@@ -404,12 +433,52 @@ def run_discovery(
         ),
         reverse=True,
     )
+
+    # Holdout is evaluated only after discovery selection. It never participates
+    # in discovery ranking, family construction, or candidate selection.
+    confirmation_pvalues: list[float] = []
+    confirmation_items: list[dict[str, Any]] = []
+    for rank, item in enumerate(candidates):
+        candidate = cast(Candidate, item["candidate"])
+        confirmation_records = _fixed_candidate_filter(all_records, candidate, "confirmation")
+        result = _confirmation_result(confirmation_records, candidate, 2026092700 + rank)
+        confirmation_items.append(result)
+        confirmation_pvalues.append(float(result["raw_hac_one_sided_pvalue"]) if result["statistics"]["n"] >= 2 else 1.0)
+
+    confirmation_adjusted = holm_bonferroni(confirmation_pvalues)
+    confirmed_candidates: list[dict[str, Any]] = []
+    for result, adjusted_pvalue in zip(confirmation_items, confirmation_adjusted, strict=True):
+        stats = result["statistics"]
+        bootstrap = result["bootstrap"]
+        confirmed = (
+            int(stats["n"] or 0) >= MIN_DISCOVERY_SAMPLES
+            and result["pair_robust"]
+            and stats["profit_factor"] is not None
+            and float(stats["profit_factor"]) >= MIN_DISCOVERY_PF
+            and adjusted_pvalue <= HOLM_ALPHA
+            and isinstance(bootstrap, dict)
+            and float(bootstrap["ordinary_lower_95_mean"]) > MIN_DISCOVERY_BOOTSTRAP_LOWER
+            and float(bootstrap["block_lower_95_mean"]) > MIN_DISCOVERY_BOOTSTRAP_LOWER
+        )
+        result["holm_adjusted_pvalue"] = adjusted_pvalue
+        result["confirmed_on_holdout"] = confirmed
+        if confirmed:
+            confirmed_candidates.append(result)
+
+    for item in candidates:
+        matching = next(
+            (result for result in confirmation_items if result["candidate"] == item["candidate"]),
+            None,
+        )
+        item["confirmation"] = matching
+
     return {
         "status": "CARRY_FACTOR_DISCOVERY_COMPLETED",
         "contract_version": CONTRACT_VERSION,
         "family_size": len(_grid()),
         "candidate_count": len(candidates),
         "top_candidates": candidates[:25],
+        "holdout_confirmed_candidates": confirmed_candidates[:25],
         "near_misses": near_misses[:25],
         "record_count": len(all_records),
         "global_split_cutoff": cutoff.isoformat(),
@@ -430,6 +499,8 @@ def run_discovery(
             "minimum_positive_pairs": MIN_POSITIVE_PAIRS,
             "max_pair_observation_share": MAX_PAIR_OBSERVATION_SHARE,
             "confirmation_used_for_selection": False,
+            "holdout_evaluated_after_discovery": True,
+            "holdout_selection_adjustment": "Holm correction across discovery-selected candidates; holdout results never alter discovery ranking",
         },
         "promotion_authorized": False,
         "live_execution_authorized": False,
