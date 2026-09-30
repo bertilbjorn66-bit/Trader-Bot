@@ -252,7 +252,6 @@ def _block_lower(timestamp_means: Mapping[date, float], seed: int) -> float:
         return math.nan
     blocks = [ordered[i:i+BLOCK_SIZE] for i in range(0, len(ordered), BLOCK_SIZE)]
     rng = np.random.default_rng(seed)
-    values = np.asarray([timestamp_means[d] for d in ordered], dtype=np.float64)
     means = []
     for _ in range(BOOTSTRAP_REPS):
         selected: list[date] = []
@@ -418,6 +417,15 @@ def run_discovery(cftc_dir: Path, feed_dir: Path) -> dict[str, object]:
         vals, by_pair, by_ts = _outcomes(frozen["candidate"], panel, daily, indices, signal_days, split_cutoff, True)
         conf = _evaluate(vals, by_pair, by_ts, True)
         confirmation = {"rank": 1, "candidate": frozen["candidate"], "discovery": frozen["discovery"], "confirmation": conf}
+    if confirmation is not None:
+        confirmation_result = confirmation["confirmation"]
+        confirmation_result["passes_final_confirmation"] = bool(
+            confirmation_result["passes_pre_holm"]
+            and float(confirmation_result["hac_one_sided_pvalue"]) <= ALPHA
+        )
+        confirmation["state"] = (
+            "PASS" if confirmation_result["passes_final_confirmation"] else "FAIL"
+        )
     return {
         "status": "CFTC_POSITIONING_DISCOVERY_COMPLETED",
         "contract_version": CONTRACT_VERSION,
