@@ -2,10 +2,21 @@ name: "21 — FRESH DISCOVERY CYCLE — DISCOVERY ONLY"
 
 on:
   push:
-    branches: [stage21-fresh-discovery, main]
+    branches: [research/fresh-conditional-v6-20260930, main]
     paths:
       - ".github/workflows/21-FRESH-DISCOVERY-CYCLE.yml"
       - "research/**"
+      - "tests/test_fresh_discovery_cycle.py"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/21-FRESH-DISCOVERY-CYCLE.yml"
+      - "research/fresh_discovery_cycle.py"
+      - "research/enriched_conditional_experiment.py"
+      - "research/pipeline.py"
+      - "research/similarity.py"
+      - "research/regimes.py"
+      - "research/cross_section.py"
       - "tests/test_fresh_discovery_cycle.py"
   workflow_dispatch:
     inputs:
