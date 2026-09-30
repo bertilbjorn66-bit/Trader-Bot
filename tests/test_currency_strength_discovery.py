@@ -238,3 +238,10 @@ def test_holm_adjustment_is_monotone() -> None:
     values = [float(item["holm_adjusted_pvalue"]) for item in adjusted]
     assert values == sorted(values)
     assert all("passes_familywise" in item for item in adjusted)
+
+
+def test_sparse_hac_uses_valid_reduced_lag() -> None:
+    from research.currency_strength_discovery import _hac_pvalue
+
+    value = _hac_pvalue([0.2, -0.1, 0.3, 0.05])
+    assert 0.0 <= value <= 1.0
