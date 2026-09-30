@@ -246,7 +246,29 @@ def run_confirmation(input_dir: Path, discovery_report_path: Path) -> dict[str, 
     if report.get("discovery_family_size") != 144:
         raise ValueError("discovery family size is not 144")
     if report.get("candidate_count", 0) < 1:
-        raise ValueError("no familywise discovery candidate exists")
+        return {
+            "status": "CURRENCY_STRENGTH_CONFIRMATION_COMPLETED",
+            "contract_version": CONFIRMATION_CONTRACT_VERSION,
+            "discovery_contract_version": discovery.CONTRACT_VERSION,
+            "candidate": None,
+            "candidate_selection_rule": "no discovery candidate existed; confirmation was not attempted",
+            "global_split_cutoff": report.get("global_split_cutoff"),
+            "confirmation": {
+                "state": "NO_DISCOVERY_CANDIDATE",
+                "n": 0,
+                "unique_timestamps": 0,
+                "expectancy_pips": None,
+                "profit_factor": None,
+                "gates": {},
+                "inference_unit": "per-timestamp cross-sectional mean outcome",
+            },
+            "source_manifest": report.get("source_manifest", {}),
+            "confirmation_timestamp_count": 0,
+            "promotion_authorized": False,
+            "live_execution_authorized": False,
+            "market_data_accessed": False,
+            "orchestration_binding": report.get("orchestration_binding", {}),
+        }
     if report.get("selection_policy", {}).get("confirmation_used_for_selection") is not False:
         raise ValueError("confirmation data was marked as used for discovery selection")
     if report.get("live_execution_authorized") is not False or report.get("promotion_authorized") is not False:
