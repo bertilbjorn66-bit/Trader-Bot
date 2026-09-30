@@ -206,4 +206,42 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-# Empirical execution trigger: rerun fixed currency-strength family from this exact branch head.
+
+      - name: Run frozen-candidate confirmation on untouched holdout
+        run: |
+          python -m research.currency_strength_confirmation \
+            --input-dir .data/empirical_feed \
+            --discovery-report artifacts/discovery/currency_strength_discovery_report.json \
+            --output artifacts/confirmation/currency_strength_confirmation_report.json
+      - name: Verify confirmation terminal state
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(
+              Path("artifacts/confirmation/currency_strength_confirmation_report.json").read_text(encoding="utf-8")
+          )
+          assert result["status"] == "CURRENCY_STRENGTH_CONFIRMATION_COMPLETED"
+          assert result["promotion_authorized"] is False
+          assert result["live_execution_authorized"] is False
+          assert result["confirmation"]["state"] in {"PASS", "FAIL", "INCOMPLETE", "NO_DISCOVERY_CANDIDATE"}
+          if result["confirmation"]["state"] == "NO_DISCOVERY_CANDIDATE":
+              assert result["candidate"] is None
+          else:
+              assert result["candidate"]["rank"] == 1
+              assert result["candidate_selection_rule"].startswith("rank-1 familywise discovery candidate was frozen before confirmation")
+          print("CURRENCY_STRENGTH_CONFIRMATION_VERIFIED=true")
+          print("STATE=", result["confirmation"]["state"])
+          print("CONFIRMATION_N=", result["confirmation"]["n"])
+          print("CONFIRMATION_EXPECTANCY_PIPS=", result["confirmation"]["expectancy_pips"])
+          print("CONFIRMATION_PROFIT_FACTOR=", result["confirmation"]["profit_factor"])
+          print("PROMOTION_AUTHORIZED=false")
+          print("LIVE_EXECUTION_AUTHORIZED=false")
+          PY
+      - name: Upload immutable confirmation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: CURRENCY-STRENGTH-CONFIRMATION-RESULT
+          path: artifacts/confirmation/currency_strength_confirmation_report.json
+          if-no-files-found: error
+          retention-days: 30
