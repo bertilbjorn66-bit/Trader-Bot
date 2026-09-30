@@ -10,6 +10,7 @@ from research.carry_factor_discovery import (
     _grid,
     _parse_sdmx_series,
     _strict_prior_rate,
+    _hac_pvalue,
 )
 
 
@@ -47,3 +48,8 @@ def test_grid_values_are_fixed() -> None:
     assert TREND_STRENGTH_MIN == (0.00, 0.25, 0.50)
     assert HORIZONS == (6, 36, 144)
     assert VOLATILITY_STATES == ("any", "high", "normal", "low")
+
+
+def test_hac_pvalue_handles_sparse_hypothesis_sample() -> None:
+    value = _hac_pvalue([0.2, -0.1, 0.3, 0.05])
+    assert 0.0 <= value <= 1.0
