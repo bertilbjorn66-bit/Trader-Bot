@@ -210,6 +210,14 @@ def _pair_gate(records: list[dict[str, Any]]) -> tuple[bool, dict[str, Any], flo
     return len(positive) >= MIN_POSITIVE_PAIRS and concentration <= MAX_PAIR_OBSERVATION_SHARE, breakdown, concentration
 
 
+def _hac_pvalue(values: list[float]) -> float:
+    if len(values) < 2:
+        return 1.0
+    # Sparse hypotheses can have fewer observations than HAC_DEFAULT_LAG + 1.
+    # Reduce the lag rather than rejecting the whole family evaluation.
+    return hac_mean_pvalue(values, max_lag=min(5, len(values) - 1))
+
+
 def _bootstrap(values: list[float], seed: int) -> dict[str, float]:
     ordinary = bootstrap_means(values, reps=BOOTSTRAP_REPS, seed=seed)
     block = block_bootstrap_means(values, block_size=min(BOOTSTRAP_BLOCK_SIZE, len(values)),
@@ -240,7 +248,7 @@ def _confirmation_result(records: list[dict[str, Any]], candidate: Candidate, se
     stats = _stats(values)
     pair_robust, pair_breakdown, concentration = _pair_gate(records)
     bootstrap = _bootstrap(values, seed) if len(values) >= MIN_DISCOVERY_SAMPLES else None
-    p_value = hac_mean_pvalue(values) if len(values) >= 2 else 1.0
+    p_value = _hac_pvalue(values)
     return {
         "candidate": candidate,
         "statistics": stats,
