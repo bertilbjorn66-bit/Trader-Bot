@@ -482,6 +482,12 @@ def _clustered_block_lower(
     return float(np.quantile(np.asarray(means), 0.025))
 
 
+def _hac_pvalue(values: Sequence[float]) -> float:
+    if len(values) < 2:
+        return 1.0
+    return hac_mean_pvalue(list(values), max_lag=min(5, len(values) - 1))
+
+
 def _candidate_metrics(
     feeds: Mapping[str, Feed],
     target_positions: Mapping[str, Sequence[int]],
@@ -600,7 +606,7 @@ def _candidate_metrics(
         "unique_timestamps": len(by_timestamp),
         "expectancy_pips": expectancy,
         "profit_factor": pf_value,
-        "hac_one_sided_pvalue": hac_mean_pvalue(list(timestamp_means.values())),
+        "hac_one_sided_pvalue": _hac_pvalue(list(timestamp_means.values())),
         "ordinary_bootstrap_lower": float(ordinary[BOOTSTRAP_LOWER_INDEX]),
         "cluster_block_bootstrap_lower": cluster_lower,
         "positive_pair_count": positive_pairs,
