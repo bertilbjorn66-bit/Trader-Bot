@@ -6,9 +6,7 @@ import zipfile
 from datetime import date
 
 from research.cftc_positioning_discovery import (
-    CFTC_MARKET_PATTERNS,
     FAMILY_SIZE,
-    FEATURE_WINDOWS,
     family_hypotheses,
     _find_header,
     _market_currency,
