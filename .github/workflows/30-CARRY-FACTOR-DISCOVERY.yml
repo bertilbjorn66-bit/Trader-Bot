@@ -81,3 +81,4 @@ jobs:
           name: CARRY-FACTOR-RESEARCH-EVIDENCE
           path: artifacts/carry_factor_report.json
           retention-days: 30
+# Empirical verification: PR synchronization must execute validation and non-live carry discovery before review.
