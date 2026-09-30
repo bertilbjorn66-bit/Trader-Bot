@@ -248,3 +248,5 @@ jobs:
           path: artifacts/discovery/currency_strength_discovery_report.json
           if-no-files-found: error
           retention-days: 30
+
+# Empirical execution trigger: rerun fixed currency-strength family from this exact branch head.
