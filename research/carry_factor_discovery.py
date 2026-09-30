@@ -366,7 +366,7 @@ def run_discovery(
         ]
         values = [float(row["outcome_pips"]) for row in records]
         robust, pair_breakdown, concentration = _pair_gate(records)
-        p_value = hac_mean_pvalue(values) if len(values) >= 2 else 1.0
+        p_value = _hac_pvalue(values)
         item: dict[str, Any] = {
             "candidate": candidate,
             "statistics": _stats(values),
