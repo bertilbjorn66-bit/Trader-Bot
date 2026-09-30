@@ -1,0 +1,160 @@
+name: "29 — CFTC POSITIONING DISCOVERY — NON-LIVE"
+
+on:
+  push:
+    branches: [research/cftc-positioning-v1-20260930]
+    paths:
+      - ".github/workflows/29-CFTC-POSITIONING-DISCOVERY.yml"
+      - "research/cftc_positioning_discovery.py"
+      - "tests/test_cftc_positioning_discovery.py"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/29-CFTC-POSITIONING-DISCOVERY.yml"
+      - "research/cftc_positioning_discovery.py"
+      - "tests/test_cftc_positioning_discovery.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cftc-positioning-v1-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_RUN_ID: "34139659497"
+  YEARS: "2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025 2026"
+
+jobs:
+  validate:
+    name: "Validate CFTC positioning research"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check research/cftc_positioning_discovery.py tests/test_cftc_positioning_discovery.py
+          mypy research/cftc_positioning_discovery.py
+      - name: Contract tests
+        run: pytest -q tests/test_cftc_positioning_discovery.py
+      - name: Assert non-live boundary
+        run: |
+          set -euo pipefail
+          ! grep -q 'ExecutionGateway' research/cftc_positioning_discovery.py
+          ! grep -q 'broker' research/cftc_positioning_discovery.py
+          ! grep -q 'live_execution_enabled' research/cftc_positioning_discovery.py
+          echo "CFTC_POSITIONING_NON_LIVE=true"
+
+  research:
+    name: "Run 144-hypothesis CFTC positioning discovery and holdout"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Prepare directories
+        run: mkdir -p .data/cftc .data/empirical_feed artifacts
+      - name: Download official CFTC annual Legacy Futures Only archives
+        run: |
+          set -euo pipefail
+          for year in ${YEARS}; do
+            url="https://www.cftc.gov/files/dea/history/deacot${year}.zip"
+            curl --fail --location --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 120 "$url" -o ".data/cftc/deacot${year}.zip"
+            unzip -t ".data/cftc/deacot${year}.zip" >/dev/null
+          done
+          echo "CFTC_ANNUAL_ARCHIVES_VERIFIED=true"
+      - name: Download immutable verified nine-pair feed bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-prepared-nine-pair-feeds
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/source
+      - name: Extract and verify FX feeds
+        run: |
+          set -euo pipefail
+          test -s /tmp/source/verified-nine-pair-feeds.tar.gz
+          tar -xzf /tmp/source/verified-nine-pair-feeds.tar.gz -C .
+          for slug in eurusd gbpusd usdjpy audusd usdcad usdchf nzdusd eurjpy gbpjpy; do
+            test -s ".data/empirical_feed/${slug}.jsonl"
+          done
+          echo "NINE_PAIR_FEEDS_VERIFIED=true"
+      - name: Run CFTC positioning family
+        run: |
+          python -m research.cftc_positioning_discovery             --cftc-dir .data/cftc             --feed-dir .data/empirical_feed             --output artifacts/cftc_positioning_report.json
+      - name: Verify immutable statistical and authorization contracts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/cftc_positioning_report.json").read_text(encoding="utf-8"))
+          assert report["status"] == "CFTC_POSITIONING_DISCOVERY_COMPLETED"
+          assert report["contract_version"].startswith("v1-cftc-legacy-positioning")
+          assert report["family_size"] == 144
+          assert report["candidate_count"] >= 0
+          assert report["selection_policy"]["whole_family_holm"] is True
+          assert report["selection_policy"]["holm_scope"] == 144
+          assert report["selection_policy"]["confirmation_used_for_selection"] is False
+          assert report["promotion_authorized"] is False
+          assert report["live_execution_authorized"] is False
+          assert len(report["cftc_manifest"]) == 21
+          assert len(report["feed_quality"]) == 9
+          assert report["signal_week_count"] >= 300
+          if report["confirmation"] is None:
+              assert report["candidate_count"] == 0
+              print("CONFIRMATION_STATE=NO_DISCOVERY_CANDIDATE")
+          else:
+              confirmation = report["confirmation"]["confirmation"]
+              assert report["confirmation"]["rank"] == 1
+              assert report["candidate_count"] >= 1
+              print("CONFIRMATION_STATE=", "PASS" if confirmation["passes_final_confirmation"] else "FAIL")
+              print("CONFIRMATION_N=", confirmation["n"])
+              print("CONFIRMATION_EXPECTANCY_PIPS=", confirmation["expectancy_pips"])
+              print("CONFIRMATION_PROFIT_FACTOR=", confirmation["profit_factor"])
+          print("CFTC_POSITIONING_DISCOVERY_VERIFIED=true")
+          print("FAMILY_SIZE=", report["family_size"])
+          print("CANDIDATE_COUNT=", report["candidate_count"])
+          print("SIGNAL_WEEK_COUNT=", report["signal_week_count"])
+          print("PROMOTION_AUTHORIZED=false")
+          print("LIVE_EXECUTION_AUTHORIZED=false")
+          PY
+      - name: Bind orchestration evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("artifacts/cftc_positioning_report.json")
+          report = json.loads(path.read_text(encoding="utf-8"))
+          report["orchestration_binding"] = {
+              "research_run_id": int("${{ github.run_id }}"),
+              "research_head_sha": "${{ github.sha }}",
+              "source_run_id": int("${{ env.SOURCE_RUN_ID }}"),
+          }
+          path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+          PY
+      - name: Upload immutable CFTC positioning evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: CFTC-POSITIONING-DISCOVERY-RESULT
+          path: artifacts/cftc_positioning_report.json
+          if-no-files-found: error
+          retention-days: 30
