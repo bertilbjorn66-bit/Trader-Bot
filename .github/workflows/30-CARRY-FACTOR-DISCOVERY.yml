@@ -72,9 +72,9 @@ jobs:
             --input-dir .data/empirical_feed \
             --sample-stride "$SAMPLE_STRIDE" \
             --output artifacts/carry_factor_report.json
-      - name: Verify non-live boundary
+      - name: Verify non-live boundary and holdout separation
         run: >-
-          python -c "import json; from pathlib import Path; r=json.loads(Path(\"artifacts/carry_factor_report.json\").read_text()); assert r[\"status\"]==\"CARRY_FACTOR_DISCOVERY_COMPLETED\"; assert r[\"family_size\"]==144; assert r[\"promotion_authorized\"] is False; assert r[\"live_execution_authorized\"] is False; assert r[\"selection_policy\"][\"confirmation_used_for_selection\"] is False; print(\"CARRY_DISCOVERY_VERIFIED=true\"); print(\"CANDIDATE_COUNT=\",r[\"candidate_count\"]); print(\"RECORD_COUNT=\",r[\"record_count\"]) "
+          python -c "import json; from pathlib import Path; r=json.loads(Path(\"artifacts/carry_factor_report.json\").read_text()); assert r[\"status\"]==\"CARRY_FACTOR_DISCOVERY_COMPLETED\"; assert r[\"family_size\"]==144; assert r[\"promotion_authorized\"] is False; assert r[\"live_execution_authorized\"] is False; assert r[\"selection_policy\"][\"confirmation_used_for_selection\"] is False; assert r[\"selection_policy\"][\"holdout_evaluated_after_discovery\"] is True; assert \"holdout_confirmed_candidates\" in r; print(\"CARRY_DISCOVERY_VERIFIED=true\"); print(\"CANDIDATE_COUNT=\",r[\"candidate_count\"]); print(\"HOLDOUT_CONFIRMED_COUNT=\",len(r[\"holdout_confirmed_candidates\"])); print(\"RECORD_COUNT=\",r[\"record_count\"]) "
       - name: Upload immutable carry evidence
         uses: actions/upload-artifact@v7
         with:
