@@ -2,11 +2,19 @@ name: "27 — CURRENCY STRENGTH DISCOVERY — NON-LIVE"
 
 on:
   push:
-    branches: [currency-strength-v1]
+    branches: [research/currency-strength-v2-20260930]
     paths:
       - ".github/workflows/27-CURRENCY-STRENGTH-DISCOVERY.yml"
       - "research/currency_strength_discovery.py"
       - "tests/test_currency_strength_discovery.py"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/27-CURRENCY-STRENGTH-DISCOVERY.yml"
+      - "research/currency_strength_discovery.py"
+      - "tests/test_currency_strength_discovery.py"
+      - "research/currency_strength_confirmation.py"
+      - "tests/test_currency_strength_confirmation.py"
   workflow_dispatch:
 
 permissions:
@@ -14,11 +22,12 @@ permissions:
   actions: read
 
 concurrency:
-  group: currency-strength-v1-${{ github.ref }}
+  group: currency-strength-v2-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  SOURCE_RUN_ID: "32874819018"
+  SOURCE_RUN_ID: "34139659497"
+  SOURCE_ARTIFACT_NAME: "v5-prepared-nine-pair-feeds"
   SAMPLE_STRIDE: "60"
 
 jobs:
@@ -66,99 +75,47 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -e .
       - name: Prepare directories
         run: mkdir -p .data/empirical_feed artifacts/discovery /tmp/repaired
-      - name: Verify source recovery run and artifact freshness
+      - name: Verify source recovery run and artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
-          import json
-          import os
-          import urllib.request
+          import json, os, urllib.request
           from datetime import datetime, timezone
-
           repo = "${{ github.repository }}"
           run_id = os.environ["SOURCE_RUN_ID"]
-          headers = {
-              "Accept": "application/vnd.github+json",
-              "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
-              "X-GitHub-Api-Version": "2022-11-28",
-          }
-
+          headers = {"Accept":"application/vnd.github+json","Authorization":f"Bearer {os.environ['GH_TOKEN']}","X-GitHub-Api-Version":"2022-11-28"}
           def get(url: str) -> dict:
               req = urllib.request.Request(url, headers=headers)
               with urllib.request.urlopen(req, timeout=30) as response:
                   return json.load(response)
-
           run = get(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}")
-          if run.get("conclusion") != "success":
-              raise SystemExit(f"source recovery run {run_id} is not successful")
-          if run.get("head_branch") != "main":
-              raise SystemExit(f"source recovery run {run_id} is not the frozen main-branch recovery run")
-          artifacts = get(
-              f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100"
-          ).get("artifacts", [])
-          present = {item["name"]: item for item in artifacts}
-          required = {
-              "VERIFIED-EMPIRICAL-RECOVERY-REPORT",
-              "empirical-recovery-reused-artifacts",
-              "empirical-recovery-eurusd",
-              "empirical-recovery-gbpusd",
-              "empirical-recovery-usdjpy",
-          }
-          missing = sorted(required - set(present))
-          if missing:
-              raise SystemExit(f"required source artifacts are missing: {missing}")
-          now = datetime.now(timezone.utc)
-          expired = [
-              name for name in sorted(required)
-              if present[name].get("expired")
-              or datetime.fromisoformat(present[name]["expires_at"].replace("Z", "+00:00")) <= now
-          ]
-          if expired:
-              raise SystemExit(f"required source artifacts are expired or expiring: {expired}")
-          print("SOURCE_ARTIFACTS_UNEXPIRED=true")
+          assert run.get("conclusion") == "success"
+          assert run.get("head_branch") == "main"
+          artifacts = get(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100").get("artifacts", [])
+          matches = [a for a in artifacts if a.get("name") == os.environ["SOURCE_ARTIFACT_NAME"]]
+          assert len(matches) == 1
+          artifact = matches[0]
+          assert not artifact.get("expired")
+          assert datetime.fromisoformat(artifact["expires_at"].replace("Z","+00:00")) > datetime.now(timezone.utc)
+          print("SOURCE_ARTIFACT_VERIFIED=true")
+          print("SOURCE_RUN_ID=", run_id)
+          print("SOURCE_ARTIFACT_NAME=", artifact["name"])
           PY
-      - name: Download six-pair verified bundle
+      - name: Download immutable verified nine-pair feed bundle
         uses: actions/download-artifact@v8
         with:
-          name: empirical-recovery-reused-artifacts
+          name: ${{ env.SOURCE_ARTIFACT_NAME }}
           repository: ${{ github.repository }}
           run-id: ${{ env.SOURCE_RUN_ID }}
           github-token: ${{ github.token }}
-          path: .data/empirical_feed
-      - name: Download repaired EUR/USD
-        uses: actions/download-artifact@v8
-        with:
-          name: empirical-recovery-eurusd
-          repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
-          github-token: ${{ github.token }}
-          path: /tmp/repaired/eurusd
-      - name: Download repaired GBP/USD
-        uses: actions/download-artifact@v8
-        with:
-          name: empirical-recovery-gbpusd
-          repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
-          github-token: ${{ github.token }}
-          path: /tmp/repaired/gbpusd
-      - name: Download repaired USD/JPY
-        uses: actions/download-artifact@v8
-        with:
-          name: empirical-recovery-usdjpy
-          repository: ${{ github.repository }}
-          run-id: ${{ env.SOURCE_RUN_ID }}
-          github-token: ${{ github.token }}
-          path: /tmp/repaired/usdjpy
-      - name: Assemble and verify nine feeds
+          path: /tmp/source
+      - name: Extract and verify feeds
         run: |
           set -euo pipefail
-          for slug in eurusd gbpusd usdjpy; do
-            test -s "/tmp/repaired/$slug/$slug.jsonl"
-            cp "/tmp/repaired/$slug/$slug.jsonl" ".data/empirical_feed/$slug.jsonl"
-          done
-          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
-            test -s ".data/empirical_feed/$slug.jsonl" || { echo "Missing $slug.jsonl"; exit 1; }
+          tar -xzf /tmp/source/verified-nine-pair-feeds.tar.gz -C .
+          for pair in eurusd gbpusd usdjpy audusd usdcad usdchf nzdusd eurjpy gbpjpy; do
+            test -s ".data/empirical_feed/${pair}.jsonl"
           done
           echo "ALL_NINE_FEEDS_VERIFIED=true"
       - name: Run fixed currency-strength family
