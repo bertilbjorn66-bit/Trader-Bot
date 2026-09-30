@@ -8,9 +8,9 @@ from research.carry_factor_discovery import (
     TREND_STRENGTH_MIN,
     VOLATILITY_STATES,
     _grid,
+    _hac_pvalue,
     _parse_sdmx_series,
     _strict_prior_rate,
-    _hac_pvalue,
 )
 
 
