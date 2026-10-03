@@ -1,0 +1,112 @@
+name: "36 — CROSS-ASSET MACRO CONTEXT DISCOVERY — NON-LIVE"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/36-CROSS-ASSET-MACRO-DISCOVERY.yml"
+      - "research/cross_asset_macro_discovery.py"
+      - "tests/test_cross_asset_macro_discovery.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_RUN_ID: "34139659497"
+
+jobs:
+  validate:
+    name: "Validate cross-asset macro family"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Ruff and mypy
+        run: |
+          ruff check research/cross_asset_macro_discovery.py tests/test_cross_asset_macro_discovery.py
+          mypy research/cross_asset_macro_discovery.py
+      - name: Contract tests
+        run: pytest -q tests/test_cross_asset_macro_discovery.py
+      - name: Non-live boundary
+        run: |
+          ! grep -q "ExecutionGateway" research/cross_asset_macro_discovery.py
+          ! grep -q 'promotion_authorized": True' research/cross_asset_macro_discovery.py
+          ! grep -q 'live_execution_authorized": True' research/cross_asset_macro_discovery.py
+
+  discover:
+    needs: validate
+    name: "Run 216-hypothesis cross-asset macro discovery"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Prepare data
+        run: mkdir -p .data/empirical_feed .data/macro artifacts
+      - name: Download immutable verified nine-pair feed bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-prepared-nine-pair-feeds
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/source
+      - name: Extract and verify FX feeds
+        run: |
+          set -euo pipefail
+          tar -xzf /tmp/source/verified-nine-pair-feeds.tar.gz -C .
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/${slug}.jsonl"
+          done
+      - name: Download FRED macro series
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 120 "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS" -o .data/macro/VIXCLS.csv
+          curl --fail --location --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 120 "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SP500" -o .data/macro/SP500.csv
+          curl --fail --location --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 120 "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO" -o .data/macro/DCOILWTICO.csv
+      - name: Run fixed family
+        run: |
+          python -m research.cross_asset_macro_discovery \\
+            --feed-dir .data/empirical_feed \\
+            --macro-dir .data/macro \\
+            --output artifacts/cross_asset_macro_report.json
+      - name: Verify report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/cross_asset_macro_report.json").read_text(encoding="utf-8"))
+          assert report["status"] == "CROSS_ASSET_MACRO_DISCOVERY_COMPLETED"
+          assert report["family_size"] == 216
+          assert report["selection_policy"]["whole_family_holm"] is True
+          assert report["selection_policy"]["confirmation_used_for_selection"] is False
+          assert report["promotion_authorized"] is False
+          assert report["live_execution_authorized"] is False
+          print("CROSS_ASSET_MACRO_VERIFIED=true")
+          print("CANDIDATE_COUNT=", report["candidate_count"])
+          print("ENTRY_DAY_COUNT=", report["entry_day_count"])
+          print("PROMOTION_AUTHORIZED=false")
+          print("LIVE_EXECUTION_AUTHORIZED=false")
+          PY
+      - name: Upload immutable evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: CROSS-ASSET-MACRO-DISCOVERY-RESULT
+          path: artifacts/cross_asset_macro_report.json
+          if-no-files-found: error
+          retention-days: 30
