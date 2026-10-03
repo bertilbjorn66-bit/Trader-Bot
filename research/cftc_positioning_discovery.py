@@ -242,7 +242,7 @@ def _build_daily_bars(input_dir: Path) -> tuple[dict[str, list[DailyBar]], dict[
         for day, day_rows in sorted(grouped.items()):
             day_rows.sort(key=lambda row: int(_float_value(row["timestamp"])))
             stamps = [int(_float_value(row["timestamp"])) for row in day_rows]
-            if len(day_rows) < 100 or any(b - a != 600_000 for a, b in zip(stamps, stamps[1:], strict=True)):
+            if len(day_rows) < 100 or any(b - a != 600_000 for a, b in zip(stamps, stamps[1:])):
                 continue
             first, last = day_rows[0], day_rows[-1]
             complete.append(DailyBar(
