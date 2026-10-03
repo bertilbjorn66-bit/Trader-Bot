@@ -67,7 +67,7 @@ def _daily_bars(input_dir: Path) -> tuple[dict[str, list[DailyBar]], dict[str, d
             stamps = [int(_number(row["timestamp"])) for row in day_rows]
             if len(day_rows) < 100:
                 continue
-            if any(b - a != 600_000 for a, b in zip(stamps, stamps[1:], strict=True)):
+            if any(b - a != 600_000 for a, b in zip(stamps, stamps[1:])):
                 continue
             first, last = day_rows[0], day_rows[-1]
             complete.append(DailyBar(
