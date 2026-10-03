@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import io
 import zipfile
 from datetime import date
@@ -41,7 +42,7 @@ def test_next_monday_is_strictly_after_tuesday_report() -> None:
 def test_rolling_z_excludes_current_observation() -> None:
     values = [0.0, 1.0, 2.0, 3.0, 100.0]
     result = _rolling_z(values, 4)
-    assert result[:4] == [float("nan")] * 4
+    assert all(math.isnan(value) for value in result[:4])
     assert result[4] > 1.0
 
 
