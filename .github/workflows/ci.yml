@@ -30,6 +30,13 @@ jobs:
       - name: Install
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
 
+      - name: Show Ruff normalization for CFTC certification imports
+        if: matrix.python-version == '3.11'
+        run: |
+          cp research/cftc_positioning_certification.py /tmp/cftc_positioning_certification.py
+          ruff check --select I --fix research/cftc_positioning_certification.py || true
+          diff -u /tmp/cftc_positioning_certification.py research/cftc_positioning_certification.py || true
+
       - name: Ruff
         run: ruff check .
 
