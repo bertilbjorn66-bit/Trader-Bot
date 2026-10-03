@@ -11,11 +11,11 @@ from statistics import mean
 from typing import Any, Mapping, Sequence
 
 from research.cftc_positioning_discovery import (
-    PAIR_CURRENCY,
-    PAIR_PIP,
     _build_daily_bars,
     _index_daily,
     _safe_hac,
+    PAIR_CURRENCY,
+    PAIR_PIP,
     build_feature_panel,
     load_positions,
 )
