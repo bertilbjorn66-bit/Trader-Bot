@@ -287,11 +287,11 @@ def run_discovery(feed_dir: Path) -> dict[str, Any]:
     split_cutoff = entry_days[int(len(entry_days) * DISCOVERY_FRACTION)]
     results: list[dict[str, Any]] = []
     for hypothesis in family_hypotheses():
-        vals, by_pair, by_ts = _outcomes(hypothesis, daily, indices, entry_days, split_cutoff, False)
+        vals, by_pair, by_ts = _outcomes(hypothesis, daily, indices, entry_days, split_cutoff, False, score_panel)
         results.append({"candidate": dict(hypothesis), "discovery": _evaluate(vals, by_pair, by_ts, False), **hypothesis})
     for item in results:
         if item["discovery"]["passes_pre_holm"]:
-            vals, by_pair, by_ts = _outcomes(item["candidate"], daily, indices, entry_days, split_cutoff, False)
+            vals, by_pair, by_ts = _outcomes(item["candidate"], daily, indices, entry_days, split_cutoff, False, score_panel)
             item["discovery"] = _evaluate(vals, by_pair, by_ts, True)
     ordered = _holm(results)
     survivors = [item for item in ordered if item["discovery"].get("passes_familywise")]
@@ -299,7 +299,7 @@ def run_discovery(feed_dir: Path) -> dict[str, Any]:
     confirmation: dict[str, Any] | None = None
     if survivors:
         frozen = survivors[0]
-        vals, by_pair, by_ts = _outcomes(frozen["candidate"], daily, indices, entry_days, split_cutoff, True)
+        vals, by_pair, by_ts = _outcomes(frozen["candidate"], daily, indices, entry_days, split_cutoff, True, score_panel)
         conf = _evaluate(vals, by_pair, by_ts, True)
         conf["passes_final_confirmation"] = bool(conf["passes_pre_holm"]) and float(conf["hac_one_sided_pvalue"]) <= ALPHA
         confirmation = {"rank": 1, "candidate": frozen["candidate"], "discovery": frozen["discovery"], "confirmation": conf, "state": "PASS" if conf["passes_final_confirmation"] else "FAIL"}
