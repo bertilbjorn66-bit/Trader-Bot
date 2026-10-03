@@ -28,10 +28,19 @@ def test_axes_are_exact() -> None:
 
 
 def test_macro_csv_accepts_fred_graph_headers(tmp_path) -> None:
+    from datetime import date, timedelta
+
     from research.cross_asset_macro_discovery import _load_macro_csv
 
-    csv_text = "observation_date,VIXCLS\n2020-01-01,12.3\n2020-01-02,13.1\n"
+    start = date(2020, 1, 1)
+    rows = [
+        f"{start + timedelta(days=index)}, {12.3 + (index % 7) / 10:.2f}"
+        for index in range(600)
+    ]
     path = tmp_path / "VIXCLS.csv"
-    path.write_text(csv_text * 300, encoding="utf-8")
+    path.write_text(
+        "observation_date,VIXCLS\n" + "\n".join(rows) + "\n",
+        encoding="utf-8",
+    )
     values = _load_macro_csv(path)
-    assert values
+    assert len(values) == 600
