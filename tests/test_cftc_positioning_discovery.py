@@ -11,6 +11,7 @@ from research.cftc_positioning_discovery import (
     _find_header,
     _market_currency,
     _next_monday,
+    _parse_report_date,
     _rolling_z,
     family_hypotheses,
 )
@@ -40,6 +41,11 @@ def test_market_mapping_is_explicit_for_all_currencies() -> None:
 
 def test_next_monday_is_strictly_after_tuesday_report() -> None:
     assert _next_monday(date(2026, 9, 29)) == date(2026, 10, 5)
+
+
+def test_legacy_yymmdd_report_dates_are_supported() -> None:
+    assert _parse_report_date("060103") == date(2006, 1, 3)
+    assert _parse_report_date("260929") == date(2026, 9, 29)
 
 
 def test_rolling_z_excludes_current_observation() -> None:
