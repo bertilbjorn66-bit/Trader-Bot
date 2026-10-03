@@ -237,7 +237,6 @@ def _previous_return(
 
 def _build_asof_panel(
     macro_panel: Mapping[str, Mapping[int, Mapping[date, float]]],
-    asof_panel: Mapping[str, Mapping[int, Mapping[date, float | None]]],
     entry_days: Sequence[date],
 ) -> dict[str, dict[int, dict[date, float | None]]]:
     result: dict[str, dict[int, dict[date, float | None]]] = {}
@@ -261,8 +260,9 @@ def _outcomes(
     daily: Mapping[str, Sequence[DailyBar]],
     indices: Mapping[str, Mapping[date, int]],
     macro_panel: Mapping[str, Mapping[int, Mapping[date, float]]],
+    asof_panel: Mapping[str, Mapping[int, Mapping[date, float | None]]],
     entry_days: Sequence[date],
-    split_cutoff: date,
+)    split_cutoff: date,
     holdout: bool,
 ) -> tuple[list[float], dict[str, list[float]], dict[date, list[float]]]:
     values: list[float] = []
