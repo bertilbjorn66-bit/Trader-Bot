@@ -29,7 +29,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install development dependencies
-        run: python -m pip install --upgrade pip && pip install -e ' .[dev]'
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
       - name: Static checks
         run: |
           ruff check research/time_series_momentum_discovery.py tests/test_time_series_momentum_discovery.py
