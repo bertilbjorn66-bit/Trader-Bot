@@ -1,4 +1,5 @@
 name: "33 — BIDIRECTIONAL ANALOGUE DISCOVERY — CURRENT VERIFIED FEED — NON-LIVE"
+# Frozen current verified-feed research contract.
 
 on:
   pull_request:
