@@ -35,6 +35,7 @@ def test_market_mapping_is_explicit_for_all_currencies() -> None:
     }
     assert {key: _market_currency(key) for key in samples} == samples
     assert _market_currency("EURO FX/JAPANESE YEN XRATE - NEW YORK BOARD OF TRADE") is None
+    assert _market_currency("BRITISH POUND STERLING - CHICAGO MERCANTILE EXCHANGE") == "GBP"
     assert _market_currency("EURO FX/JAPANESE YEN XRATE - CHICAGO MERCANTILE EXCHANGE") is None
     assert _market_currency("NIKKEI STOCK AVERAGE YEN DENOM - CHICAGO MERCANTILE EXCHANGE") is None
 
