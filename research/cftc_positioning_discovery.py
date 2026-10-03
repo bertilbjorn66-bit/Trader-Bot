@@ -30,10 +30,16 @@ PAIR_PIP = {
     "USD/CAD": 0.0001, "USD/CHF": 0.0001, "NZD/USD": 0.0001, "EUR/JPY": 0.01, "GBP/JPY": 0.01,
 }
 CURRENCIES = ("EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD", "USD")
-CFTC_MARKET_PATTERNS = {
-    "EUR": ("EURO FX",), "GBP": ("BRITISH POUND",), "JPY": ("JAPANESE YEN",),
-    "AUD": ("AUSTRALIAN DOLLAR",), "CAD": ("CANADIAN DOLLAR",), "CHF": ("SWISS FRANC",),
-    "NZD": ("NEW ZEALAND DOLLAR",), "USD": ("U.S. DOLLAR INDEX", "US DOLLAR INDEX"),
+CFTC_MARKET_NAMES = {
+    "EURO FX - CHICAGO MERCANTILE EXCHANGE": "EUR",
+    "BRITISH POUND - CHICAGO MERCANTILE EXCHANGE": "GBP",
+    "JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE": "JPY",
+    "AUSTRALIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE": "AUD",
+    "CANADIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE": "CAD",
+    "SWISS FRANC - CHICAGO MERCANTILE EXCHANGE": "CHF",
+    "NEW ZEALAND DOLLAR - CHICAGO MERCANTILE EXCHANGE": "NZD",
+    "U.S. DOLLAR INDEX - ICE FUTURES U.S.": "USD",
+    "US DOLLAR INDEX - ICE FUTURES U.S.": "USD",
 }
 FEATURE_TYPES = ("level_z", "change_z")
 FEATURE_WINDOWS = (4, 8, 13, 26)
@@ -92,11 +98,10 @@ def _float_value(value: object) -> float:
     return float(value) if isinstance(value, (int, float)) else float(str(value))
 
 def _market_currency(market: str) -> str | None:
-    text = market.upper().replace("\u2013", "-").replace("\u2014", "-")
-    for currency, patterns in CFTC_MARKET_PATTERNS.items():
-        if any(pattern in text for pattern in patterns):
-            return currency
-    return None
+    text = " ".join(
+        market.upper().replace("\u2013", "-").replace("\u2014", "-").split()
+    )
+    return CFTC_MARKET_NAMES.get(text)
 
 def _find_header(rows: list[list[str]]) -> tuple[int, dict[str, int]]:
     aliases = {
