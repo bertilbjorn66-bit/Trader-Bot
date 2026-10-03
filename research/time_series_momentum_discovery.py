@@ -95,23 +95,50 @@ def family_hypotheses() -> list[dict[str, object]]:
 def _common_days(daily: Mapping[str, Sequence[DailyBar]]) -> list[date]:
     return sorted(set.intersection(*(set(bar.day for bar in bars) for bars in daily.values())))
 
-def _score(bars: Sequence[DailyBar], index: int, lookback: int) -> float | None:
-    if index < lookback or index < VOL_WINDOW:
-        return None
-    mids = np.asarray([(bar.bid_close + bar.ask_close) / 2.0 for bar in bars], dtype=np.float64)
-    base = mids[index - lookback]
-    if base <= 0:
-        return None
-    cumulative = math.log(mids[index] / base)
-    returns = np.diff(np.log(mids[index - VOL_WINDOW : index + 1]))
-    if len(returns) < 2:
-        return None
-    vol = float(np.std(returns, ddof=1))
-    denom = vol * math.sqrt(lookback)
-    if not math.isfinite(denom) or denom <= 0:
-        return None
-    score = cumulative / denom
-    return score if math.isfinite(score) else None
+def _score_series(bars: Sequence[DailyBar], lookback: int) -> dict[date, float]:
+    mids = np.asarray(
+        [(bar.bid_close + bar.ask_close) / 2.0 for bar in bars],
+        dtype=np.float64,
+    )
+    log_mids = np.log(mids)
+    returns = np.diff(log_mids)
+    prefix_sum = np.concatenate((np.array([0.0]), np.cumsum(returns)))
+    prefix_sq = np.concatenate((np.array([0.0]), np.cumsum(returns * returns)))
+    scores: dict[date, float] = {}
+    first_index = max(VOL_WINDOW, lookback)
+    for index in range(first_index, len(bars)):
+        base = mids[index - lookback]
+        if base <= 0:
+            continue
+        start = index - VOL_WINDOW
+        end = index
+        count = end - start
+        total = float(prefix_sum[end] - prefix_sum[start])
+        total_sq = float(prefix_sq[end] - prefix_sq[start])
+        variance = (total_sq - (total * total) / count) / (count - 1)
+        if not math.isfinite(variance) or variance <= 0:
+            continue
+        vol = math.sqrt(variance)
+        denom = vol * math.sqrt(lookback)
+        if not math.isfinite(denom) or denom <= 0:
+            continue
+        cumulative = float(log_mids[index] - log_mids[index - lookback])
+        score = cumulative / denom
+        if math.isfinite(score):
+            scores[bars[index].day] = score
+    return scores
+
+
+def _build_score_panel(
+    daily: Mapping[str, Sequence[DailyBar]],
+) -> dict[str, dict[int, dict[date, float]]]:
+    return {
+        pair: {
+            lookback: _score_series(bars, lookback)
+            for lookback in LOOKBACKS
+        }
+        for pair, bars in daily.items()
+    }
 
 def _outcomes(
     candidate: Mapping[str, Any],
@@ -120,6 +147,7 @@ def _outcomes(
     entry_days: Sequence[date],
     split_cutoff: date | None,
     holdout: bool,
+    score_panel: Mapping[str, Mapping[int, Mapping[date, float]]],
 ) -> tuple[list[float], dict[str, list[float]], dict[date, list[float]]]:
     values: list[float] = []
     by_pair: dict[str, list[float]] = defaultdict(list)
@@ -139,7 +167,11 @@ def _outcomes(
             if index is None:
                 continue
             signal_index = index - 1
-            score = _score(bars, signal_index, lookback) if signal_index >= 0 else None
+            if signal_index < 0:
+                continue
+            score = score_panel.get(pair, {}).get(lookback, {}).get(
+                bars[signal_index].day
+            )
             if score is None or abs(score) < threshold:
                 continue
             if index + horizon - 1 >= len(bars):
@@ -246,6 +278,7 @@ def run_discovery(feed_dir: Path) -> dict[str, Any]:
     indices: dict[str, dict[date, int]] = {
         pair: {bar.day: i for i, bar in enumerate(bars)} for pair, bars in daily.items()
     }
+    score_panel = _build_score_panel(daily)
     common_days = _common_days(daily)
     minimum_index = VOL_WINDOW + max(LOOKBACKS) + 1
     entry_days = [day for day in common_days if all(indices[pair].get(day, 0) >= minimum_index for pair in daily)]
