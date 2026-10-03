@@ -44,3 +44,22 @@ def test_macro_csv_accepts_fred_graph_headers(tmp_path) -> None:
     )
     values = _load_macro_csv(path)
     assert len(values) == 600
+
+
+def test_asof_panel_uses_latest_observation_before_entry_day() -> None:
+    from datetime import date
+
+    from research.cross_asset_macro_discovery import _build_asof_panel
+
+    macro_panel = {
+        "VIXCLS": {
+            1: {
+                date(2020, 1, 1): 1.0,
+                date(2020, 1, 3): 3.0,
+            }
+        }
+    }
+    entry_days = [date(2020, 1, 2), date(2020, 1, 4)]
+    asof = _build_asof_panel(macro_panel, entry_days)
+    assert asof["VIXCLS"][1][date(2020, 1, 2)] == 1.0
+    assert asof["VIXCLS"][1][date(2020, 1, 4)] == 3.0
