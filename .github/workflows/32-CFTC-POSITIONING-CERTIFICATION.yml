@@ -36,12 +36,6 @@ jobs:
           cache: pip
       - name: Install development dependencies
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
-      - name: Show Ruff import normalization
-        run: |
-          cp research/cftc_positioning_certification.py /tmp/cftc_positioning_certification.py
-          ruff check --select I --fix research/cftc_positioning_certification.py || true
-          diff -u /tmp/cftc_positioning_certification.py research/cftc_positioning_certification.py || true
-
       - name: Static checks
         run: |
           ruff check research/cftc_positioning_certification.py tests/test_cftc_positioning_certification.py
