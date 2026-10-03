@@ -1,0 +1,140 @@
+name: "32 — CFTC POSITIONING 12-RUN CERTIFICATION — NON-LIVE"
+
+on:
+  workflow_run:
+    workflows: ["29 — CFTC POSITIONING DISCOVERY — NON-LIVE"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      cftc_run_id:
+        description: "Completed CFTC discovery workflow run ID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_RUN_ID: "34139659497"
+  CFTC_RUN_ID: ${{ github.event.workflow_run.id || inputs.cftc_run_id }}
+  CFTC_HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  validate:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    name: "Validate CFTC certification engine"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout certification source
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check research/cftc_positioning_certification.py tests/test_cftc_positioning_certification.py
+          mypy research/cftc_positioning_certification.py
+      - name: Contract tests
+        run: pytest -q tests/test_cftc_positioning_certification.py
+      - name: Assert non-live boundary
+        run: |
+          ! grep -q "ExecutionGateway" research/cftc_positioning_certification.py
+          ! grep -q "live_execution_enabled.*True" research/cftc_positioning_certification.py
+
+  certify:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: validate
+    name: "Run strict CFTC certification"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout certification source
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Prepare directories
+        run: mkdir -p .data/cftc .data/empirical_feed artifacts/discovery artifacts/certification
+      - name: Download CFTC discovery evidence
+        uses: actions/download-artifact@v8
+        with:
+          name: CFTC-POSITIONING-DISCOVERY-RESULT
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CFTC_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: artifacts/discovery
+      - name: Verify immutable discovery binding
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("artifacts/discovery/cftc_positioning_report.json").read_text(encoding="utf-8"))
+          assert r["status"] == "CFTC_POSITIONING_DISCOVERY_COMPLETED"
+          binding = r.get("orchestration_binding")
+          if not isinstance(binding, dict):
+              raise SystemExit("missing CFTC orchestration binding")
+          if int(binding["research_run_id"]) != int("${{ env.CFTC_RUN_ID }}"):
+              raise SystemExit("discovery run binding mismatch")
+          if binding["source_run_id"] != 34139659497:
+              raise SystemExit("source artifact binding mismatch")
+          print("CFTC_CERTIFICATION_INPUT_BINDING_OK=true")
+          PY
+      - name: Download official CFTC archives
+        run: |
+          set -euo pipefail
+          for year in 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025 2026; do
+            curl --fail --location --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 120 \\
+              "https://www.cftc.gov/files/dea/history/deacot${year}.zip" -o ".data/cftc/deacot${year}.zip"
+          done
+      - name: Download immutable verified nine-pair feeds
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-prepared-nine-pair-feeds
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/source
+      - name: Extract verified feeds
+        run: tar -xzf /tmp/source/verified-nine-pair-feeds.tar.gz -C .
+      - name: Run strict CFTC certification
+        run: |
+          python -m research.cftc_positioning_certification \\
+            --discovery-report artifacts/discovery/cftc_positioning_report.json \\
+            --cftc-dir .data/cftc \\
+            --feed-dir .data/empirical_feed \\
+            --output artifacts/certification/cftc_positioning_certification.json
+      - name: Verify certification boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/certification/cftc_positioning_certification.json").read_text(encoding="utf-8"))
+          assert report["promotion_authorized"] is False
+          assert report["live_execution_authorized"] is False
+          assert report["state"] in {"PASS", "FAIL", "INCOMPLETE"}
+          if report["state"] == "PASS":
+              assert report["qualifying_run_count"] == 12
+              assert len(report["certification_runs"]) == 12
+              assert all(run["qualifies"] for run in report["certification_runs"])
+          print("CFTC_CERTIFICATION_VERIFIED=true")
+          print("STATE=", report["state"])
+          print("QUALIFYING_RUN_COUNT=", report.get("qualifying_run_count", 0))
+          print("PROMOTION_AUTHORIZED=false")
+          print("LIVE_EXECUTION_AUTHORIZED=false")
+          PY
+      - name: Upload immutable certification evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: CFTC-POSITIONING-CERTIFICATION-EVIDENCE
+          path: artifacts/certification/cftc_positioning_certification.json
+          if-no-files-found: error
+          retention-days: 30
