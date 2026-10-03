@@ -1,0 +1,481 @@
+from __future__ import annotations
+
+import argparse
+import json
+import math
+from collections import defaultdict
+from datetime import date, datetime, timezone
+from pathlib import Path
+from statistics import mean
+from typing import Any, Mapping, Sequence
+
+import numpy as np
+
+from research.datafeed_empirical import PAIR_TO_SYMBOL, _execution_valid_rows, load_feed_bars
+from research.non_live_evaluation import block_bootstrap_means, bootstrap_means, profit_factor
+from research.statistics import hac_mean_pvalue
+
+PAIR_PIP: dict[str, float] = {
+    "EUR/USD": 0.0001,
+    "GBP/USD": 0.0001,
+    "USD/JPY": 0.01,
+    "AUD/USD": 0.0001,
+    "USD/CAD": 0.0001,
+    "USD/CHF": 0.0001,
+    "NZD/USD": 0.0001,
+    "EUR/JPY": 0.01,
+    "GBP/JPY": 0.01,
+}
+SPREAD_WINDOWS = (30, 60, 120)
+SPREAD_THRESHOLDS = (1.0, 1.5, 2.0)
+SPREAD_STATES = ("expansion", "compression")
+ORIENTATIONS = ("continuation", "reversion")
+HORIZONS = (1, 3, 6, 12)
+FAMILY_SIZE = (
+    len(SPREAD_WINDOWS)
+    * len(SPREAD_THRESHOLDS)
+    * len(SPREAD_STATES)
+    * len(ORIENTATIONS)
+    * len(HORIZONS)
+)
+DISCOVERY_FRACTION = 0.60
+MIN_DISCOVERY_SAMPLES = 150
+MIN_DISCOVERY_PF = 1.10
+MIN_PAIR_SAMPLES = 20
+MIN_POSITIVE_PAIRS = 3
+MAX_PAIR_CONCENTRATION = 0.80
+BOOTSTRAP_REPS = 2000
+BLOCK_SIZE = 5
+ALPHA = 0.05
+STRESS_COSTS_PIPS = (0.5, 1.0, 1.5)
+CONTRACT_VERSION = "v1-spread-liquidity-dislocation"
+
+
+class Bar:
+    __slots__ = ("day", "bid_open", "ask_open", "bid_close", "ask_close")
+
+    def __init__(
+        self,
+        day: date,
+        bid_open: float,
+        ask_open: float,
+        bid_close: float,
+        ask_close: float,
+    ) -> None:
+        self.day = day
+        self.bid_open = bid_open
+        self.ask_open = ask_open
+        self.bid_close = bid_close
+        self.ask_close = ask_close
+
+
+def _number(value: object) -> float:
+    return float(value) if isinstance(value, (int, float)) else float(str(value))
+
+
+def _daily_bars(input_dir: Path) -> dict[str, list[Bar]]:
+    daily: dict[str, list[Bar]] = {}
+    for pair, symbol in PAIR_TO_SYMBOL.items():
+        rows, _quality = _execution_valid_rows(
+            load_feed_bars(input_dir / f"{symbol}.jsonl"), pair
+        )
+        grouped: dict[date, list[Mapping[str, object]]] = defaultdict(list)
+        for row in rows:
+            timestamp_ms = int(_number(row["timestamp"]))
+            day = datetime.fromtimestamp(
+                timestamp_ms / 1000.0, tz=timezone.utc
+            ).date()
+            grouped[day].append(row)
+
+        bars: list[Bar] = []
+        for day, day_rows in sorted(grouped.items()):
+            day_rows.sort(key=lambda row: int(_number(row["timestamp"])))
+            stamps = [int(_number(row["timestamp"])) for row in day_rows]
+            if len(day_rows) < 100 or any(
+                b - a != 600_000 for a, b in zip(stamps, stamps[1:])
+            ):
+                continue
+            first, last = day_rows[0], day_rows[-1]
+            bars.append(
+                Bar(
+                    day=day,
+                    bid_open=_number(first["bid_open"]),
+                    ask_open=_number(first["ask_open"]),
+                    bid_close=_number(last["bid_close"]),
+                    ask_close=_number(last["ask_close"]),
+                )
+            )
+        if len(bars) < 1000:
+            raise ValueError(f"insufficient complete daily bars for {pair}: {len(bars)}")
+        daily[pair] = bars
+    return daily
+
+
+def family_hypotheses() -> list[dict[str, object]]:
+    return [
+        {
+            "spread_window": window,
+            "spread_threshold": threshold,
+            "spread_state": state,
+            "orientation": orientation,
+            "horizon": horizon,
+        }
+        for window in SPREAD_WINDOWS
+        for threshold in SPREAD_THRESHOLDS
+        for state in SPREAD_STATES
+        for orientation in ORIENTATIONS
+        for horizon in HORIZONS
+    ]
+
+
+def _common_days(daily: Mapping[str, Sequence[Bar]]) -> list[date]:
+    return sorted(
+        set.intersection(*(set(bar.day for bar in bars) for bars in daily.values()))
+    )
+
+
+def _precompute_features(
+    daily: Mapping[str, Sequence[Bar]],
+) -> dict[str, dict[date, tuple[float, float]]]:
+    result: dict[str, dict[date, tuple[float, float]]] = {}
+    for pair, bars in daily.items():
+        spreads = np.asarray(
+            [
+                max(0.0, (bar.ask_open - bar.bid_open) / PAIR_PIP[pair])
+                for bar in bars
+            ],
+            dtype=np.float64,
+        )
+        mids = np.asarray(
+            [(bar.bid_close + bar.ask_close) / 2.0 for bar in bars],
+            dtype=np.float64,
+        )
+        returns = np.full(len(bars), np.nan, dtype=np.float64)
+        returns[1:] = np.log(mids[1:] / mids[:-1])
+        pair_result: dict[date, tuple[float, float]] = {}
+        for index, bar in enumerate(bars):
+            pair_result[bar.day] = (
+                float(spreads[index]),
+                float(returns[index]),
+            )
+        result[pair] = pair_result
+    return result
+
+
+def _rolling_spread_z(
+    spread_series: Sequence[float],
+    windows: Sequence[int],
+) -> dict[int, list[float]]:
+    spreads = np.asarray(spread_series, dtype=np.float64)
+    panel: dict[int, list[float]] = {}
+    for window in windows:
+        z = np.full(len(spreads), np.nan, dtype=np.float64)
+        for index in range(window, len(spreads)):
+            history = spreads[index - window:index]
+            centre = float(np.mean(history))
+            std = float(np.std(history, ddof=1))
+            if not math.isfinite(std) or std <= 0:
+                continue
+            z[index] = (spreads[index] - centre) / std
+        panel[window] = [float(value) for value in z]
+    return panel
+
+
+def _evaluate(
+    values: Sequence[float],
+    by_pair: Mapping[str, Sequence[float]],
+    by_timestamp: Mapping[date, Sequence[float]],
+    with_bootstrap: bool,
+) -> dict[str, Any]:
+    if not values:
+        return {
+            "n": 0,
+            "unique_timestamps": 0,
+            "expectancy_pips": None,
+            "profit_factor": None,
+            "hac_one_sided_pvalue": 1.0,
+            "ordinary_bootstrap_lower": None,
+            "blocked_bootstrap_lower": None,
+            "positive_pair_count": 0,
+            "largest_pair_observation_share": 1.0,
+            "stress": {},
+            "passes_pre_holm": False,
+        }
+
+    timestamp_means = {day: mean(items) for day, items in by_timestamp.items()}
+    expectancy = mean(values)
+    pf = profit_factor(list(values))
+    positive_pairs = sum(
+        1
+        for series in by_pair.values()
+        if len(series) >= MIN_PAIR_SAMPLES
+        and mean(series) > 0.0
+        and (pair_pf := profit_factor(list(series))) is not None
+        and float(pair_pf) > 1.0
+    )
+    concentration = max(
+        (len(series) / len(values) for series in by_pair.values()),
+        default=1.0,
+    )
+    result: dict[str, Any] = {
+        "n": len(values),
+        "unique_timestamps": len(timestamp_means),
+        "expectancy_pips": expectancy,
+        "profit_factor": pf,
+        "hac_one_sided_pvalue": (
+            1.0
+            if len(timestamp_means) < 2
+            else hac_mean_pvalue(
+                list(timestamp_means.values()),
+                max_lag=min(5, len(timestamp_means) - 1),
+            )
+        ),
+        "ordinary_bootstrap_lower": None,
+        "blocked_bootstrap_lower": None,
+        "positive_pair_count": positive_pairs,
+        "largest_pair_observation_share": concentration,
+        "stress": {
+            str(cost): {
+                "expectancy_pips": mean(value - cost for value in values),
+                "profit_factor": profit_factor([value - cost for value in values]),
+            }
+            for cost in STRESS_COSTS_PIPS
+        },
+        "passes_pre_holm": (
+            len(values) >= MIN_DISCOVERY_SAMPLES
+            and len(timestamp_means) >= 100
+            and expectancy > 0.0
+            and pf is not None
+            and float(pf) >= MIN_DISCOVERY_PF
+            and positive_pairs >= MIN_POSITIVE_PAIRS
+            and concentration <= MAX_PAIR_CONCENTRATION
+        ),
+    }
+    if with_bootstrap:
+        timestamps = list(timestamp_means.values())
+        ordinary = bootstrap_means(timestamps, reps=BOOTSTRAP_REPS, seed=20261003)
+        blocked = block_bootstrap_means(
+            timestamps,
+            block_size=min(BLOCK_SIZE, len(timestamps)),
+            reps=BOOTSTRAP_REPS,
+            seed=20261004,
+        )
+        result["ordinary_bootstrap_lower"] = ordinary[49]
+        result["blocked_bootstrap_lower"] = blocked[49]
+        result["passes_pre_holm"] = (
+            bool(result["passes_pre_holm"])
+            and float(result["ordinary_bootstrap_lower"]) > 0.0
+            and float(result["blocked_bootstrap_lower"]) > 0.0
+        )
+    return result
+
+
+def _outcomes(
+    candidate: Mapping[str, Any],
+    daily: Mapping[str, Sequence[Bar]],
+    index_by_day: Mapping[str, Mapping[date, int]],
+    z_panels: Mapping[str, Mapping[int, Sequence[float]]],
+    features: Mapping[str, Mapping[date, tuple[float, float]]],
+    entry_days: Sequence[date],
+    split_cutoff: date,
+    holdout: bool,
+) -> tuple[list[float], dict[str, list[float]], dict[date, list[float]]]:
+    values: list[float] = []
+    by_pair: dict[str, list[float]] = defaultdict(list)
+    by_timestamp: dict[date, list[float]] = defaultdict(list)
+
+    window = int(candidate["spread_window"])
+    threshold = float(candidate["spread_threshold"])
+    spread_state = str(candidate["spread_state"])
+    orientation = str(candidate["orientation"])
+    horizon = int(candidate["horizon"])
+
+    for entry_day in entry_days:
+        if (entry_day >= split_cutoff) != holdout:
+            continue
+        for pair, bars in daily.items():
+            index = index_by_day[pair].get(entry_day)
+            if index is None or index <= 0 or index + horizon - 1 >= len(bars):
+                continue
+
+            signal_index = index - 1
+            pair_panel = z_panels[pair]
+            z = pair_panel[window][signal_index]
+            if not math.isfinite(z):
+                continue
+            qualifies = z >= threshold if spread_state == "expansion" else z <= -threshold
+            if not qualifies:
+                continue
+
+            _spread, prior_return = features[pair][bars[signal_index].day]
+            if not math.isfinite(prior_return) or prior_return == 0.0:
+                continue
+            direction = 1 if prior_return > 0.0 else -1
+            if orientation == "reversion":
+                direction *= -1
+
+            entry = bars[index]
+            target = bars[index + horizon - 1]
+            movement = (
+                (target.bid_close - entry.ask_open) / PAIR_PIP[pair]
+                if direction > 0
+                else (entry.bid_open - target.ask_close) / PAIR_PIP[pair]
+            )
+            value = float(movement)
+            values.append(value)
+            by_pair[pair].append(value)
+            by_timestamp[entry_day].append(value)
+    return values, by_pair, by_timestamp
+
+
+def _holm(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(
+        results,
+        key=lambda item: float(item["discovery"]["hac_one_sided_pvalue"]),
+    )
+    previous = 0.0
+    total = len(ordered)
+    for i, item in enumerate(ordered):
+        adjusted = min(
+            1.0,
+            max(
+                previous,
+                (total - i)
+                * float(item["discovery"]["hac_one_sided_pvalue"]),
+            ),
+        )
+        item["discovery"]["holm_adjusted_pvalue"] = adjusted
+        item["discovery"]["passes_familywise"] = (
+            bool(item["discovery"]["passes_pre_holm"]) and adjusted <= ALPHA
+        )
+        previous = adjusted
+    return ordered
+
+
+def run_discovery(feed_dir: Path) -> dict[str, Any]:
+    daily = _daily_bars(feed_dir)
+    indices = {
+        pair: {bar.day: index for index, bar in enumerate(bars)}
+        for pair, bars in daily.items()
+    }
+    features = _precompute_features(daily)
+    z_panels = {
+        pair: {
+            window: _rolling_spread_z(
+                [features[pair][bar.day][0] for bar in bars],
+                (window,),
+            )[window]
+            for window in SPREAD_WINDOWS
+        }
+        for pair, bars in daily.items()
+    }
+    entry_days = _common_days(daily)
+    if len(entry_days) < 500:
+        raise ValueError(f"too few common entry days: {len(entry_days)}")
+    split_cutoff = entry_days[int(len(entry_days) * DISCOVERY_FRACTION)]
+
+    results: list[dict[str, Any]] = []
+    for hypothesis in family_hypotheses():
+        values, by_pair, by_timestamp = _outcomes(
+            hypothesis, daily, indices, z_panels, features, entry_days, split_cutoff, False
+        )
+        results.append(
+            {
+                **hypothesis,
+                "candidate": dict(hypothesis),
+                "discovery": _evaluate(values, by_pair, by_timestamp, False),
+            }
+        )
+
+    for item in results:
+        if item["discovery"]["passes_pre_holm"]:
+            values, by_pair, by_timestamp = _outcomes(
+                item["candidate"], daily, indices, z_panels, features, entry_days, split_cutoff, False
+            )
+            item["discovery"] = _evaluate(values, by_pair, by_timestamp, True)
+
+    ordered = _holm(results)
+    survivors = [
+        item for item in ordered if item["discovery"].get("passes_familywise")
+    ]
+    survivors.sort(
+        key=lambda item: (
+            float(item["discovery"]["holm_adjusted_pvalue"]),
+            -float(item["discovery"]["ordinary_bootstrap_lower"] or -math.inf),
+            -float(item["discovery"]["expectancy_pips"] or -math.inf),
+        )
+    )
+
+    confirmation: dict[str, Any] | None = None
+    if survivors:
+        frozen = survivors[0]
+        values, by_pair, by_timestamp = _outcomes(
+            frozen["candidate"], daily, indices, z_panels, features,
+            entry_days, split_cutoff, True
+        )
+        conf = _evaluate(values, by_pair, by_timestamp, True)
+        conf["passes_final_confirmation"] = bool(
+            conf["passes_pre_holm"]
+            and float(conf["hac_one_sided_pvalue"]) <= ALPHA
+        )
+        confirmation = {
+            "rank": 1,
+            "candidate": frozen["candidate"],
+            "discovery": frozen["discovery"],
+            "confirmation": conf,
+            "state": "PASS" if conf["passes_final_confirmation"] else "FAIL",
+        }
+
+    return {
+        "status": "SPREAD_LIQUIDITY_DISCOVERY_COMPLETED",
+        "contract_version": CONTRACT_VERSION,
+        "family_size": FAMILY_SIZE,
+        "candidate_count": len(survivors),
+        "top_candidates": survivors[:10],
+        "confirmation": confirmation,
+        "entry_day_count": len(entry_days),
+        "global_split_cutoff": split_cutoff.isoformat(),
+        "selection_policy": {
+            "whole_family_holm": True,
+            "holm_scope": FAMILY_SIZE,
+            "confirmation_used_for_selection": False,
+            "signal_source": "prior-complete-bar executable spread z-score and prior-bar midpoint return sign",
+            "spread_windows": list(SPREAD_WINDOWS),
+            "spread_thresholds": list(SPREAD_THRESHOLDS),
+            "spread_states": list(SPREAD_STATES),
+            "orientations": list(ORIENTATIONS),
+            "horizons": list(HORIZONS),
+            "stress_costs_pips": list(STRESS_COSTS_PIPS),
+            "pair_gate": ">=3 positive pairs with >=20 observations each and <=80% concentration",
+        },
+        "source_run_id": 34139659497,
+        "promotion_authorized": False,
+        "live_execution_authorized": False,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Non-live spread/liquidity dislocation research.")
+    parser.add_argument("--feed-dir", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+    report = run_discovery(Path(args.feed_dir))
+    Path(args.output).write_text(
+        json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    print(f"STATUS={report['status']}")
+    print(f"FAMILY_SIZE={report['family_size']}")
+    print(f"CANDIDATE_COUNT={report['candidate_count']}")
+    if report["confirmation"] is None:
+        print("CONFIRMATION_STATE=NO_DISCOVERY_CANDIDATE")
+    else:
+        c = report["confirmation"]["confirmation"]
+        print(f"CONFIRMATION_STATE={report['confirmation']['state']}")
+        print(f"CONFIRMATION_EXPECTANCY_PIPS={c['expectancy_pips']}")
+        print(f"CONFIRMATION_PROFIT_FACTOR={c['profit_factor']}")
+    print("PROMOTION_AUTHORIZED=false")
+    print("LIVE_EXECUTION_AUTHORIZED=false")
+
+
+if __name__ == "__main__":
+    main()
