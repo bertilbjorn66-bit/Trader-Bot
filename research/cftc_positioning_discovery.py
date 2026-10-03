@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 
@@ -87,6 +87,10 @@ def _number(value: str) -> float:
         raise ValueError
     return float(raw)
 
+
+def _float_value(value: object) -> float:
+    return float(value) if isinstance(value, (int, float)) else float(str(value))
+
 def _market_currency(market: str) -> str | None:
     text = market.upper().replace("\u2013", "-").replace("\u2014", "-")
     for currency, patterns in CFTC_MARKET_PATTERNS.items():
@@ -153,7 +157,7 @@ def load_positions(cftc_dir: Path) -> tuple[dict[str, list[PositionObservation]]
     missing = sorted(expected - actual)
     if missing:
         raise ValueError(f"missing CFTC annual archives: {missing}")
-    records = {currency: [] for currency in CURRENCIES}
+    records: dict[str, list[PositionObservation]] = {currency: [] for currency in CURRENCIES}
     manifest: dict[str, dict[str, object]] = {}
     for path in archives:
         year_text = path.stem[6:]
@@ -216,18 +220,18 @@ def _build_daily_bars(input_dir: Path) -> tuple[dict[str, list[DailyBar]], dict[
         rows, pair_quality = _execution_valid_rows(load_feed_bars(input_dir / f"{symbol}.jsonl"), pair)
         grouped: dict[date, list[dict[str, object]]] = defaultdict(list)
         for row in rows:
-            timestamp_ms = int(float(row["timestamp"]))
+            timestamp_ms = int(_float_value(row["timestamp"]))
             grouped[datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).date()].append(row)
         complete: list[DailyBar] = []
         for day, day_rows in sorted(grouped.items()):
-            day_rows.sort(key=lambda row: int(float(row["timestamp"])))
+            day_rows.sort(key=lambda row: int(_float_value(row["timestamp"])))
             stamps = [int(float(row["timestamp"])) for row in day_rows]
             if len(day_rows) < 100 or any(b - a != 600_000 for a, b in zip(stamps, stamps[1:], strict=True)):
                 continue
             first, last = day_rows[0], day_rows[-1]
             complete.append(DailyBar(
-                day=day, timestamp_ms=stamps[0], bid_open=float(first["bid_open"]), ask_open=float(first["ask_open"]),
-                bid_close=float(last["bid_close"]), ask_close=float(last["ask_close"]), bar_count=len(day_rows),
+                day=day, timestamp_ms=stamps[0], bid_open=_float_value(first["bid_open"]), ask_open=_float_value(first["ask_open"]),
+                bid_close=_float_value(last["bid_close"]), ask_close=_float_value(last["ask_close"]), bar_count=len(day_rows),
             ))
         if len(complete) < 1000:
             raise ValueError(f"insufficient complete daily bars for {pair}: {len(complete)}")
@@ -275,7 +279,7 @@ def _evaluate(
     by_pair: Mapping[str, Sequence[float]],
     by_timestamp: Mapping[date, Sequence[float]],
     with_bootstrap: bool,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     if not values:
         return {
             "n": 0, "unique_timestamps": 0, "expectancy_pips": None, "profit_factor": None,
@@ -292,7 +296,7 @@ def _evaluate(
         and (pair_pf := profit_factor(list(v))) is not None and float(pair_pf) > 1.0
     )
     concentration = max((len(v) / len(values) for v in by_pair.values()), default=1.0)
-    result: dict[str, object] = {
+    result: dict[str, Any] = {
         "n": len(values), "unique_timestamps": len(timestamp_means), "expectancy_pips": expectancy, "profit_factor": pf,
         "hac_one_sided_pvalue": _safe_hac(list(timestamp_means.values())),
         "ordinary_bootstrap_lower": math.nan, "blocked_bootstrap_lower": math.nan,
@@ -311,7 +315,7 @@ def _evaluate(
     return result
 
 def _outcomes(
-    candidate: Mapping[str, object],
+    candidate: Mapping[str, Any],
     panel: Mapping[date, Mapping[str, float]],
     daily: Mapping[str, Sequence[DailyBar]],
     indices: Mapping[str, Mapping[date, int]],
@@ -372,7 +376,7 @@ def _outcomes(
             by_timestamp[entry_day].append(value)
     return values, by_pair, by_timestamp
 
-def _holman(results: list[dict[str, object]]) -> list[dict[str, object]]:
+def _holman(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ordered = sorted(results, key=lambda item: float(item["discovery"]["hac_one_sided_pvalue"]))
     previous = 0.0
     total = len(ordered)
@@ -383,7 +387,7 @@ def _holman(results: list[dict[str, object]]) -> list[dict[str, object]]:
         previous = adjusted
     return ordered
 
-def run_discovery(cftc_dir: Path, feed_dir: Path) -> dict[str, object]:
+def run_discovery(cftc_dir: Path, feed_dir: Path) -> dict[str, Any]:
     positions, cftc_manifest = load_positions(cftc_dir)
     panel = build_feature_panel(positions)
     daily, feed_quality = _build_daily_bars(feed_dir)
@@ -400,7 +404,7 @@ def run_discovery(cftc_dir: Path, feed_dir: Path) -> dict[str, object]:
     if len(signal_days) < 300:
         raise ValueError(f"too few release-gated signal days: {len(signal_days)}")
     split_cutoff = signal_days[int(len(signal_days) * DISCOVERY_FRACTION)]
-    results = []
+    results: list[dict[str, Any]] = []
     for hypothesis in family_hypotheses():
         vals, by_pair, by_ts = _outcomes(hypothesis, panel, daily, indices, signal_days, split_cutoff, False)
         results.append({**hypothesis, "candidate": dict(hypothesis), "discovery": _evaluate(vals, by_pair, by_ts, False)})
@@ -411,7 +415,7 @@ def run_discovery(cftc_dir: Path, feed_dir: Path) -> dict[str, object]:
     results = _holman(results)
     survivors = [x for x in results if x["discovery"].get("passes_familywise")]
     survivors.sort(key=lambda x: (float(x["discovery"]["holm_adjusted_pvalue"]), -float(x["discovery"]["ordinary_bootstrap_lower"]), -float(x["discovery"]["expectancy_pips"])))
-    confirmation = None
+    confirmation: dict[str, Any] | None = None
     if survivors:
         frozen = survivors[0]
         vals, by_pair, by_ts = _outcomes(frozen["candidate"], panel, daily, indices, signal_days, split_cutoff, True)
