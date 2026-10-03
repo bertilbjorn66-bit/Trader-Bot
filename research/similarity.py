@@ -37,6 +37,8 @@ class SimilarityIndex:
         self.states = list(states)
         self.features = tuple(features)
         self._matrix: NDArray[np.float64] | None = None
+        self._prefix_sum: NDArray[np.float64] | None = None
+        self._prefix_sq: NDArray[np.float64] | None = None
         if not self.states or not self.features:
             return
         rows: list[list[float]] = []
@@ -49,21 +51,42 @@ class SimilarityIndex:
                 row.append(float(value))
             rows.append(row)
         self._matrix = np.asarray(rows, dtype=np.float64)
+        self._prefix_sum = np.vstack(
+            [
+                np.zeros((1, self._matrix.shape[1]), dtype=np.float64),
+                np.cumsum(self._matrix, axis=0),
+            ]
+        )
+        self._prefix_sq = np.vstack(
+            [
+                np.zeros((1, self._matrix.shape[1]), dtype=np.float64),
+                np.cumsum(self._matrix * self._matrix, axis=0),
+            ]
+        )
 
     def fit_scaler(self, start: int, end: int) -> dict[str, tuple[float, float]]:
         if not 0 <= start <= end <= len(self.states):
             raise ValueError("invalid scaler window")
         if self._matrix is None:
             return fit_scaler(self.states[start:end], self.features)
-        block = self._matrix[start:end]
-        if len(block) == 0:
+        if self._prefix_sum is None or self._prefix_sq is None:
+            return fit_scaler(self.states[start:end], self.features)
+        count = end - start
+        if count == 0:
             return {}
+        sums = self._prefix_sum[end] - self._prefix_sum[start]
+        sums_sq = self._prefix_sq[end] - self._prefix_sq[start]
         scaler: dict[str, tuple[float, float]] = {}
         for index, name in enumerate(self.features):
-            values = block[:, index]
-            centre = float(np.mean(values))
-            variance = float(np.sum((values - centre) ** 2) / max(len(values) - 1, 1))
-            scaler[name] = (centre, sqrt(variance) or 1.0)
+            centre = float(sums[index] / count)
+            if count <= 1:
+                variance = 0.0
+            else:
+                variance = float(
+                    (sums_sq[index] - (sums[index] * sums[index] / count))
+                    / (count - 1)
+                )
+            scaler[name] = (centre, sqrt(max(variance, 0.0)) or 1.0)
         return scaler
 
     def nearest(
