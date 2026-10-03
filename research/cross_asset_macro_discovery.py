@@ -123,16 +123,26 @@ def _load_macro_csv(path: Path) -> dict[date, float]:
     values: dict[date, float] = {}
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
-        if reader.fieldnames is None or "DATE" not in reader.fieldnames:
-            raise ValueError(f"macro CSV missing DATE column: {path.name}")
+        if reader.fieldnames is None:
+            raise ValueError(f"macro CSV missing header row: {path.name}")
+        date_column = next(
+            (
+                name
+                for name in reader.fieldnames
+                if name.strip().lower() in {"date", "observation_date"}
+            ),
+            None,
+        )
+        if date_column is None:
+            raise ValueError(f"macro CSV missing date column: {path.name}")
         value_column = next(
-            (name for name in reader.fieldnames if name != "DATE"),
+            (name for name in reader.fieldnames if name != date_column),
             None,
         )
         if value_column is None:
             raise ValueError(f"macro CSV missing value column: {path.name}")
         for row in reader:
-            raw_date = (row.get("DATE") or "").strip()
+            raw_date = (row.get(date_column) or "").strip()
             raw_value = (row.get(value_column) or "").strip()
             if not raw_date or not raw_value or raw_value == ".":
                 continue
