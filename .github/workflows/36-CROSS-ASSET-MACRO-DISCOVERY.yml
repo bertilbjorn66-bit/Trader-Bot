@@ -44,7 +44,7 @@ jobs:
 
   discover:
     needs: validate
-    name: "Run 216-hypothesis cross-asset macro discovery"
+    name: "Run 324-hypothesis cross-asset macro discovery"
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -92,7 +92,7 @@ jobs:
           from pathlib import Path
           report = json.loads(Path("artifacts/cross_asset_macro_report.json").read_text(encoding="utf-8"))
           assert report["status"] == "CROSS_ASSET_MACRO_DISCOVERY_COMPLETED"
-          assert report["family_size"] == 216
+          assert report["family_size"] == 324
           assert report["selection_policy"]["whole_family_holm"] is True
           assert report["selection_policy"]["confirmation_used_for_selection"] is False
           assert report["promotion_authorized"] is False
