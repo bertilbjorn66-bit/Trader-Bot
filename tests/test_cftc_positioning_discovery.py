@@ -7,11 +7,11 @@ from datetime import date
 
 from research.cftc_positioning_discovery import (
     FAMILY_SIZE,
-    family_hypotheses,
     _find_header,
     _market_currency,
     _next_monday,
     _rolling_z,
+    family_hypotheses,
 )
 
 
