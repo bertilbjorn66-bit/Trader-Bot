@@ -27,6 +27,7 @@ def test_family_axes_are_exact() -> None:
 
 def test_no_lookahead_contract_is_encoded() -> None:
     import inspect
+
     from research import time_series_momentum_discovery as module
 
     source = inspect.getsource(module._outcomes)
