@@ -262,7 +262,7 @@ def _outcomes(
     macro_panel: Mapping[str, Mapping[int, Mapping[date, float]]],
     asof_panel: Mapping[str, Mapping[int, Mapping[date, float | None]]],
     entry_days: Sequence[date],
-)    split_cutoff: date,
+    split_cutoff: date,
     holdout: bool,
 ) -> tuple[list[float], dict[str, list[float]], dict[date, list[float]]]:
     values: list[float] = []
