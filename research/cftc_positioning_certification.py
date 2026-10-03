@@ -11,13 +11,13 @@ from statistics import mean
 from typing import Any, Mapping, Sequence
 
 from research.cftc_positioning_discovery import (
-    PAIR_PIP,
     PAIR_CURRENCY,
-    build_feature_panel,
-    load_positions,
+    PAIR_PIP,
     _build_daily_bars,
     _index_daily,
     _safe_hac,
+    build_feature_panel,
+    load_positions,
 )
 from research.intelligence_controls import ExecutionCostModel
 from research.multiple_testing import holm_bonferroni
