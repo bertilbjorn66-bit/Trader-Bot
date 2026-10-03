@@ -12,7 +12,7 @@ from research.cross_asset_macro_discovery import (
 
 def test_family_is_frozen_and_complete() -> None:
     hypotheses = family_hypotheses()
-    assert FAMILY_SIZE == 216
+    assert FAMILY_SIZE == 324
     assert len(hypotheses) == FAMILY_SIZE
     assert len({tuple(sorted(item.items())) for item in hypotheses}) == FAMILY_SIZE
 
