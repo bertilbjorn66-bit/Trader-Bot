@@ -1,11 +1,11 @@
 from research.cross_asset_macro_discovery import (
     FAMILY_SIZE,
+    HORIZONS,
     MACRO_FACTORS,
     MACRO_LOOKBACKS,
     MACRO_STATES,
     MACRO_THRESHOLDS,
     ORIENTATIONS,
-    HORIZONS,
     family_hypotheses,
 )
 
