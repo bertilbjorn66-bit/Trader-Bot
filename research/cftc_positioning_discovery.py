@@ -94,6 +94,16 @@ def _number(value: str) -> float:
     return float(raw)
 
 
+def _parse_report_date(value: str) -> date:
+    raw = value.strip()
+    if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+        return date.fromisoformat(raw)
+    if len(raw) == 6 and raw.isdigit():
+        year = 2000 + int(raw[:2])
+        return date(year, int(raw[2:4]), int(raw[4:6]))
+    raise ValueError(f"unsupported CFTC report date format: {raw!r}")
+
+
 def _float_value(value: object) -> float:
     return float(value) if isinstance(value, (int, float)) else float(str(value))
 
@@ -133,7 +143,7 @@ def _read_archive(path: Path) -> list[PositionObservation]:
         if currency is None:
             continue
         try:
-            report_date = date.fromisoformat(row[columns["date"]].strip())
+            report_date = _parse_report_date(row[columns["date"]])
             oi = _number(row[columns["oi"]])
             long_position = _number(row[columns["long"]])
             short_position = _number(row[columns["short"]])
