@@ -81,9 +81,9 @@ jobs:
           curl --fail --location --retry 4 --retry-delay 2 --connect-timeout 20 --max-time 120 "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO" -o .data/macro/DCOILWTICO.csv
       - name: Run fixed family
         run: |
-          python -m research.cross_asset_macro_discovery \\
-            --feed-dir .data/empirical_feed \\
-            --macro-dir .data/macro \\
+          python -m research.cross_asset_macro_discovery \
+            --feed-dir .data/empirical_feed \
+            --macro-dir .data/macro \
             --output artifacts/cross_asset_macro_report.json
       - name: Verify report
         run: |
