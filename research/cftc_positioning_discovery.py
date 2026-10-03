@@ -408,10 +408,12 @@ def run_discovery(cftc_dir: Path, feed_dir: Path) -> dict[str, Any]:
     panel = build_feature_panel(positions)
     daily, feed_quality = _build_daily_bars(feed_dir)
     indices = _index_daily(daily)
-    common_reports = sorted(set.intersection(*(set(x.report_date for x in positions[c]) for c in CURRENCIES)))
+    report_dates = sorted(
+        set().union(*(set(x.report_date for x in positions[c]) for c in CURRENCIES))
+    )
     common_daily = sorted(set.intersection(*(set(x.day for x in daily[p]) for p in daily)))
     signal_days = []
-    for report_day in common_reports:
+    for report_day in report_dates:
         desired = _next_monday(report_day)
         candidate_days = [d for d in common_daily if d >= desired]
         if candidate_days:
@@ -455,6 +457,11 @@ def run_discovery(cftc_dir: Path, feed_dir: Path) -> dict[str, Any]:
         "confirmation": confirmation,
         "signal_week_count": len(signal_days),
         "global_split_cutoff": split_cutoff.isoformat(),
+        "release_date_contract": {
+            "report_date_scope": "union_of_currency_reports",
+            "signal_rule": "first complete common FX day on or after the following Monday UTC",
+            "pair_feature_rule": "pairs without both released currency features are skipped for that signal day",
+        },
         "cftc_years": [CFTC_START_YEAR, CFTC_END_YEAR],
         "cftc_manifest": cftc_manifest,
         "feed_quality": feed_quality,
