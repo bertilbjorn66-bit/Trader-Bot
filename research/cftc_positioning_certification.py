@@ -11,17 +11,22 @@ from statistics import mean
 from typing import Any, Mapping, Sequence
 
 from research.cftc_positioning_discovery import (
+    PAIR_CURRENCY,
+    PAIR_PIP,
     _build_daily_bars,
     _index_daily,
     _safe_hac,
-    PAIR_CURRENCY,
-    PAIR_PIP,
     build_feature_panel,
     load_positions,
 )
 from research.intelligence_controls import ExecutionCostModel
 from research.multiple_testing import holm_bonferroni
-from research.non_live_evaluation import block_bootstrap_means, bootstrap_means, max_drawdown, profit_factor
+from research.non_live_evaluation import (
+    block_bootstrap_means,
+    bootstrap_means,
+    max_drawdown,
+    profit_factor,
+)
 
 FOLDS = 12
 MIN_RUN_OBSERVATIONS = 30
