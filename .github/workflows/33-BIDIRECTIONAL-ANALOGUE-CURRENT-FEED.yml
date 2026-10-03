@@ -1,0 +1,143 @@
+name: "33 — BIDIRECTIONAL ANALOGUE DISCOVERY — CURRENT VERIFIED FEED — NON-LIVE"
+# Frozen current verified-feed research contract.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/33-BIDIRECTIONAL-ANALOGUE-CURRENT-FEED.yml"
+      - "research/bidirectional_analogue_discovery.py"
+      - "research/similarity.py"
+      - "research/enriched_conditional_experiment.py"
+      - "research/statistics.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: bidirectional-analogue-current-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_RUN_ID: "34139659497"
+  SAMPLE_STRIDE: "60"
+  HISTORY_STATES: "10000"
+
+jobs:
+  validate:
+    name: "Validate bidirectional analogue discovery"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Static checks
+        run: |
+          ruff check research/bidirectional_analogue_discovery.py research/similarity.py
+          mypy research/bidirectional_analogue_discovery.py research/similarity.py
+      - name: Contract tests
+        run: |
+          pytest -q tests/test_bidirectional_analogue_discovery.py tests/test_bidirectional_analogue_confirmation.py tests/test_bidirectional_analogue_certification.py
+      - name: Assert non-live contract
+        run: |
+          ! grep -q 'ExecutionGateway' research/bidirectional_analogue_discovery.py
+          ! grep -q 'live_execution_authorized": True' research/bidirectional_analogue_discovery.py
+          ! grep -q 'promotion_authorized": True' research/bidirectional_analogue_discovery.py
+
+  discover:
+    name: "Run bidirectional analogue family on current verified nine-pair feed"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v7
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Prepare directories
+        run: mkdir -p .data/empirical_feed artifacts
+      - name: Download immutable verified nine-pair feed bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: v5-prepared-nine-pair-feeds
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: /tmp/source
+      - name: Extract and verify all nine pair datasets
+        run: |
+          set -euo pipefail
+          tar -xzf /tmp/source/verified-nine-pair-feeds.tar.gz -C .
+          for slug in audusd usdcad usdchf nzdusd eurjpy gbpjpy eurusd gbpusd usdjpy; do
+            test -s ".data/empirical_feed/${slug}.jsonl"
+          done
+          echo "ALL_NINE_CURRENT_FEEDS_VERIFIED=true"
+      - name: Run fixed bidirectional discovery family
+        env:
+          OMP_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+        run: |
+          python -m research.bidirectional_analogue_discovery \\
+            --input-dir .data/empirical_feed \\
+            --output artifacts/bidirectional_discovery_report.json \\
+            --sample-stride "$SAMPLE_STRIDE" \\
+            --history-states "$HISTORY_STATES" \\
+            --parallel-workers 4
+      - name: Verify immutable research boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/bidirectional_discovery_report.json").read_text(encoding="utf-8"))
+          assert report["status"] == "BIDIRECTIONAL_ANALOGUE_DISCOVERY_COMPLETED"
+          assert report["selection_policy"]["confirmation_used_for_selection"] is False
+          assert report["selection_policy"]["prior_frozen_confirmation_artifact_read"] is False
+          assert report["candidate_count"] >= 0
+          assert report["promotion_authorized"] is False
+          assert report["live_execution_authorized"] is False
+          print("BIDIRECTIONAL_CURRENT_FEED_DISCOVERY_VERIFIED=true")
+          print("CANDIDATE_COUNT=", report["candidate_count"])
+          print("RECORD_COUNT=", report["record_count"])
+          print("FAMILY_SIZE=", len(report["discovery_family"]))
+          print("PROMOTION_AUTHORIZED=false")
+          print("LIVE_EXECUTION_AUTHORIZED=false")
+          PY
+      - name: Bind immutable source evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("artifacts/bidirectional_discovery_report.json")
+          report = json.loads(path.read_text(encoding="utf-8"))
+          report["orchestration_binding"] = {
+              "discovery_run_id": int("${{ github.run_id }}"),
+              "discovery_head_sha": "${{ github.sha }}",
+              "source_run_id": 34139659497,
+              "sample_stride": 60,
+              "history_states": 10000,
+          }
+          path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+          PY
+      - name: Upload immutable discovery evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: BIDIRECTIONAL-CURRENT-FEED-DISCOVERY-RESULT
+          path: artifacts/bidirectional_discovery_report.json
+          if-no-files-found: error
+          retention-days: 30
