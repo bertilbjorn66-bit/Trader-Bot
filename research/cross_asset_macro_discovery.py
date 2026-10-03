@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import json
 import math
@@ -234,15 +235,25 @@ def _previous_return(
     return value if math.isfinite(value) else None
 
 
-def _last_available(
-    panel: Mapping[date, float],
-    target_day: date,
-) -> tuple[date, float] | None:
-    available = [day for day in panel if day <= target_day]
-    if not available:
-        return None
-    day = max(available)
-    return day, float(panel[day])
+def _build_asof_panel(
+    macro_panel: Mapping[str, Mapping[int, Mapping[date, float]]],
+    asof_panel: Mapping[str, Mapping[int, Mapping[date, float | None]]],
+    entry_days: Sequence[date],
+) -> dict[str, dict[int, dict[date, float | None]]]:
+    result: dict[str, dict[int, dict[date, float | None]]] = {}
+    for factor, lookback_panel in macro_panel.items():
+        factor_result: dict[int, dict[date, float | None]] = {}
+        for lookback, values in lookback_panel.items():
+            ordered_days = sorted(values)
+            target_values: dict[date, float | None] = {}
+            for entry_day in entry_days:
+                index = bisect.bisect_right(ordered_days, entry_day - timedelta(days=1)) - 1
+                target_values[entry_day] = (
+                    float(values[ordered_days[index]]) if index >= 0 else None
+                )
+            factor_result[lookback] = target_values
+        result[factor] = factor_result
+    return result
 
 
 def _outcomes(
@@ -266,17 +277,14 @@ def _outcomes(
     horizon = int(candidate["horizon"])
 
     factor_panel = macro_panel[factor][lookback]
+    factor_asof = asof_panel[factor][lookback]
     for entry_day in entry_days:
         if (entry_day >= split_cutoff) != holdout:
             continue
 
-        macro_observation = _last_available(
-            factor_panel,
-            entry_day - timedelta(days=1),
-        )
-        if macro_observation is None:
+        macro_score = factor_asof.get(entry_day)
+        if macro_score is None:
             continue
-        _macro_day, macro_score = macro_observation
         if macro_state == "high":
             if macro_score < threshold:
                 continue
@@ -448,6 +456,7 @@ def run_discovery(
     if len(entry_days) < 500:
         raise ValueError(f"too few common entry days after macro alignment: {len(entry_days)}")
     split_cutoff = entry_days[int(len(entry_days) * DISCOVERY_FRACTION)]
+    asof_panel = _build_asof_panel(macro_panel, entry_days)
 
     results: list[dict[str, Any]] = []
     for hypothesis in family_hypotheses():
@@ -456,6 +465,7 @@ def run_discovery(
             daily,
             indices,
             macro_panel,
+            asof_panel,
             entry_days,
             split_cutoff,
             False,
