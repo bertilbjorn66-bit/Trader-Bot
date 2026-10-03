@@ -1,4 +1,5 @@
 name: 14 — HIERARCHICAL CONTEXT VALIDATION — NO REDOWNLOAD
+# Immutable holdout revalidation: 2026-10-03
 
 on:
   pull_request:
