@@ -2,6 +2,8 @@ name: "33 — BIDIRECTIONAL ANALOGUE DISCOVERY — CURRENT VERIFIED FEED — NON
 # Frozen current verified-feed research contract.
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
     paths:
