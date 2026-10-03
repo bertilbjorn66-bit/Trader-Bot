@@ -276,7 +276,6 @@ def _outcomes(
     orientation = str(candidate["orientation"])
     horizon = int(candidate["horizon"])
 
-    factor_panel = macro_panel[factor][lookback]
     factor_asof = asof_panel[factor][lookback]
     for entry_day in entry_days:
         if (entry_day >= split_cutoff) != holdout:
@@ -485,6 +484,7 @@ def run_discovery(
                 daily,
                 indices,
                 macro_panel,
+                asof_panel,
                 entry_days,
                 split_cutoff,
                 False,
@@ -511,6 +511,7 @@ def run_discovery(
             daily,
             indices,
             macro_panel,
+            asof_panel,
             entry_days,
             split_cutoff,
             True,
