@@ -75,8 +75,8 @@ jobs:
           done
       - name: Run fixed family
         run: |
-          python -m research.calendar_seasonality_discovery \\
-            --feed-dir .data/empirical_feed \\
+          python -m research.calendar_seasonality_discovery \
+            --feed-dir .data/empirical_feed \
             --output artifacts/calendar_seasonality_report.json
       - name: Verify report
         run: |
